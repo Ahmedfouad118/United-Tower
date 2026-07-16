@@ -5,6 +5,8 @@ const Pages = (() => {
   const loading = (c) => c.innerHTML = '<div class="spinner"></div>';
   const canWrite = () => ['admin', 'accountant'].includes((API.user() || {}).role);
   const isAdmin = () => (API.user() || {}).role === 'admin';
+  // permission-aware action check for the CURRENT screen's module (UT.mod)
+  const canDo = (action) => (window.UT && UT.can) ? UT.can(UT.mod, action) : canWrite();
 
   // ---- reference cache ----
   const cache = {};
@@ -22,13 +24,14 @@ const Pages = (() => {
     const tbCfg = {
       search: true, searchFn: cfg.searchFn || ((rs, q) => rs.filter((r) => JSON.stringify(Object.values(r)).toLowerCase().includes(q))),
       type: cfg.type, exportType: cfg.type, templateType: cfg.template ? cfg.type : null,
-      onImport: cfg.import ? () => importModal(cfg.type, cfg.importExtra, () => masterScreen(c, cfg)) : null,
-      newLabel: cfg.newLabel, onNew: canWrite() ? () => openForm(cfg) : null,
+      onImport: (cfg.import && canDo('add')) ? () => importModal(cfg.type, cfg.importExtra, () => masterScreen(c, cfg)) : null,
+      newLabel: cfg.newLabel, onNew: canDo('add') ? () => openForm(cfg) : null,
     };
     c.innerHTML = toolbar(tbCfg) + `<div class="card"><div class="hd"><h3>${esc(cfg.title)}</h3>
       <button class="btn sm btn-print">🖨 ${t('print')}</button></div><div id="mtbl"></div></div>`;
     const idKey = cfg.idKey || 'id';
-    const cols = cfg.columns.concat(canWrite() ? [{ key: '_a', label: t('actions'), render: (r) => actions(r[idKey], cfg.rowActions || ['edit', 'delete']) }] : []);
+    const rowActs = (cfg.rowActions || ['edit', 'delete']).filter((a) => a === 'view' ? canDo('view') : canDo(a));
+    const cols = cfg.columns.concat(rowActs.length ? [{ key: '_a', label: t('actions'), render: (r) => actions(r[idKey], rowActs) }] : []);
     const draw = (rs) => c.querySelector('#mtbl').innerHTML = table(cols, rs);
     draw(rows);
     wireToolbar(c, tbCfg, draw, rows);

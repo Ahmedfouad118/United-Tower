@@ -50,7 +50,8 @@ router.get('/me', (req, res) => {
   const buildings = req.user.role === 'admin'
     ? db.prepare('SELECT id,name,name_ar FROM buildings WHERE active=1 ORDER BY name').all()
     : db.prepare('SELECT b.id,b.name,b.name_ar FROM user_buildings ub JOIN buildings b ON b.id=ub.building_id WHERE ub.user_id=? ORDER BY b.name').all(req.user.id);
-  res.json({ ...req.user, buildings, all_buildings: req.user.role === 'admin' });
+  const permissions = db.prepare('SELECT module,can_view,can_add,can_edit,can_delete FROM user_permissions WHERE user_id=?').all(req.user.id);
+  res.json({ ...req.user, buildings, all_buildings: req.user.role === 'admin', permissions });
 });
 router.get('/settings', (req, res) =>
   res.json(Object.fromEntries(db.prepare('SELECT key,value FROM settings').all().map((s) => [s.key, s.value]))));
@@ -391,19 +392,36 @@ router.post('/journals', writers, (req, res) => {
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 const { deleteJournal } = require('./ledger');
+// Admin can edit/delete ANY journal — including system-generated ones. When a
+// journal is linked to a source document we detach the link so the source keeps
+// its own record but no longer points at a journal that changed underneath it.
+function detachJournalFromSource(j) {
+  // clear every foreign-key reference to this journal so it can be removed
+  // (some sources set source_id only after creation, so match by journal id)
+  const refs = [
+    ['invoices', 'issue_journal'], ['invoices', 'recog_journal'],
+    ['payments', 'journal_id'], ['vendor_bills', 'journal_id'], ['vendor_payments', 'journal_id'],
+    ['contracts', 'deposit_journal'], ['cheques', 'journal_id'], ['payroll_runs', 'journal_id'], ['depreciation_runs', 'journal_id'],
+  ];
+  for (const [tbl, col] of refs) { try { db.prepare(`UPDATE ${tbl} SET ${col}=NULL WHERE ${col}=?`).run(j.id); } catch {} }
+  // unlink any reconciled bank-statement lines that pointed at this journal's lines
+  try { db.prepare('UPDATE bank_statement_lines SET reconciled=0, journal_line_id=NULL WHERE journal_line_id IN (SELECT id FROM journal_lines WHERE journal_id=?)').run(j.id); } catch {}
+}
 router.delete('/journals/:id', writers, (req, res) => {
   const j = db.prepare('SELECT * FROM journals WHERE id=?').get(req.params.id);
   if (!j) return res.status(404).json({ error: 'not found' });
-  if (j.jtype !== 'manual') return res.status(400).json({ error: 'يمكن حذف القيود اليدوية فقط — احذف المصدر (فاتورة/سند)' });
+  detachJournalFromSource(j);
   deleteJournal(j.id); res.json({ ok: true });
 });
 router.put('/journals/:id', writers, (req, res) => {
   const j = db.prepare('SELECT * FROM journals WHERE id=?').get(req.params.id);
   if (!j) return res.status(404).json({ error: 'not found' });
-  if (j.jtype !== 'manual') return res.status(400).json({ error: 'يمكن تعديل القيود اليدوية فقط' });
   const { jdate, memo, reference, lines } = req.body;
-  try { deleteJournal(j.id); res.json({ id: postJournal({ jdate, jtype: 'manual', memo, reference, created_by: req.user.id }, lines) }); }
-  catch (e) { res.status(400).json({ error: e.message }); }
+  try {
+    detachJournalFromSource(j);
+    deleteJournal(j.id);
+    res.json({ id: postJournal({ jdate, jtype: j.jtype || 'manual', memo, reference: reference || j.reference, created_by: req.user.id }, lines) });
+  } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 // ---- Reports --------------------------------------------------------------

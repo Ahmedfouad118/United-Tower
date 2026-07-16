@@ -1,64 +1,75 @@
 // Router + collapsible nav + language switcher + boot
 (() => {
   const { esc, toast } = UI;
-  // global building filter state (shared across screens)
+  // global building filter + permission state (shared across screens)
   window.UT = window.UT || { building: localStorage.getItem('ut_building') || '', buildings: [] };
   window.UT.bq = (first) => UT.building ? (first ? '?' : '&') + 'building_id=' + UT.building : '';
+  UT.perms = UT.perms || null;   // null until /me loads
+  UT.role = (API.user() || {}).role;
+  UT.mod = null;                 // module of the current screen (set on route)
+  // permission check: admin bypasses; if the user has NO permission rows at all
+  // we fall back to role (so users configured before permissions still work).
+  UT.can = (mod, action) => {
+    if (UT.role === 'admin') return true;
+    if (!UT.perms || !UT.perms.length) return UT.role === 'accountant' || action === 'view';
+    const p = UT.perms.find((x) => x.module === mod);
+    return !!(p && p['can_' + action]);
+  };
 
   // Navigation: groups with collapsible sub-items. page = Pages fn name.
   const NAV = [
-    { single: true, path: 'dashboard', icon: '📊', label: 'm_dashboard', page: 'dashboard' },
+    { single: true, path: 'dashboard', icon: '📊', label: 'm_dashboard', page: 'dashboard', mod: 'dashboard' },
     { id: 'properties', icon: '🏢', label: 'm_properties', items: [
-      { path: 'buildings', label: 'm_buildings', page: 'buildings' },
-      { path: 'units', label: 'm_units', page: 'units' },
-      { path: 'calendar', label: 'm_calendar', page: 'occupancy' },
+      { path: 'buildings', label: 'm_buildings', page: 'buildings', mod: 'properties' },
+      { path: 'units', label: 'm_units', page: 'units', mod: 'properties' },
+      { path: 'calendar', label: 'm_calendar', page: 'occupancy', mod: 'properties' },
     ] },
     { id: 'receivable', icon: '👥', label: 'm_receivable', items: [
-      { path: 'customers', label: 'm_customers', page: 'customers' },
-      { path: 'contracts', label: 'm_contracts', page: 'contracts' },
-      { path: 'invoices', label: 'm_invoices', page: 'invoices' },
-      { path: 'receipts', label: 'm_receipts', page: 'receipts' },
-      { path: 'cust_summary', label: 'm_cust_summary', page: 'customersSummary' },
-      { path: 'statement', label: 'm_statement', page: 'statement' },
-      { path: 'ar_aging', label: 'm_ar_aging', page: 'arAging' },
+      { path: 'customers', label: 'm_customers', page: 'customers', mod: 'customers' },
+      { path: 'contracts', label: 'm_contracts', page: 'contracts', mod: 'customers' },
+      { path: 'invoices', label: 'm_invoices', page: 'invoices', mod: 'customers' },
+      { path: 'receipts', label: 'm_receipts', page: 'receipts', mod: 'customers' },
+      { path: 'cust_summary', label: 'm_cust_summary', page: 'customersSummary', mod: 'customers' },
+      { path: 'statement', label: 'm_statement', page: 'statement', mod: 'customers' },
+      { path: 'ar_aging', label: 'm_ar_aging', page: 'arAging', mod: 'customers' },
     ] },
     { id: 'payable', icon: '🚚', label: 'm_payable', items: [
-      { path: 'vendors', label: 'm_vendors', page: 'vendors' },
-      { path: 'bills', label: 'm_bills', page: 'vendorBills' },
-      { path: 'vpayments', label: 'm_vpayments', page: 'vendorPayments' },
-      { path: 'ap_aging', label: 'm_ap_aging', page: 'apAging' },
+      { path: 'vendors', label: 'm_vendors', page: 'vendors', mod: 'vendors' },
+      { path: 'bills', label: 'm_bills', page: 'vendorBills', mod: 'vendors' },
+      { path: 'vpayments', label: 'm_vpayments', page: 'vendorPayments', mod: 'vendors' },
+      { path: 'ap_aging', label: 'm_ap_aging', page: 'apAging', mod: 'vendors' },
     ] },
     { id: 'finance', icon: '🏦', label: 'm_finance', items: [
-      { path: 'coa', label: 'm_coa', page: 'coa' },
-      { path: 'journals', label: 'm_journals', page: 'journals' },
-      { path: 'tb', label: 'm_tb', page: 'trialBalance' },
-      { path: 'is', label: 'm_is', page: 'incomeStatement' },
-      { path: 'bs', label: 'm_bs', page: 'balanceSheet' },
-      { path: 'cashflow', label: 'm_cashflow', page: 'cashflow' },
-      { path: 'ppl', label: 'm_ppl', page: 'propertyPL' },
-      { path: 'roi', label: 'm_roi', page: 'roi' },
-      { path: 'comparison', label: 'm_comparison', page: 'comparison' },
+      { path: 'coa', label: 'm_coa', page: 'coa', mod: 'finance' },
+      { path: 'journals', label: 'm_journals', page: 'journals', mod: 'finance' },
+      { path: 'tb', label: 'm_tb', page: 'trialBalance', mod: 'finance' },
+      { path: 'is', label: 'm_is', page: 'incomeStatement', mod: 'finance' },
+      { path: 'bs', label: 'm_bs', page: 'balanceSheet', mod: 'finance' },
+      { path: 'cashflow', label: 'm_cashflow', page: 'cashflow', mod: 'finance' },
+      { path: 'ppl', label: 'm_ppl', page: 'propertyPL', mod: 'finance' },
+      { path: 'roi', label: 'm_roi', page: 'roi', mod: 'finance' },
+      { path: 'comparison', label: 'm_comparison', page: 'comparison', mod: 'finance' },
     ] },
     { id: 'treasury', icon: '💵', label: 'm_treasury', items: [
-      { path: 'banks', label: 'm_banks', page: 'banks' },
-      { path: 'cheques', label: 'm_cheques', page: 'cheques' },
-      { path: 'reconciliation', label: 'm_recon', page: 'reconciliation' },
+      { path: 'banks', label: 'm_banks', page: 'banks', mod: 'treasury' },
+      { path: 'cheques', label: 'm_cheques', page: 'cheques', mod: 'treasury' },
+      { path: 'reconciliation', label: 'm_recon', page: 'reconciliation', mod: 'treasury' },
     ] },
     { id: 'assets', icon: '🏗️', label: 'm_assets_mod', items: [
-      { path: 'assets', label: 'm_assets', page: 'assets' },
-      { path: 'depreciation', label: 'm_depreciation', page: 'depreciation' },
+      { path: 'assets', label: 'm_assets', page: 'assets', mod: 'assets' },
+      { path: 'depreciation', label: 'm_depreciation', page: 'depreciation', mod: 'assets' },
     ] },
     { id: 'tax', icon: '🧾', label: 'm_tax', items: [
-      { path: 'vat', label: 'm_vat', page: 'vat' },
+      { path: 'vat', label: 'm_vat', page: 'vat', mod: 'tax' },
     ] },
     { id: 'hr', icon: '🧑‍💼', label: 'm_hr', items: [
-      { path: 'employees', label: 'm_employees', page: 'employees' },
+      { path: 'employees', label: 'm_employees', page: 'employees', mod: 'hr' },
     ] },
     { id: 'admin', icon: '⚙️', label: 'm_admin', items: [
-      { path: 'company', label: 'm_company', page: 'company' },
-      { path: 'categories', label: 'm_categories', page: 'categories' },
-      { path: 'paymethods', label: 'm_paymethods', page: 'paymethods' },
-      { path: 'users', label: 'm_users', page: 'users', admin: true },
+      { path: 'company', label: 'm_company', page: 'company', mod: 'settings' },
+      { path: 'categories', label: 'm_categories', page: 'categories', mod: 'settings' },
+      { path: 'paymethods', label: 'm_paymethods', page: 'paymethods', mod: 'settings' },
+      { path: 'users', label: 'm_users', page: 'users', admin: true, mod: 'users' },
     ] },
   ];
   const allItems = () => NAV.flatMap((g) => g.single ? [g] : g.items.map((it) => ({ ...it, group: g.id })));
@@ -96,8 +107,8 @@
   function navHTML() {
     const isAdmin = (API.user() || {}).role === 'admin';
     return NAV.map((g) => {
-      if (g.single) return `<a href="#/${g.path}" data-path="${g.path}" class="nav-link"><span class="ic">${g.icon}</span>${esc(t(g.label))}</a>`;
-      const items = g.items.filter((it) => !it.admin || isAdmin);
+      if (g.single) return (isAdmin || UT.can(g.mod, 'view')) ? `<a href="#/${g.path}" data-path="${g.path}" class="nav-link"><span class="ic">${g.icon}</span>${esc(t(g.label))}</a>` : '';
+      const items = g.items.filter((it) => (!it.admin || isAdmin) && (isAdmin || UT.can(it.mod, 'view')));
       if (!items.length) return '';
       return `<div class="nav-group" data-group="${g.id}">
         <button class="nav-head"><span class="ic">${g.icon}</span><span class="lbl">${esc(t(g.label))}</span><span class="chev">▾</span></button>
@@ -135,7 +146,14 @@
   async function loadBuildingFilter() {
     const sel = document.getElementById('bldFilter'); if (!sel) return;
     try {
-      const me = await API.get('/me'); UT.buildings = me.buildings || [];
+      const me = await API.get('/me'); UT.buildings = me.buildings || []; UT.perms = me.permissions || []; UT.role = me.role;
+      // re-render nav now that permissions are known (non-admin may see fewer modules)
+      const nav = document.querySelector('.nav');
+      if (nav && UT.role !== 'admin') {
+        nav.innerHTML = navHTML();
+        nav.querySelectorAll('.nav-head').forEach((h) => h.onclick = () => h.parentElement.classList.toggle('open'));
+        route();
+      }
     } catch { UT.buildings = []; }
     const lang = I18N.getLang();
     sel.innerHTML = `<option value="">${lang === 'en' ? 'All Buildings' : lang === 'ur' ? 'تمام عمارتیں' : 'كل البنايات'}</option>` +
@@ -156,6 +174,13 @@
     const { path, params } = parseHash();
     if (path === 'login') { location.hash = '#/dashboard'; return; }
     const item = findItem(path);
+    UT.mod = item ? item.mod : null;
+    // block direct access (typed hash) to a module the user can't view
+    if (item && UT.role !== 'admin' && UT.perms && !UT.can(item.mod, 'view')) {
+      document.getElementById('ptitle').textContent = '';
+      document.getElementById('view').innerHTML = '<div class="empty">لا تملك صلاحية فتح هذه الشاشة</div>';
+      return;
+    }
     document.getElementById('ptitle').textContent = item ? t(item.label) : '';
     document.querySelectorAll('.nav-link').forEach((a) => a.classList.toggle('active', a.getAttribute('data-path') === path));
     // expand active group

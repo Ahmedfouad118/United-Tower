@@ -425,16 +425,17 @@ Object.assign(Pages, (() => {
     c.innerHTML = toolbar(tbCfg) + `<div class="card"><div class="hd"><h3>${t('m_journals')}</h3><button class="btn sm btn-print">🖨</button></div><div id="jt"></div></div>`;
     const cols = [{ key: 'jdate', label: t('date'), render: (r) => dateStr(r.jdate) }, { key: 'jtype', label: 'النوع', render: (r) => JL[r.jtype] || r.jtype },
       { key: 'reference', label: 'المرجع' }, { key: 'memo', label: t('description') },
-      { key: '_a', label: t('actions'), render: (r) => actions(r.id, r.jtype === 'manual' && canWrite() ? ['view', 'edit', 'print', 'delete'] : ['view', 'print']) }];
+      { key: '_a', label: t('actions'), render: (r) => actions(r.id, canWrite() ? ['view', 'edit', 'print', 'delete'] : ['view', 'print']) }];
     const draw = (rs) => c.querySelector('#jt').innerHTML = table(cols, rs);
     draw(rows); wireToolbar(c, tbCfg, draw, rows);
     c.querySelector('.btn-print').onclick = () => printTable(t('m_journals'), cols.slice(0, -1), rows);
     c.querySelector('#jt').onclick = async (e) => {
       const b = e.target.closest('[data-act]'); if (!b) return;
       const id = b.dataset.id, r = rows.find((x) => String(x.id) === String(id));
-      if (b.dataset.act === 'delete') { if (confirm(t('confirm_delete'))) { try { await API.del('/journals/' + id); toast(t('deleted')); journals(c); } catch (er) { toast(er.message, 'err'); } } return; }
+      const sysWarn = r && r.jtype !== 'manual' ? '\n\n⚠️ ده قيد نظامي (ناتج عن فاتورة/سند/إهلاك). التعديل عليه بيفصله عن مستنده الأصلي.' : '';
+      if (b.dataset.act === 'delete') { if (confirm(t('confirm_delete') + sysWarn)) { try { await API.del('/journals/' + id); toast(t('deleted')); journals(c); } catch (er) { toast(er.message, 'err'); } } return; }
       const j = await API.get('/journals/' + id);
-      if (b.dataset.act === 'edit') return manualJournal(j, () => journals(c));
+      if (b.dataset.act === 'edit') { if (sysWarn && !confirm('تعديل القيد؟' + sysWarn)) return; return manualJournal(j, () => journals(c)); }
       const html = `<p class="muted">${esc(j.memo || '')} — ${dateStr(j.jdate)}</p>` +
         table([{ key: 'account_code', label: t('code') }, { key: 'account_name', label: t('account') }, { key: 'building', label: t('building') },
           { key: 'debit', label: t('debit'), num: true, render: (x) => x.debit ? money(x.debit) : '' }, { key: 'credit', label: t('credit'), num: true, render: (x) => x.credit ? money(x.credit) : '' }], j.lines);
@@ -473,7 +474,20 @@ Object.assign(Pages, (() => {
   }
 
   // ---- Users & permissions ----
-  const MODULES = ['dashboard', 'buildings', 'units', 'customers', 'contracts', 'invoices', 'receipts', 'vendors', 'bills', 'vpayments', 'finance', 'coa', 'journals', 'treasury', 'reports', 'tax', 'employees', 'users'];
+  // permission modules (match the `mod` keys used by the sidebar in app.js)
+  const PMODULES = [
+    ['dashboard', 'لوحة التحكم'],
+    ['properties', 'الأملاك (بنايات ووحدات)'],
+    ['customers', 'العملاء / العقود / الفواتير / سندات القبض'],
+    ['vendors', 'الموردون / الفواتير / سندات الصرف'],
+    ['finance', 'المالية (شجرة الحسابات / القيود / التقارير)'],
+    ['treasury', 'الخزينة / البنوك / الشيكات / التسوية'],
+    ['assets', 'الأصول والإهلاك'],
+    ['tax', 'الضرائب'],
+    ['hr', 'الموظفون والرواتب'],
+    ['settings', 'الإعدادات والتصنيفات وطرق الدفع'],
+    ['users', 'المستخدمون والصلاحيات'],
+  ];
   async function users(c) {
     loading(c);
     const rows = await API.get('/users');
@@ -501,17 +515,22 @@ Object.assign(Pages, (() => {
     modal({ title: t('permissions') + ' — ' + row.full_name, wide: true,
       bodyHTML: `<div class="section-title">البنايات المسموح بها (فارغ = لا شيء / الأدمن يرى الكل)</div>
         <div class="grid g-3" style="gap:6px">${allBld.map((b) => `<label style="font-weight:500"><input type="checkbox" data-bld="${b.id}" style="width:auto" ${myBld.includes(b.id) ? 'checked' : ''}> ${esc(b.name)}</label>`).join('')}</div>
-        <div class="section-title" style="margin-top:16px">صلاحيات الشاشات</div>
+        <div class="section-title" style="margin-top:16px">صلاحيات المديولات (زي SPUR — تحكم كامل)</div>
+        <label style="font-weight:600;display:block;margin-bottom:8px"><input type="checkbox" id="perm-all" style="width:auto"> تحديد الكل (فتح كل صلاحية)</label>
         <table><thead><tr><th>المديول</th><th>عرض</th><th>إضافة</th><th>تعديل</th><th>مسح</th></tr></thead><tbody>
-        ${MODULES.map((m) => { const p = pm[m] || {}; return `<tr><td>${t('m_' + m) || m}</td>
+        ${PMODULES.map(([m, lbl]) => { const p = pm[m] || {}; return `<tr><td>${esc(lbl)}</td>
           ${['can_view', 'can_add', 'can_edit', 'can_delete'].map((k) => `<td><input type="checkbox" data-m="${m}" data-k="${k}" ${p[k] ? 'checked' : ''}></td>`).join('')}</tr>`; }).join('')}</tbody></table>`,
       footerHTML: `<button class="btn primary" id="ps">${t('save')}</button>`,
-      onMount: (bg, close) => bg.querySelector('#ps').onclick = async () => {
+      onMount: (bg, close) => {
+      const allChk = bg.querySelector('#perm-all');
+      if (allChk) allChk.onchange = () => bg.querySelectorAll('[data-m]').forEach((i) => { i.checked = allChk.checked; });
+      bg.querySelector('#ps').onclick = async () => {
         const map = {}; bg.querySelectorAll('[data-m]').forEach((i) => { map[i.dataset.m] = map[i.dataset.m] || { module: i.dataset.m }; map[i.dataset.m][i.dataset.k] = i.checked ? 1 : 0; });
         const blds = [...bg.querySelectorAll('[data-bld]:checked')].map((i) => +i.dataset.bld);
         await API.put('/users/' + row.id + '/permissions', { permissions: Object.values(map) });
         await API.put('/users/' + row.id + '/buildings', { building_ids: blds });
         toast(t('saved')); close(); done();
+      };
       } });
   }
   async function company(c) {
