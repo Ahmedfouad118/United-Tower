@@ -10,9 +10,9 @@ RUN npm install --omit=dev
 COPY . .
 
 # database lives on a mounted volume so data survives redeploys
+# (the volume itself is attached by the host platform, e.g. `railway volume add -m /data`)
 ENV UT_DB=/data/app.db
 ENV PORT=4000
-VOLUME ["/data"]
 
 EXPOSE 4000
 

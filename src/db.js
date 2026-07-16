@@ -6,6 +6,9 @@ const DATA_DIR = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const DB_PATH = process.env.UT_DB || path.join(DATA_DIR, 'app.db');
+// make sure the database directory exists (e.g. /data volume on hosted deploys)
+const DB_DIR = path.dirname(DB_PATH);
+if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
 const db = new DatabaseSync(DB_PATH);
 
 function init() {
