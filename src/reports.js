@@ -289,7 +289,7 @@ function buildingComparison(from, to) {
     const occ = occupancy(today, b.id);
     const pl = pls.find((p) => p.building_id === b.id) || { income: 0, expense: 0, net: 0 };
     return {
-      building: b.name, income: pl.income, expense: pl.expense, net: pl.net,
+      building_id: b.id, building: b.name, income: pl.income, expense: pl.expense, net: pl.net,
       units: occ.total, occupied: occ.occupied, occupancy_rate: occ.total ? Math.round(occ.occupied / occ.total * 100) : 0,
       roi_percent: b.purchase_value ? r2((pl.net / b.purchase_value) * 100) : 0,
     };

@@ -9,6 +9,35 @@ const router = express.Router();
 const writers = requireRole('admin', 'accountant');
 const lang = (req) => req.headers['x-lang'] || req.query.lang || (req.user && req.user.lang) || 'en';
 
+// ---- Building-level access control ---------------------------------------
+// Admin => null (sees every building). Others => the ids granted in user_buildings.
+function allowedBuildingIds(req) {
+  if (!req.user || req.user.role === 'admin') return null;
+  return db.prepare('SELECT building_id FROM user_buildings WHERE user_id=?').all(req.user.id).map((r) => r.building_id);
+}
+// SQL fragment that restricts `col` to the buildings this user may see.
+function bScope(req, col = 'building_id') {
+  const ids = allowedBuildingIds(req);
+  if (ids === null) return '';
+  if (!ids.length) return ' AND 1=0';           // no building granted -> sees nothing
+  return ` AND ${col} IN (${ids.map(Number).join(',')})`;
+}
+// Effective building filter for reports: honours ?building_id but never lets a
+// user read a building they weren't granted.
+function effBuilding(req) {
+  const asked = req.query.building_id ? Number(req.query.building_id) : null;
+  const ids = allowedBuildingIds(req);
+  if (ids === null) return asked;                // admin
+  if (!ids.length) return -1;                    // nothing granted -> impossible id
+  if (asked && !ids.includes(asked)) return -1;  // asked for a forbidden building
+  return asked || (ids.length === 1 ? ids[0] : null);
+}
+function scopeRows(req, rows) {
+  const ids = allowedBuildingIds(req);
+  if (ids === null) return rows;
+  return rows.filter((r) => r.building_id == null || ids.includes(r.building_id));
+}
+
 // ---- Auth -----------------------------------------------------------------
 router.post('/login', (req, res) => {
   const { username, password } = req.body || {};
@@ -111,6 +140,9 @@ function crud(path, table, fields, opts = {}) {
     catch (e) { res.status(400).json({ error: e.message }); }
   });
 }
+// scoped list routes must be registered BEFORE the generic crud() ones
+router.get('/buildings', (req, res) => res.json(db.prepare(`SELECT * FROM buildings WHERE 1=1${bScope(req, 'id')} ORDER BY name`).all()));
+router.get('/flats', (req, res) => res.json(db.prepare(`SELECT * FROM flats WHERE 1=1${bScope(req, 'building_id')} ORDER BY code`).all()));
 crud('buildings', 'buildings', ['code', 'name', 'name_ar', 'name_ur', 'address', 'owner', 'purchase_value', 'notes', 'active'], { order: 'ORDER BY name' });
 crud('flats', 'flats', ['code', 'building_id', 'unit_type', 'floor', 'bedrooms', 'base_rent', 'category_id', 'notes'], { order: 'ORDER BY code' });
 crud('tenants', 'tenants', ['code', 'name', 'name_ar', 'phone', 'email', 'civil_id', 'category_id', 'opening_balance', 'notes'], { order: 'ORDER BY name' });
@@ -130,7 +162,7 @@ router.post('/assets/depreciation/run', writers, (req, res) => {
 router.get('/contracts', (req, res) => res.json(db.prepare(
   `SELECT c.*, f.code flat, t.name tenant, b.name building FROM contracts c
    JOIN flats f ON f.id=c.flat_id JOIN tenants t ON t.id=c.tenant_id LEFT JOIN buildings b ON b.id=c.building_id
-   ${req.query.building_id ? 'WHERE c.building_id=' + Number(req.query.building_id) : ''}
+   WHERE 1=1 ${req.query.building_id ? 'AND c.building_id=' + Number(req.query.building_id) : ''}${bScope(req, 'c.building_id')}
    ORDER BY c.id DESC`).all()));
 router.post('/contracts', writers, (req, res) => {
   const { contract_no, building_id, flat_id, tenant_id, start_date, end_date, monthly_rent, vat_percent, deposit, remarks, backfill, contract_type, attachment } = req.body;
@@ -167,6 +199,7 @@ function listInvoices(req, res) {
   if (tenant_id) { where += ' AND i.tenant_id=?'; p.push(tenant_id); }
   if (flat_id) { where += ' AND i.flat_id=?'; p.push(flat_id); }
   if (req.query.building_id) { where += ' AND i.building_id=?'; p.push(req.query.building_id); }
+  where += bScope(req, 'i.building_id');
   const rows = db.prepare(
     `SELECT i.*, i.total AS total_due, f.code flat, t.name tenant, b.name building FROM invoices i
      JOIN flats f ON f.id=i.flat_id JOIN tenants t ON t.id=i.tenant_id LEFT JOIN buildings b ON b.id=i.building_id
@@ -203,6 +236,7 @@ router.delete('/invoices/:id', writers, (req, res) => {
 router.get('/payments', (req, res) => res.json(db.prepare(
   `SELECT p.*, t.name tenant, f.code flat FROM payments p
    JOIN tenants t ON t.id=p.tenant_id LEFT JOIN flats f ON f.id=p.flat_id
+   WHERE 1=1${bScope(req, 'p.building_id')}
    ORDER BY p.pdate DESC, p.id DESC LIMIT 500`).all()));
 router.post('/payments', writers, (req, res) => {
   try { res.json(svc.recordPayment(req.body, req.user.id)); } catch (e) { res.status(400).json({ error: e.message }); }
@@ -213,6 +247,7 @@ router.delete('/payments/:id', writers, (req, res) => { svc.deletePayment(Number
 router.get('/vendor-bills', (req, res) => res.json(db.prepare(
   `SELECT b.*, v.name vendor, a.name account_name FROM vendor_bills b
    LEFT JOIN vendors v ON v.id=b.vendor_id JOIN accounts a ON a.code=b.expense_code
+   WHERE 1=1${bScope(req, 'b.building_id')}
    ORDER BY b.bdate DESC, b.id DESC LIMIT 500`).all()));
 router.post('/vendor-bills', writers, (req, res) => {
   try { res.json(svc.recordVendorBill(req.body, req.user.id)); } catch (e) { res.status(400).json({ error: e.message }); }
@@ -271,15 +306,66 @@ router.put('/cheques/:id/status', writers, (req, res) => {
 });
 
 // ---- Bank reconciliation --------------------------------------------------
+// Bank reconciliation: compare the bank's statement against our ledger.
 router.get('/reconciliation/:bank_id', (req, res) => {
-  const stmts = db.prepare('SELECT * FROM bank_statement_lines WHERE bank_id=? ORDER BY txn_date').all(req.params.bank_id);
-  res.json({ statement: stmts, ledger: R.bankReport(Number(req.params.bank_id)).lines });
+  const bankId = Number(req.params.bank_id);
+  const bank = db.prepare('SELECT * FROM banks WHERE id=?').get(bankId);
+  if (!bank) return res.status(404).json({ error: 'bank not found' });
+  const statement = db.prepare('SELECT * FROM bank_statement_lines WHERE bank_id=? ORDER BY txn_date').all(bankId);
+  const ledger = db.prepare(
+    `SELECT l.id, j.jdate, j.reference, j.memo, l.debit, l.credit,
+            EXISTS(SELECT 1 FROM bank_statement_lines s WHERE s.journal_line_id=l.id) reconciled
+     FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+     WHERE l.account_code=? ORDER BY j.jdate`).all(bank.gl_account || '10400');
+  const r3 = (n) => Math.round(n * 1000) / 1000;
+  const bookBalance = r3(ledger.reduce((s, l) => s + l.debit - l.credit, 0));
+  const stmtBalance = r3(statement.reduce((s, l) => s + (l.credit || 0) - (l.debit || 0), 0));
+  const unmatchedLedger = ledger.filter((l) => !l.reconciled);
+  const unmatchedStmt = statement.filter((s) => !s.reconciled);
+  res.json({
+    bank: bank.name, account: bank.gl_account, statement, ledger,
+    book_balance: bookBalance, statement_balance: stmtBalance,
+    difference: r3(bookBalance - stmtBalance),
+    unmatched_ledger: unmatchedLedger.length, unmatched_statement: unmatchedStmt.length,
+  });
 });
 router.post('/reconciliation/:bank_id/import', writers, (req, res) => {
   const rows = req.body.lines || [];
   const ins = db.prepare('INSERT INTO bank_statement_lines (bank_id,txn_date,description,debit,credit) VALUES (?,?,?,?,?)');
   for (const r of rows) ins.run(req.params.bank_id, r.txn_date, r.description || null, r.debit || 0, r.credit || 0);
   res.json({ imported: rows.length });
+});
+// auto-match statement lines to ledger lines by amount (+/- 3 days)
+router.post('/reconciliation/:bank_id/auto-match', writers, (req, res) => {
+  const bankId = Number(req.params.bank_id);
+  const bank = db.prepare('SELECT * FROM banks WHERE id=?').get(bankId);
+  const stmts = db.prepare('SELECT * FROM bank_statement_lines WHERE bank_id=? AND reconciled=0').all(bankId);
+  const ledger = db.prepare(
+    `SELECT l.id, j.jdate, l.debit, l.credit FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+     WHERE l.account_code=? AND NOT EXISTS(SELECT 1 FROM bank_statement_lines s WHERE s.journal_line_id=l.id)`)
+    .all((bank && bank.gl_account) || '10400');
+  const used = new Set(); let matched = 0;
+  for (const s of stmts) {
+    const sIn = s.credit || 0, sOut = s.debit || 0;
+    const hit = ledger.find((l) => !used.has(l.id)
+      && Math.abs((l.debit || 0) - sIn) < 0.005 && Math.abs((l.credit || 0) - sOut) < 0.005
+      && Math.abs(Date.parse(l.jdate) - Date.parse(s.txn_date)) <= 3 * 86400000);
+    if (hit) {
+      used.add(hit.id); matched++;
+      db.prepare('UPDATE bank_statement_lines SET reconciled=1, journal_line_id=? WHERE id=?').run(hit.id, s.id);
+    }
+  }
+  res.json({ matched, remaining: stmts.length - matched });
+});
+router.put('/reconciliation/line/:id', writers, (req, res) => {
+  const { reconciled, journal_line_id } = req.body;
+  db.prepare('UPDATE bank_statement_lines SET reconciled=?, journal_line_id=? WHERE id=?')
+    .run(reconciled ? 1 : 0, reconciled ? (journal_line_id || null) : null, req.params.id);
+  res.json({ ok: true });
+});
+router.delete('/reconciliation/line/:id', writers, (req, res) => {
+  db.prepare('DELETE FROM bank_statement_lines WHERE id=?').run(req.params.id);
+  res.json({ ok: true });
 });
 
 // ---- Journals -------------------------------------------------------------
@@ -324,23 +410,23 @@ router.put('/journals/:id', writers, (req, res) => {
 router.get('/reports/trial-balance', (req, res) => res.json(R.trialBalance(req.query.upto, lang(req))));
 router.get('/reports/income-statement', (req, res) => res.json(R.incomeStatement(req.query.from, req.query.to, lang(req), req.query.building_id ? Number(req.query.building_id) : null)));
 router.get('/reports/balance-sheet', (req, res) => res.json(R.balanceSheet(req.query.upto, lang(req))));
-router.get('/reports/aging', (req, res) => res.json(R.receivablesAging(req.query.asOf, req.query.building_id ? Number(req.query.building_id) : null)));
-router.get('/reports/contract-expiry', (req, res) => res.json(R.contractExpiry(Number(req.query.days) || 60, req.query.building_id ? Number(req.query.building_id) : null)));
-router.get('/reports/building-comparison', (req, res) => res.json(R.buildingComparison(req.query.from, req.query.to)));
+router.get('/reports/aging', (req, res) => res.json(R.receivablesAging(req.query.asOf, effBuilding(req))));
+router.get('/reports/contract-expiry', (req, res) => res.json(R.contractExpiry(Number(req.query.days) || 60, effBuilding(req))));
+router.get('/reports/building-comparison', (req, res) => res.json(scopeRows(req, R.buildingComparison(req.query.from, req.query.to).map((r) => r))));
 router.get('/reports/payables-aging', (req, res) => res.json(R.payablesAging(req.query.asOf)));
 router.get('/reports/flat-statement', (req, res) => res.json(R.flatStatement({
   flat_id: req.query.flat_id ? Number(req.query.flat_id) : null,
   tenant_id: req.query.tenant_id ? Number(req.query.tenant_id) : null,
   building_id: req.query.building_id ? Number(req.query.building_id) : null,
   from: req.query.from, to: req.query.to }, lang(req))));
-router.get('/reports/occupancy', (req, res) => res.json(R.occupancy(req.query.onDate, req.query.building_id ? Number(req.query.building_id) : null)));
-router.get('/reports/property-pl', (req, res) => res.json(R.propertyPL(req.query.from, req.query.to)));
+router.get('/reports/occupancy', (req, res) => res.json(R.occupancy(req.query.onDate, effBuilding(req))));
+router.get('/reports/property-pl', (req, res) => res.json(scopeRows(req, R.propertyPL(req.query.from, req.query.to))));
 router.get('/reports/roi', (req, res) => res.json(R.roi(req.query.from, req.query.to)));
 router.get('/reports/cash-flow', (req, res) => res.json(R.cashFlowForecast(Number(req.query.months) || 6)));
 router.get('/reports/vat', (req, res) => res.json(R.vatReport(req.query.from, req.query.to)));
 router.get('/reports/depreciation', (req, res) => res.json(R.depreciationReport(req.query.building_id ? Number(req.query.building_id) : null)));
 router.get('/reports/customers-summary', (req, res) => res.json(R.customersSummary()));
 router.get('/reports/bank', (req, res) => res.json(R.bankReport(Number(req.query.bank_id) || 1, req.query.from, req.query.to)));
-router.get('/reports/dashboard', (req, res) => res.json(R.dashboard(req.query.building_id ? Number(req.query.building_id) : null)));
+router.get('/reports/dashboard', (req, res) => res.json(R.dashboard(effBuilding(req))));
 
 module.exports = router;

@@ -162,6 +162,16 @@ router.post('/:type', upload.single('file'), (req, res) => {
           const bid = fid ? db.prepare('SELECT building_id FROM flats WHERE id=?').get(fid)?.building_id : null;
           svc.issueAdHocInvoice({ tenant_id: tid, flat_id: fid, building_id: bid, period: period.slice(0, 7), rent, vat_percent: num(pick(row, ['vat %', 'vat'])) }, req.user.id);
           result.inserted++;
+        } else if (type === 'bank-statement') {
+          const bankId = Number(req.body.bank_id);
+          if (!bankId) { result.errors.push({ row: i + 2, error: 'bank_id required' }); continue; }
+          const date = toDate(pick(row, ['date', 'تاريخ']));
+          const debit = num(pick(row, ['debit', 'debit (out)', 'مدين', 'سحب']));
+          const credit = num(pick(row, ['credit', 'credit (in)', 'دائن', 'إيداع']));
+          if (!date || (debit === 0 && credit === 0)) { result.skipped++; continue; }
+          db.prepare('INSERT INTO bank_statement_lines (bank_id,txn_date,description,debit,credit) VALUES (?,?,?,?,?)')
+            .run(bankId, date, norm(pick(row, ['description', 'بيان', 'وصف'])), debit, credit);
+          result.inserted++;
         } else if (type === 'journals') {
           // journals handled in bulk after the loop
         } else {

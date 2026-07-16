@@ -80,6 +80,12 @@ const REG = {
     columns: [['name', 'Bank'], ['branch', 'Branch'], ['account_no', 'Account No'], ['iban', 'IBAN'], ['swift', 'SWIFT'], ['currency', 'Currency']],
     template: ['Bank', 'Branch', 'Account No', 'IBAN', 'SWIFT', 'Currency'],
   },
+  'bank-statement': {
+    rows: () => db.prepare(`SELECT s.txn_date,s.description,s.debit,s.credit,s.reconciled,b.name bank
+      FROM bank_statement_lines s LEFT JOIN banks b ON b.id=s.bank_id ORDER BY s.txn_date`).all(),
+    columns: [['bank', 'Bank'], ['txn_date', 'Date'], ['description', 'Description'], ['debit', 'Debit (out)'], ['credit', 'Credit (in)'], ['reconciled', 'Reconciled']],
+    template: ['Date', 'Description', 'Debit (out)', 'Credit (in)'],
+  },
   journals: {
     rows: () => db.prepare(`SELECT j.jdate,j.reference,j.memo,l.account_code,a.name account,l.debit,l.credit
       FROM journal_lines l JOIN journals j ON j.id=l.journal_id JOIN accounts a ON a.code=l.account_code ORDER BY j.jdate DESC, j.id LIMIT 2000`).all(),

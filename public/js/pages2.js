@@ -232,6 +232,66 @@ Object.assign(Pages, (() => {
     bindPrint(c, t('m_statement'));
     if (flatId || tenantId) run(); else c.querySelector('#rbody').innerHTML = `<div class="empty">اختر شقة (تظهر أسماء من سكنوها) و/أو عميل ثم ${t('run')}</div>`;
   }
+  // ---- Bank reconciliation -------------------------------------------------
+  async function reconciliation(c) {
+    loading(c);
+    const bl = await ref('banks', '/banks');
+    if (!bl.length) { c.innerHTML = `<div class="empty">أضف حساب بنكي أولاً من «${t('m_banks')}»</div>`; return; }
+    const bankId = c._bank || bl[0].id;
+    const r = await API.get('/reconciliation/' + bankId);
+    const diffOk = Math.abs(r.difference) < 0.005;
+    c.innerHTML = `
+      <div class="toolbar">
+        <div class="field" style="margin:0"><label>${t('m_banks')}</label><select id="rb">${bl.map((b) => `<option value="${b.id}" ${String(b.id) === String(bankId) ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select></div>
+        <div class="spacer"></div>
+        <button class="btn" id="rtpl">⬇ ${t('template')}</button>
+        <button class="btn" id="rimp">⬆ رفع كشف البنك</button>
+        <button class="btn teal" id="rauto">⚡ مطابقة تلقائية</button>
+        <button class="btn" id="rprint">🖨 ${t('print')}</button></div>
+      <div class="grid g-4">
+        <div class="card kpi k-blue"><div class="lbl">رصيد الدفاتر (النظام)</div><div class="val mono">${money(r.book_balance)}</div></div>
+        <div class="card kpi k-teal"><div class="lbl">رصيد كشف البنك</div><div class="val mono">${money(r.statement_balance)}</div></div>
+        <div class="card kpi ${diffOk ? 'k-green' : 'k-red'}"><div class="lbl">الفرق</div><div class="val mono">${money(r.difference)}</div>
+          <div class="sub">${diffOk ? '✓ مطابق' : 'يحتاج تسوية'}</div></div>
+        <div class="card kpi k-amber"><div class="lbl">غير مطابق</div><div class="val mono">${r.unmatched_statement} / ${r.unmatched_ledger}</div>
+          <div class="sub">كشف البنك / الدفاتر</div></div>
+      </div>
+      <div class="grid g-2" style="margin-top:16px">
+        <div class="card"><div class="hd"><h3>كشف البنك (المرفوع)</h3></div><div id="stbl"></div></div>
+        <div class="card"><div class="hd"><h3>حركة الدفاتر (النظام)</h3></div><div id="ltbl"></div></div>
+      </div>`;
+    c.querySelector('#stbl').innerHTML = table([
+      { key: 'txn_date', label: t('date'), render: (x) => dateStr(x.txn_date) },
+      { key: 'description', label: t('description') },
+      { key: 'debit', label: 'سحب', num: true, render: (x) => x.debit ? money(x.debit) : '' },
+      { key: 'credit', label: 'إيداع', num: true, render: (x) => x.credit ? money(x.credit) : '' },
+      { key: 'reconciled', label: 'مطابق', render: (x) => `<input type="checkbox" class="rec-chk" data-id="${x.id}" ${x.reconciled ? 'checked' : ''}>` },
+      { key: '_d', label: '', render: (x) => `<button class="ico-btn" data-del="${x.id}">🗑</button>` },
+    ], r.statement, { empty: 'ارفع كشف حساب البنك (Excel) للبدء' });
+    c.querySelector('#ltbl').innerHTML = table([
+      { key: 'jdate', label: t('date'), render: (x) => dateStr(x.jdate) },
+      { key: 'reference', label: 'المرجع' }, { key: 'memo', label: t('description') },
+      { key: 'debit', label: 'وارد', num: true, render: (x) => x.debit ? money(x.debit) : '' },
+      { key: 'credit', label: 'صادر', num: true, render: (x) => x.credit ? money(x.credit) : '' },
+      { key: 'reconciled', label: 'مطابق', render: (x) => x.reconciled ? badge('✓', 'b-green') : badge('—', 'b-gray') },
+    ], r.ledger);
+    c.querySelector('#rb').onchange = (e) => { c._bank = e.target.value; reconciliation(c); };
+    c.querySelector('#rtpl').onclick = () => API.download('/template/bank-statement', 'bank-statement-template.xlsx').catch((e) => toast(e.message, 'err'));
+    c.querySelector('#rimp').onclick = () => importModal('bank-statement', `<input type="hidden" id="imp-bank" value="${bankId}">`, () => reconciliation(c), { bank_id: bankId });
+    c.querySelector('#rauto').onclick = async () => {
+      try { const m = await API.post(`/reconciliation/${bankId}/auto-match`, {}); toast(`تمت مطابقة ${m.matched} حركة · باقي ${m.remaining}`); reconciliation(c); }
+      catch (e) { toast(e.message, 'err'); }
+    };
+    c.querySelector('#rprint').onclick = () => printReport('التسوية البنكية — ' + r.bank,
+      `<div class="krow"><div><b>رصيد الدفاتر:</b> ${money(r.book_balance)}</div><div><b>رصيد البنك:</b> ${money(r.statement_balance)}</div><div><b>الفرق:</b> ${money(r.difference)}</div></div>` +
+      '<h3>كشف البنك</h3>' + c.querySelector('#stbl').innerHTML + '<h3>حركة الدفاتر</h3>' + c.querySelector('#ltbl').innerHTML);
+    c.querySelector('#stbl').onclick = async (e) => {
+      const chk = e.target.closest('.rec-chk'); const del = e.target.closest('[data-del]');
+      if (chk) { await API.put('/reconciliation/line/' + chk.dataset.id, { reconciled: chk.checked }); reconciliation(c); }
+      if (del && confirm(t('confirm_delete'))) { await API.del('/reconciliation/line/' + del.dataset.del); reconciliation(c); }
+    };
+  }
+
   async function customersSummary(c) {
     reportShell(c, 'm_cust_summary', '', null);
     const r = await API.get('/reports/customers-summary');
@@ -487,5 +547,5 @@ Object.assign(Pages, (() => {
 
   return { customers, vendors, buildings, units, categories, paymethods, banks, employees, coa,
     vendorBills, vendorPayments, trialBalance, incomeStatement, balanceSheet, arAging, apAging,
-    statement, propertyPL, roi, cashflow, comparison, vat, cheques, journals, users, company, assets, depreciation, customersSummary };
+    statement, propertyPL, roi, cashflow, comparison, vat, cheques, journals, users, company, assets, depreciation, customersSummary, reconciliation };
 })());

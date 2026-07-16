@@ -98,7 +98,7 @@ const UI = (() => {
   }
 
   // ---- Import modal (per screen) ------------------------------------------
-  function importModal(type, extraFields, done) {
+  function importModal(type, extraFields, done, extraData) {
     modal({
       title: t('import'),
       bodyHTML: `<div class="field"><label>ملف Excel (.xlsx)</label><input type="file" id="imp-file" accept=".xlsx,.xls"></div>
@@ -113,6 +113,7 @@ const UI = (() => {
           if (!f) return toast('اختر ملف', 'err');
           const fd = new FormData(); fd.append('file', f);
           if (bg.querySelector('#imp-backfill')?.checked) fd.append('backfill', 'true');
+          if (extraData) for (const [k, v] of Object.entries(extraData)) fd.append(k, v);
           bg.querySelector('#imp-res').innerHTML = '<span class="muted">جاري…</span>';
           try {
             const r = await API.upload('/import/' + type, fd);
