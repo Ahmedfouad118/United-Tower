@@ -70,6 +70,11 @@ const REG = {
     columns: [['name', 'Name'], ['job_title', 'Job Title'], ['salary', 'Salary'], ['active', 'Active']],
     template: ['Name', 'Job Title', 'Salary'],
   },
+  cheques: {
+    rows: () => db.prepare('SELECT direction,cheque_no,party,amount,issue_date,due_date,status FROM cheques ORDER BY due_date').all(),
+    columns: [['direction', 'Direction'], ['cheque_no', 'Cheque No'], ['party', 'Party'], ['amount', 'Amount'], ['issue_date', 'Issue Date'], ['due_date', 'Due Date'], ['status', 'Status']],
+    template: ['Direction (incoming/outgoing)', 'Cheque No', 'Bank', 'Party', 'Amount', 'Issue Date', 'Due Date'],
+  },
   accounts: {
     rows: () => db.prepare('SELECT code,name,name_ar,type,normal_balance FROM accounts ORDER BY code').all(),
     columns: [['code', 'Code'], ['name', 'Name'], ['name_ar', 'Name (AR)'], ['type', 'Type'], ['normal_balance', 'Normal']],

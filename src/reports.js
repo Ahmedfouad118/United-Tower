@@ -149,7 +149,8 @@ function occupancy(onDate, building_id) {
   const result = flats.map((f) => {
     const c = db.prepare(
       `SELECT c.*, t.name tenant FROM contracts c JOIN tenants t ON t.id=c.tenant_id
-       WHERE c.flat_id=? AND c.start_date<=? AND c.end_date>=? AND c.status NOT IN ('terminated','vacated')
+       WHERE c.flat_id=? AND c.start_date<=? AND (c.end_date>=? OR c.end_date IS NULL OR c.end_date='')
+         AND c.status NOT IN ('terminated','vacated')
        ORDER BY c.start_date DESC LIMIT 1`).get(f.id, ref, ref);
     return { flat_id: f.id, flat: f.code, floor: f.floor, unit_type: f.unit_type, base_rent: f.base_rent,
       status: c ? 'occupied' : 'vacant', tenant: c ? c.tenant : null, contract_no: c ? c.contract_no : null,

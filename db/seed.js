@@ -1,48 +1,27 @@
-// Seed v2 — real-estate chart of accounts (multilingual), opening balances,
-// building/units, masters (bank, payment methods, categories), admin user.
+// Seed v3 — full client chart of accounts, real opening balances (31-12-2025)
+// and the actual 2026 GL journals (Jan–Mar), building/units, masters, admin.
 const { db, init } = require('../src/db');
 const { hash } = require('../src/auth');
 const { postJournal } = require('../src/ledger');
+const DATA = require('./data2026');
 
 init();
 
-// ---- Chart of accounts (code, EN, AR, type, normal) -----------------------
-const ACCOUNTS = [
-  ['10000', 'Petty Cash', 'الصندوق (النثرية)', 'asset', 'D'],
-  ['10400', 'Savings Account (Bank)', 'الحساب البنكي الرئيسي', 'asset', 'D'],
-  ['10500', 'Special Account (Bank)', 'حساب بنكي خاص', 'asset', 'D'],
-  ['11000', 'Accounts Receivable', 'ذمم مدينة أخرى', 'asset', 'D'],
-  ['11100', 'Tenant / Contracts Receivable', 'ذمم المستأجرين المدينة', 'asset', 'D'],
-  ['11500', 'Allowance for Doubtful Accounts', 'مخصص ديون مشكوك فيها', 'asset', 'C'],
-  ['11600', 'Input VAT (recoverable)', 'ضريبة القيمة المضافة (مدخلات)', 'asset', 'D'],
-  ['15500', 'Building', 'المباني', 'asset', 'D'],
-  ['16900', 'Land', 'الأراضي', 'asset', 'D'],
-  ['17500', 'Accum. Depreciation - Building', 'مجمع إهلاك المباني', 'asset', 'C'],
-  ['20000', 'Accounts Payable', 'ذمم الموردين الدائنة', 'liability', 'C'],
-  ['21000', 'Security Deposits Held', 'تأمينات مستأجرين محتجزة', 'liability', 'C'],
-  ['21500', 'Customer Advances (Prepaid Rent)', 'دفعات عملاء مقدمة', 'liability', 'C'],
-  ['23000', 'Accrued Expenses', 'مصروفات مستحقة', 'liability', 'C'],
-  ['23100', 'Deferred Rent Revenue (Unearned)', 'إيرادات إيجار مؤجلة', 'liability', 'C'],
-  ['23200', 'VAT Payable (Output VAT)', 'ضريبة القيمة المضافة (مخرجات)', 'liability', 'C'],
-  ['39004', 'Paid-in Capital', 'رأس المال', 'equity', 'C'],
-  ['39005', 'Retained Earnings', 'أرباح مرحّلة', 'equity', 'C'],
-  ['39999', 'Opening Balance Equity', 'حقوق ملكية افتتاحية', 'equity', 'C'],
-  ['40000', 'Realized Rent Income', 'إيرادات تأجير محققة', 'income', 'C'],
-  ['40500', 'Services Income', 'إيرادات خدمات (مواقف/غسيل/صيانة)', 'income', 'C'],
-  ['41000', 'Other Income', 'إيرادات أخرى', 'income', 'C'],
-  ['61000', 'Auto Expenses', 'مصاريف سيارات', 'expense', 'D'],
-  ['62000', 'Bank Charges', 'مصاريف بنكية', 'expense', 'D'],
-  ['65000', 'Marketing & Commission', 'عمولات وتسويق', 'expense', 'D'],
-  ['68000', 'Laundry and Cleaning Expense', 'مصاريف نظافة', 'expense', 'D'],
-  ['70000', 'Maintenance & Operating Expense', 'مصاريف صيانة وتشغيل', 'expense', 'D'],
-  ['71000', 'Depreciation Expense', 'مصروف الإهلاك', 'expense', 'D'],
-  ['73000', 'Other Taxes', 'ضرائب أخرى', 'expense', 'D'],
-  ['77000', 'Salaries Expense', 'مصروف الرواتب', 'expense', 'D'],
-  ['78000', 'Utilities Expense', 'مصاريف مرافق', 'expense', 'D'],
-  ['89000', 'Other Expense', 'مصاريف أخرى', 'expense', 'D'],
-];
+// ---- Chart of accounts (full list from client) ----------------------------
+// Arabic names for the accounts that actually carry activity.
+const AR = {
+  '10000': 'الصندوق (النثرية)', '10400': 'الحساب البنكي الرئيسي', '10500': 'حساب بنكي خاص',
+  '11000': 'ذمم مدينة أخرى', '11100': 'ذمم المستأجرين المدينة', '11500': 'مخصص ديون مشكوك فيها',
+  '11600': 'ضريبة القيمة المضافة (مدخلات)', '14100': 'سلف الموظفين', '15500': 'المباني', '16900': 'الأراضي',
+  '17500': 'مجمع إهلاك المباني', '20000': 'ذمم الموردين الدائنة', '21000': 'تأمينات مستأجرين محتجزة',
+  '21500': 'دفعات عملاء مقدمة', '23000': 'مصروفات مستحقة', '23100': 'إيرادات مقدمة (إيجار)',
+  '23200': 'ضريبة القيمة المضافة (مخرجات)', '24400': 'تأمينات عملاء', '39004': 'رأس المال',
+  '39005': 'أرباح مرحّلة', '40000': 'إيرادات تأجير', '40500': 'إيرادات خدمات', '41000': 'إيرادات أخرى',
+  '61000': 'مصاريف سيارات', '62000': 'مصاريف بنكية', '64000': 'مصروف الإهلاك', '68000': 'مصاريف نظافة',
+  '70000': 'مصاريف صيانة', '73000': 'ضرائب أخرى', '77000': 'مصروف الرواتب', '78000': 'مصاريف مرافق', '89000': 'مصاريف أخرى',
+};
 const insAcc = db.prepare('INSERT OR IGNORE INTO accounts (code,name,name_ar,type,normal_balance) VALUES (?,?,?,?,?)');
-for (const a of ACCOUNTS) insAcc.run(...a);
+for (const a of DATA.accounts) insAcc.run(a.code, a.name, AR[a.code] || null, a.type, a.normal_balance);
 
 // ---- Settings -------------------------------------------------------------
 const setS = db.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)');
@@ -91,30 +70,26 @@ if (!db.prepare('SELECT COUNT(*) c FROM flats').get().c) {
   insF.run('TOWER', buildingId, 'GF', 150, 'Shop');
 }
 
-// ---- Opening balances (exact from client's TB, dated 2026-02-28) ----------
+// ---- Opening balances (31-12-2025) — opens the 2026 financial year --------
 if (!db.prepare("SELECT 1 FROM journals WHERE jtype='opening'").get()) {
-  const OB = [
-    ['10000', 183.06, 0], ['10400', 127726.79, 0], ['10500', 4710.04, 0],
-    ['11000', 555.00, 0], ['11100', 22257.50, 0], ['11500', 0, 12520.00],
-    ['15500', 2129778.00, 0], ['16900', 850000.00, 0], ['17500', 0, 702821.00],
-    ['20000', 0, 1625.23], ['23000', 0, 1884.76], ['23100', 0, 795.00],
-    ['39004', 0, 2979778.00], ['39005', 620170.82, 0],
-    ['40000', 0, 66165.00], ['41000', 0, 180.00],
-    ['61000', 135.00, 0], ['62000', 2.05, 0], ['68000', 1391.75, 0],
-    ['70000', 5649.08, 0], ['73000', 906.40, 0], ['77000', 950.00, 0],
-    ['78000', 383.50, 0], ['89000', 970.00, 0],
-  ];
   postJournal(
-    { jdate: '2026-02-28', jtype: 'opening', reference: 'OB-2026', memo: 'Opening balances (from Trial Balance)', memo_ar: 'أرصدة افتتاحية' },
-    OB.map(([code, d, c]) => ({ account_code: code, debit: d, credit: c }))
+    { jdate: '2025-12-31', jtype: 'opening', reference: 'OB-2025', memo: 'Opening balances 31-12-2025', memo_ar: 'أرصدة افتتاحية 31-12-2025' },
+    DATA.opening.map((l) => ({ account_code: l.account_code, debit: l.debit, credit: l.credit }))
   );
+  // ---- Actual 2026 journals (from the client GL, Jan–Mar) -----------------
+  for (const j of DATA.journals) {
+    postJournal(
+      { jdate: j.jdate, jtype: 'manual', reference: j.ref, memo: (j.lines[0] && j.lines[0].memo) || j.ref },
+      j.lines.map((l) => ({ account_code: l.account_code, debit: l.debit, credit: l.credit, memo: l.memo }))
+    );
+  }
 }
 
-console.log('Seed v2 complete:', {
+const tb = db.prepare(`SELECT COALESCE(SUM(l.debit),0) d, COALESCE(SUM(l.credit),0) c FROM journal_lines l`).get();
+console.log('Seed v3 complete:', {
   accounts: db.prepare('SELECT COUNT(*) c FROM accounts').get().c,
-  buildings: db.prepare('SELECT COUNT(*) c FROM buildings').get().c,
+  journals: db.prepare('SELECT COUNT(*) c FROM journals').get().c,
   flats: db.prepare('SELECT COUNT(*) c FROM flats').get().c,
-  banks: db.prepare('SELECT COUNT(*) c FROM banks').get().c,
-  payment_methods: db.prepare('SELECT COUNT(*) c FROM payment_methods').get().c,
+  ledger_debit: Math.round(tb.d * 100) / 100, ledger_credit: Math.round(tb.c * 100) / 100,
 });
 console.log('Login -> admin / admin123');

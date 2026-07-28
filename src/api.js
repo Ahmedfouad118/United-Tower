@@ -181,6 +181,15 @@ router.post('/contracts', writers, (req, res) => {
     res.json({ id });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
+router.put('/contracts/:id', writers, (req, res) => {
+  const { contract_no, flat_id, tenant_id, start_date, end_date, monthly_rent, vat_percent, deposit, remarks, contract_type, attachment } = req.body;
+  try {
+    let bid = flat_id ? db.prepare('SELECT building_id FROM flats WHERE id=?').get(flat_id)?.building_id : null;
+    db.prepare(`UPDATE contracts SET contract_no=?,flat_id=?,tenant_id=?,building_id=COALESCE(?,building_id),start_date=?,end_date=?,monthly_rent=?,vat_percent=?,deposit=?,remarks=?,contract_type=COALESCE(?,contract_type),attachment=COALESCE(?,attachment) WHERE id=?`)
+      .run(contract_no || null, flat_id, tenant_id, bid || null, start_date, end_date, monthly_rent, vat_percent ?? 5, deposit || 0, remarks || null, contract_type || null, attachment || null, req.params.id);
+    res.json({ ok: true });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
 router.post('/contracts/:id/terminate', writers, (req, res) => {
   try { res.json(svc.terminateContract(Number(req.params.id), req.body.date, req.body.settled_amount, req.user.id)); }
   catch (e) { res.status(400).json({ error: e.message }); }
@@ -241,6 +250,12 @@ router.get('/payments', (req, res) => res.json(db.prepare(
    ORDER BY p.pdate DESC, p.id DESC LIMIT 500`).all()));
 router.post('/payments', writers, (req, res) => {
   try { res.json(svc.recordPayment(req.body, req.user.id)); } catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.put('/payments/:id', writers, (req, res) => {
+  const p = db.prepare('SELECT voucher_no FROM payments WHERE id=?').get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'not found' });
+  try { svc.deletePayment(Number(req.params.id)); res.json(svc.recordPayment({ ...req.body, voucher_no: req.body.voucher_no || p.voucher_no }, req.user.id)); }
+  catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.delete('/payments/:id', writers, (req, res) => { svc.deletePayment(Number(req.params.id)); res.json({ ok: true }); });
 

@@ -134,8 +134,10 @@ const Pages = (() => {
       { key: 'start_date', label: t('start_date'), render: (r) => dateStr(r.start_date) },
       { key: 'end_date', label: t('end_date'), render: (r) => dateStr(r.end_date) },
       { key: 'monthly_rent', label: t('rent'), num: true, render: (r) => money(r.monthly_rent) },
+      { key: 'contract_type', label: 'النوع', render: (r) => ({ residential: 'سكني', commercial: 'تجاري', shop: 'محل' }[r.contract_type] || r.contract_type || '') },
       { key: 'status', label: t('status'), render: (r) => statusBadge(r.status) },
-      { key: '_a', label: t('actions'), render: (r) => actions(r.id, r.status === 'active' && canWrite() ? ['view', 'terminate'] : ['view']).replace('data-act="terminate"', 'data-act="terminate"') + (r.status === 'active' && canWrite() ? `<button class="ico-btn" data-act="terminate" data-id="${r.id}" title="${t('terminate')}">⛔</button>` : '') },
+      { key: '_a', label: t('actions'), render: (r) => actions(r.id, canDo('add') || canDo('edit')
+        ? (r.status === 'active' ? ['view', 'edit', 'terminate'] : ['view', 'edit']) : ['view']) },
     ];
     const draw = (rs) => c.querySelector('#ct').innerHTML = table(cols, rs);
     draw(rows); wireToolbar(c, tbCfg, draw, rows);
@@ -145,6 +147,7 @@ const Pages = (() => {
       const r = rows.find((x) => x.id === +btn.dataset.id);
       if (btn.dataset.act === 'terminate') return terminate(r.id, () => { clearCache(); contracts(c); });
       if (btn.dataset.act === 'view') return contractView(r);
+      if (btn.dataset.act === 'edit') return contractForm(fl, tn, () => { clearCache(); contracts(c); }, r);
     };
   }
   function contractView(r) {
@@ -157,28 +160,32 @@ const Pages = (() => {
       <tr><td>${t('deposit')}</td><td>${money(r.deposit)}</td></tr>
       <tr><td>${t('status')}</td><td>${statusBadge(r.status)}</td></tr></table>` });
   }
-  function contractForm(fl, tn, done) {
+  function contractForm(fl, tn, done, row) {
+    const edit = !!row;
     formModal({
-      title: t('add') + ' — ' + t('m_contracts'), wide: true,
+      title: (edit ? t('edit') : t('add')) + ' — ' + t('m_contracts'), wide: true,
+      values: row || {},
       fields: [
         { key: 'flat_id', label: t('unit'), type: 'select', options: fl.map((f) => ({ value: f.id, label: f.code })), required: true },
         { key: 'tenant_id', label: t('tenant'), type: 'select', options: [{ value: '', label: '— جديد —' }].concat(tn.map((x) => ({ value: x.id, label: x.name }))) },
-        { key: '_newtenant', label: 'اسم عميل جديد', full: true },
+        ...(edit ? [] : [{ key: '_newtenant', label: 'اسم عميل جديد', full: true }]),
         { key: 'contract_no', label: 'رقم العقد' },
         { key: 'contract_type', label: 'نوع الوحدة', type: 'select', options: [{ value: 'residential', label: 'سكني' }, { value: 'commercial', label: 'تجاري' }, { value: 'shop', label: 'محل' }] },
         { key: 'monthly_rent', label: t('rent'), type: 'number', step: '0.001', required: true },
-        { key: 'start_date', label: t('start_date'), type: 'date', value: today() },
-        { key: 'end_date', label: t('end_date'), type: 'date' },
+        { key: 'start_date', label: t('start_date'), type: 'date', value: today(), required: true },
+        { key: 'end_date', label: t('end_date'), type: 'date', required: true },
         { key: 'vat_percent', label: t('vat') + ' %', type: 'number', value: 5 },
         { key: 'deposit', label: t('deposit'), type: 'number', step: '0.001', value: 0 },
         { key: 'attachment', label: '📎 صورة العقد', type: 'file', accept: 'image/*,.pdf', full: true },
-        { key: 'backfill', label: 'توليد الفواتير من بداية العقد حتى الآن', type: 'checkbox', full: true },
+        ...(edit ? [] : [{ key: 'backfill', label: 'توليد الفواتير من بداية العقد حتى الآن', type: 'checkbox', full: true }]),
       ],
       onSave: async (data, close) => {
+        if (Date.parse(data.end_date) <= Date.parse(data.start_date)) return toast('تاريخ النهاية لازم يكون بعد البداية', 'err');
         let tid = data.tenant_id;
         if (!tid && data._newtenant) tid = (await API.post('/tenants', { name: data._newtenant })).id;
         if (!tid) return toast('اختر عميل أو اكتب اسم', 'err');
-        await API.post('/contracts', { ...data, tenant_id: +tid });
+        if (edit) await API.put('/contracts/' + row.id, { ...data, tenant_id: +tid });
+        else await API.post('/contracts', { ...data, tenant_id: +tid });
         toast(t('saved')); close(); clearCache(); done();
       },
     });
@@ -288,7 +295,7 @@ const Pages = (() => {
       { key: 'amount', label: t('amount'), num: true, render: (r) => money(r.amount) },
       { key: 'applied_amount', label: 'سداد', num: true, render: (r) => money(r.applied_amount) },
       { key: 'advance_amount', label: 'مقدم', num: true, render: (r) => money(r.advance_amount) },
-      { key: '_a', label: t('actions'), render: (r) => actions(r.id, ['print', 'delete']) },
+      { key: '_a', label: t('actions'), render: (r) => actions(r.id, canDo('edit') ? ['print', 'edit', 'delete'] : ['print']) },
     ];
     const draw = (rs) => c.querySelector('#pt').innerHTML = table(cols, rs);
     draw(rows); wireToolbar(c, tbCfg, draw, rows);
@@ -298,10 +305,12 @@ const Pages = (() => {
       const r = rows.find((x) => x.id === +btn.dataset.id);
       if (btn.dataset.act === 'delete') { if (confirm(t('confirm_delete'))) { await API.del('/payments/' + r.id); toast(t('deleted')); receipts(c); } }
       if (btn.dataset.act === 'print') voucherPrint('سند قبض', r, r.tenant);
+      if (btn.dataset.act === 'edit') receiptForm(tn, fl, pm, () => receipts(c), r);
     };
   }
-  function receiptForm(tn, fl, pm, done) {
-    formModal({ title: 'سند قبض', wide: true, fields: [
+  function receiptForm(tn, fl, pm, done, row) {
+    const edit = !!row;
+    formModal({ title: 'سند قبض' + (edit ? ' (تعديل)' : ''), wide: true, values: row || {}, fields: [
       { key: 'tenant_id', label: t('tenant'), type: 'select', options: tn.map((x) => ({ value: x.id, label: x.name })), required: true },
       { key: 'flat_id', label: t('unit'), type: 'select', options: [{ value: '', label: '—' }].concat(fl.map((f) => ({ value: f.id, label: f.code }))) },
       { key: 'amount', label: t('amount'), type: 'number', step: '0.001', required: true },
@@ -310,7 +319,10 @@ const Pages = (() => {
       { key: 'cash_account', label: t('account'), type: 'select', options: [{ value: '10400', label: 'بنك' }, { value: '10000', label: 'خزينة' }] },
       { key: 'cheque_no', label: 'رقم الشيك' },
       { key: 'memo', label: t('description'), full: true },
-    ], onSave: async (d, close) => { const r = await API.post('/payments', d); toast(`تم — سداد ${money(r.applied)} · مقدم ${money(r.advance)}`); close(); done(); } });
+    ], onSave: async (d, close) => {
+      const r = edit ? await API.put('/payments/' + row.id, d) : await API.post('/payments', d);
+      toast(`تم — سداد ${money(r.applied)} · مقدم ${money(r.advance)}`); close(); done();
+    } });
   }
   function voucherPrint(title, r, party) {
     const html = `<div class="krow"><div><b>${t('voucher')}:</b> ${esc(r.voucher_no || '')}</div><div><b>${t('date')}:</b> ${dateStr(r.pdate)}</div></div>

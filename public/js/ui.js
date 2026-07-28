@@ -91,7 +91,7 @@ const UI = (() => {
   }
 
   // ---- Row action icons ----------------------------------------------------
-  const A = { view: '👁', edit: '✏️', delete: '🗑', print: '🖨', email: '✉️' };
+  const A = { view: '👁', edit: '✏️', delete: '🗑', print: '🖨', email: '✉️', terminate: '⛔', pdf: '📄' };
   function actions(id, which = ['view', 'edit', 'delete']) {
     return `<span class="row-actions">` + which.map((a) =>
       `<button class="ico-btn" data-act="${a}" data-id="${id}" title="${t(a)}">${A[a]}</button>`).join('') + `</span>`;

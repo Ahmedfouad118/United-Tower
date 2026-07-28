@@ -172,6 +172,16 @@ router.post('/:type', upload.single('file'), (req, res) => {
           db.prepare('INSERT INTO bank_statement_lines (bank_id,txn_date,description,debit,credit) VALUES (?,?,?,?,?)')
             .run(bankId, date, norm(pick(row, ['description', 'بيان', 'وصف'])), debit, credit);
           result.inserted++;
+        } else if (type === 'cheques') {
+          const chqNo = norm(pick(row, ['cheque no', 'رقم الشيك', 'cheque']));
+          const amount = num(pick(row, ['amount', 'مبلغ']));
+          if (!chqNo && amount <= 0) { result.skipped++; continue; }
+          const dir = norm(pick(row, ['direction', 'النوع'])).toLowerCase().includes('out') ? 'outgoing' : 'incoming';
+          const bName = norm(pick(row, ['bank', 'بنك']));
+          const bid = bName ? db.prepare('SELECT id FROM banks WHERE name=? OR name_ar=?').get(bName, bName)?.id : null;
+          db.prepare(`INSERT INTO cheques (direction,cheque_no,bank_id,party,amount,issue_date,due_date,status) VALUES (?,?,?,?,?,?,?,'pending')`)
+            .run(dir, chqNo, bid, norm(pick(row, ['party', 'الطرف'])), amount, toDate(pick(row, ['issue date', 'تاريخ الإصدار'])), toDate(pick(row, ['due date', 'الاستحقاق'])));
+          result.inserted++;
         } else if (type === 'journals') {
           // journals handled in bulk after the loop
         } else {
