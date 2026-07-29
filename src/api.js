@@ -8,27 +8,6 @@ const { postJournal } = require('./ledger');
 const router = express.Router();
 const writers = requireRole('admin', 'accountant');
 
-// TEMP diagnostic: list /data db files and their row counts (admin only). Remove after recovery.
-router.get('/_diag', requireRole('admin'), (req, res) => {
-  const fs = require('fs'); const path = require('path'); const { DatabaseSync } = require('node:sqlite');
-  const dir = path.dirname(process.env.UT_DB || '/data/app.db');
-  const out = { dir, current_db: process.env.UT_DB, files: [] };
-  try {
-    for (const f of fs.readdirSync(dir)) {
-      const full = path.join(dir, f); const st = fs.statSync(full);
-      const row = { name: f, size: st.size };
-      if (f.endsWith('.db')) {
-        try { const d = new DatabaseSync(full, { readOnly: true });
-          for (const tbl of ['tenants', 'contracts', 'invoices', 'payments', 'journals']) {
-            try { row[tbl] = d.prepare(`SELECT COUNT(*) c FROM ${tbl}`).get().c; } catch { row[tbl] = 'n/a'; }
-          } d.close();
-        } catch (e) { row.err = e.message; }
-      }
-      out.files.push(row);
-    }
-  } catch (e) { out.error = e.message; }
-  res.json(out);
-});
 const lang = (req) => req.headers['x-lang'] || req.query.lang || (req.user && req.user.lang) || 'en';
 
 // ---- Building-level access control ---------------------------------------
