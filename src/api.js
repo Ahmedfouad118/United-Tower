@@ -1,5 +1,5 @@
 const express = require('express');
-const { db } = require('./db');
+const { db, DB_PATH } = require('./db');
 const { login, authMiddleware, requireRole, hash } = require('./auth');
 const svc = require('./services');
 const R = require('./reports');
@@ -7,6 +7,24 @@ const { postJournal } = require('./ledger');
 
 const router = express.Router();
 const writers = requireRole('admin', 'accountant');
+
+// Download a full backup of the live database (admin only).
+router.get('/backup', (req, res) => {
+  // token can come via header or ?token= (so a plain browser link works)
+  const jwt = require('jsonwebtoken'); const { SECRET } = require('./auth');
+  const tok = (req.headers.authorization || '').replace('Bearer ', '') || req.query.token;
+  let user; try { user = jwt.verify(tok, SECRET); } catch { return res.status(401).json({ error: 'unauthorized' }); }
+  if (user.role !== 'admin') return res.status(403).json({ error: 'forbidden' });
+  try {
+    const fs = require('fs');
+    // checkpoint WAL into the main file so the copy is complete
+    try { db.exec('PRAGMA wal_checkpoint(TRUNCATE)'); } catch {}
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="united-tower-backup-${stamp}.db"`);
+    fs.createReadStream(DB_PATH).pipe(res);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 const lang = (req) => req.headers['x-lang'] || req.query.lang || (req.user && req.user.lang) || 'en';
 
