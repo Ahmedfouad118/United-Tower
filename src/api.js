@@ -205,6 +205,10 @@ router.delete('/contracts/:id', writers, (req, res) => {
   db.prepare('DELETE FROM contracts WHERE id=?').run(id);
   res.json({ ok: true });
 });
+router.put('/contracts/:id/status', writers, (req, res) => {
+  db.prepare('UPDATE contracts SET status=? WHERE id=?').run(req.body.status || 'active', req.params.id);
+  res.json({ ok: true });
+});
 router.post('/contracts/:id/terminate', writers, (req, res) => {
   try { res.json(svc.terminateContract(Number(req.params.id), req.body.date, req.body.settled_amount, req.user.id)); }
   catch (e) { res.status(400).json({ error: e.message }); }

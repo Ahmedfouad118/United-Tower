@@ -115,6 +115,9 @@ input,select,textarea{font-family:inherit;font-size:14px}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{padding:9px 12px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
 th{color:var(--muted);font-weight:600;font-size:12px;background:#f7f9fc;position:sticky;top:0}
+th.th-sort{cursor:pointer;user-select:none}
+th.th-sort:hover{color:var(--brand)}
+th .sort-ar{font-size:10px;color:var(--brand)}
 tbody tr:hover{background:#f7fafd}
 td.num,th.num{text-align:left;font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
 tfoot td{font-weight:700;background:#f5f8fc;border-top:2px solid var(--line)}

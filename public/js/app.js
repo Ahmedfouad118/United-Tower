@@ -190,7 +190,7 @@
     const view = document.getElementById('view');
     const fn = item && Pages[item.page];
     if (!fn) { view.innerHTML = '<div class="empty">الصفحة غير موجودة</div>'; return; }
-    try { await fn(view, params); } catch (e) { view.innerHTML = `<div class="empty">خطأ: ${esc(e.message)}</div>`; console.error(e); }
+    try { await fn(view, params); UI.makeSortable(view); } catch (e) { view.innerHTML = `<div class="empty">خطأ: ${esc(e.message)}</div>`; console.error(e); }
   }
 
   window.addEventListener('hashchange', route);

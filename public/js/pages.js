@@ -27,12 +27,14 @@ const Pages = (() => {
       onImport: (cfg.import && canDo('add')) ? () => importModal(cfg.type, cfg.importExtra, () => masterScreen(c, cfg)) : null,
       newLabel: cfg.newLabel, onNew: canDo('add') ? () => openForm(cfg) : null,
     };
-    c.innerHTML = toolbar(tbCfg) + `<div class="card"><div class="hd"><h3>${esc(cfg.title)}</h3>
-      <button class="btn sm btn-print">🖨 ${t('print')}</button></div><div id="mtbl"></div></div>`;
     const idKey = cfg.idKey || 'id';
+    const canDel = canDo('delete');
+    c.innerHTML = toolbar(tbCfg) + `<div class="card"><div class="hd"><h3>${esc(cfg.title)}</h3>
+      <div style="display:flex;gap:6px">${canDel ? UI.bulkDelHTML() : ''}<button class="btn sm btn-print">🖨 ${t('print')}</button></div></div><div id="mtbl"></div></div>`;
     const rowActs = (cfg.rowActions || ['edit', 'delete']).filter((a) => a === 'view' ? canDo('view') : canDo(a));
-    const cols = cfg.columns.concat(rowActs.length ? [{ key: '_a', label: t('actions'), render: (r) => actions(r[idKey], rowActs) }] : []);
-    const draw = (rs) => c.querySelector('#mtbl').innerHTML = table(cols, rs);
+    const selCol = canDel ? [{ key: '_s', label: '<input type="checkbox" class="sel-all">', render: (r) => `<input type="checkbox" class="row-sel" data-id="${r[idKey]}">` }] : [];
+    const cols = selCol.concat(cfg.columns).concat(rowActs.length ? [{ key: '_a', label: t('actions'), render: (r) => actions(r[idKey], rowActs) }] : []);
+    const draw = (rs) => { c.querySelector('#mtbl').innerHTML = table(cols, rs); UI.makeSortable(c); UI.wireBulk(c, (id) => API.del('/' + cfg.endpoint + '/' + id), () => { clearCache(); masterScreen(c, cfg); }); };
     draw(rows);
     wireToolbar(c, tbCfg, draw, rows);
     c.querySelector('.btn-print').onclick = () => printTable(cfg.title, cfg.columns, rows);
@@ -137,8 +139,10 @@ const Pages = (() => {
       exportType: 'contracts', templateType: 'contracts',
       onImport: () => importModal('contracts', `<label style="display:block;margin-top:6px"><input type="checkbox" id="imp-backfill" style="width:auto"> توليد الفواتير بعد الاستيراد</label>`, () => contracts(c)),
       onNew: canWrite() ? () => contractForm(fl, tn, () => contracts(c)) : null, newLabel: t('m_contracts') };
-    c.innerHTML = toolbar(tbCfg) + `<div class="card"><div class="hd"><h3>${t('m_contracts')}</h3><button class="btn sm btn-print">🖨 ${t('print')}</button></div><div id="ct"></div></div>`;
+    const canDel = canDo('delete');
+    c.innerHTML = toolbar(tbCfg) + `<div class="card"><div class="hd"><h3>${t('m_contracts')}</h3><div style="display:flex;gap:6px">${canDel ? UI.bulkDelHTML() : ''}<button class="btn sm btn-print">🖨 ${t('print')}</button></div></div><div id="ct"></div></div>`;
     const cols = [
+      ...(canDel ? [{ key: '_s', label: '<input type="checkbox" class="sel-all">', render: (r) => `<input type="checkbox" class="row-sel" data-id="${r.id}">` }] : []),
       { key: 'flat', label: t('unit') }, { key: 'tenant', label: t('tenant') }, { key: 'contract_no', label: 'العقد' },
       { key: 'start_date', label: t('start_date'), render: (r) => dateStr(r.start_date) },
       { key: 'end_date', label: t('end_date'), render: (r) => dateStr(r.end_date) },
@@ -147,19 +151,31 @@ const Pages = (() => {
       { key: 'status', label: t('status'), render: (r) => statusBadge(r.status) },
       { key: '_a', label: t('actions'), render: (r) => actions(r.id,
         [...(canDo('view') ? ['view'] : []), ...(canDo('edit') ? ['edit'] : []),
-         ...(canDo('edit') && r.status === 'active' ? ['terminate'] : []), ...(canDo('delete') ? ['delete'] : [])]) },
+         ...(canDo('add') ? ['renew'] : []),
+         ...(canDo('edit') && r.status === 'active' ? ['terminate'] : []), ...(canDel ? ['delete'] : [])]) },
     ];
-    const draw = (rs) => c.querySelector('#ct').innerHTML = table(cols, rs);
+    const draw = (rs) => { c.querySelector('#ct').innerHTML = table(cols, rs); UI.makeSortable(c); UI.wireBulk(c, (id) => API.del('/contracts/' + id), () => { clearCache(); contracts(c); }); };
     draw(rows); wireToolbar(c, tbCfg, draw, rows);
-    c.querySelector('.btn-print').onclick = () => printTable(t('m_contracts'), cols.slice(0, -1), rows);
+    c.querySelector('.btn-print').onclick = () => printTable(t('m_contracts'), cols.filter((x) => x.key !== '_s' && x.key !== '_a'), rows);
     c.querySelector('#ct').onclick = (e) => {
       const btn = e.target.closest('[data-act]'); if (!btn) return;
       const r = rows.find((x) => x.id === +btn.dataset.id);
       if (btn.dataset.act === 'terminate') return terminate(r.id, () => { clearCache(); contracts(c); });
       if (btn.dataset.act === 'view') return contractView(r);
       if (btn.dataset.act === 'edit') return contractForm(fl, tn, () => { clearCache(); contracts(c); }, r);
+      if (btn.dataset.act === 'renew') return renewContract(r, fl, tn, () => { clearCache(); contracts(c); });
       if (btn.dataset.act === 'delete') { if (confirm(t('confirm_delete') + '\nسيتم حذف العقد وفواتيره غير المدفوعة.')) API.del('/contracts/' + r.id).then(() => { toast(t('deleted')); clearCache(); contracts(c); }).catch((e) => toast(e.message, 'err')); return; }
     };
+  }
+  // Renew: pre-fill a new contract starting the day after the old one ends (+1 year),
+  // and mark the old contract expired.
+  function renewContract(r, fl, tn, done) {
+    const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
+    const addYear = (d) => { const x = new Date(d); x.setFullYear(x.getFullYear() + 1); return x.toISOString().slice(0, 10); };
+    const start = r.end_date ? addDays(r.end_date, 1) : today();
+    const seed = { flat_id: r.flat_id, tenant_id: r.tenant_id, contract_no: '', contract_type: r.contract_type,
+      monthly_rent: r.monthly_rent, start_date: start, end_date: addYear(start), vat_percent: r.vat_percent, deposit: 0 };
+    contractForm(fl, tn, async () => { try { await API.put('/contracts/' + r.id + '/status', { status: 'expired' }); } catch {} done(); }, null, seed, 'تجديد العقد');
   }
   function contractView(r) {
     modal({ title: 'عقد ' + (r.contract_no || r.id), bodyHTML: `<table>
@@ -171,11 +187,11 @@ const Pages = (() => {
       <tr><td>${t('deposit')}</td><td>${money(r.deposit)}</td></tr>
       <tr><td>${t('status')}</td><td>${statusBadge(r.status)}</td></tr></table>` });
   }
-  function contractForm(fl, tn, done, row) {
+  function contractForm(fl, tn, done, row, seed, titleOverride) {
     const edit = !!row;
     formModal({
-      title: (edit ? t('edit') : t('add')) + ' — ' + t('m_contracts'), wide: true,
-      values: row || {},
+      title: titleOverride || (edit ? t('edit') : t('add')) + ' — ' + t('m_contracts'), wide: true,
+      values: row || seed || {},
       fields: [
         { key: 'flat_id', label: t('unit'), type: 'select', options: fl.map((f) => ({ value: f.id, label: f.code })), required: true },
         { key: 'tenant_id', label: t('tenant'), type: 'select', options: [{ value: '', label: '— جديد —' }].concat(tn.map((x) => ({ value: x.id, label: x.name }))) },
@@ -219,9 +235,10 @@ const Pages = (() => {
       onNew: canWrite() ? () => genInvoices(period, () => invoices(c)) : null, newLabel: t('generate_invoices') };
     c.innerHTML = toolbar(tbCfg) + `<div class="card"><div class="hd"><h3>${t('m_invoices')} — ${period}</h3>
       <div style="display:flex;gap:6px"><button class="btn sm" id="printsel">🖨 طباعة المحدد</button><button class="btn sm" id="emailsel">📧 إيميل المحدد</button>
+      ${canDo('delete') ? UI.bulkDelHTML() : ''}
       ${canWrite() ? `<button class="btn sm teal" id="recog">${t('recognize')}</button>` : ''}</div></div><div id="it"></div></div>`;
     const cols = [
-      { key: '_c', label: '', render: (r) => `<input type="checkbox" class="inv-chk" data-id="${r.id}">` },
+      { key: '_c', label: '<input type="checkbox" class="sel-all">', render: (r) => `<input type="checkbox" class="inv-chk row-sel" data-id="${r.id}">` },
       { key: 'invoice_no', label: 'رقم الفاتورة' }, { key: 'tenant', label: t('tenant') }, { key: 'flat', label: t('unit') },
       { key: 'due_date', label: t('due_date'), render: (r) => dateStr(r.due_date) },
       { key: 'rent_amount', label: t('rent'), num: true, render: (r) => money(r.rent_amount) },
@@ -231,7 +248,7 @@ const Pages = (() => {
       { key: 'status', label: t('status'), render: (r) => statusBadge(r.status) },
       { key: '_a', label: t('actions'), render: (r) => actions(r.id, canDo('edit') && r.paid_amount <= 0 ? ['view', 'print', 'email', 'edit', 'delete'] : ['view', 'print', 'email']) },
     ];
-    const draw = (rs) => c.querySelector('#it').innerHTML = table(cols, rs);
+    const draw = (rs) => { c.querySelector('#it').innerHTML = table(cols, rs); UI.makeSortable(c); UI.wireBulk(c, (id) => API.del('/invoices/' + id), () => invoices(c)); };
     draw(rows); wireToolbar(c, tbCfg, draw, rows);
     c.querySelector('#iper').onchange = (e) => { c._period = e.target.value; invoices(c); };
     const rb = c.querySelector('#recog'); if (rb) rb.onclick = async () => { const r = await API.post('/recognition/run', { period }); toast(`تم تحقّق ${r.recognized}`); invoices(c); };

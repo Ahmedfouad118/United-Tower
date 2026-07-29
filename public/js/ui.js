@@ -31,7 +31,8 @@ const UI = (() => {
 
   function table(cols, rows, { foot, empty } = {}) {
     if (!rows || !rows.length) return `<div class="empty">${empty || t('no_data')}</div>`;
-    const head = cols.map((c) => `<th class="${c.num ? 'num' : ''}">${esc(c.label)}</th>`).join('');
+    const head = cols.map((c, i) => { const isHtml = /^\s*</.test(c.label || ''); const sortable = c.label && !isHtml;
+      return `<th class="${c.num ? 'num ' : ''}${sortable ? 'th-sort' : ''}" data-ci="${i}">${isHtml ? c.label : esc(c.label)}${sortable ? '<span class="sort-ar"></span>' : ''}</th>`; }).join('');
     const body = rows.map((r) => '<tr>' + cols.map((c) => {
       const v = c.render ? c.render(r) : r[c.key];
       return `<td class="${c.num ? 'num' : ''}">${v == null ? '' : v}</td>`;
@@ -91,7 +92,7 @@ const UI = (() => {
   }
 
   // ---- Row action icons ----------------------------------------------------
-  const A = { view: '👁', edit: '✏️', delete: '🗑', print: '🖨', email: '✉️', terminate: '⛔', pdf: '📄' };
+  const A = { view: '👁', edit: '✏️', delete: '🗑', print: '🖨', email: '✉️', terminate: '⛔', pdf: '📄', renew: '🔄' };
   function actions(id, which = ['view', 'edit', 'delete']) {
     return `<span class="row-actions">` + which.map((a) =>
       `<button class="ico-btn" data-act="${a}" data-id="${id}" title="${t(a)}">${A[a]}</button>`).join('') + `</span>`;
@@ -192,6 +193,59 @@ const UI = (() => {
     w.document.close();
   }
 
+  // ---- Bulk select + delete -------------------------------------------------
+  // container must contain: a `.sel-all` header checkbox, `.row-sel[data-id]`
+  // row checkboxes, and a `.bulk-del` button. `del(id)` deletes one row.
+  function bulkDelHTML(count) { return `<button class="btn sm danger bulk-del" style="display:none">🗑 مسح المحدد (<span class="bulk-n">0</span>)</button>`; }
+  function wireBulk(c, del, done) {
+    const btn = c.querySelector('.bulk-del'); if (!btn) return;
+    const selAll = c.querySelector('.sel-all');
+    const refresh = () => {
+      const n = c.querySelectorAll('.row-sel:checked').length;
+      btn.style.display = n ? 'inline-flex' : 'none';
+      const s = btn.querySelector('.bulk-n'); if (s) s.textContent = n;
+    };
+    c.addEventListener('change', (e) => {
+      if (e.target.classList.contains('sel-all')) c.querySelectorAll('.row-sel').forEach((x) => x.checked = e.target.checked);
+      if (e.target.classList.contains('row-sel') || e.target.classList.contains('sel-all')) refresh();
+    });
+    btn.onclick = async () => {
+      const ids = [...c.querySelectorAll('.row-sel:checked')].map((x) => x.dataset.id);
+      if (!ids.length) return;
+      if (!confirm(`مسح ${ids.length} عنصر؟`)) return;
+      let ok = 0, fail = 0;
+      for (const id of ids) { try { await del(id); ok++; } catch { fail++; } }
+      toast(`تم مسح ${ok}` + (fail ? ` · فشل ${fail}` : ''), fail ? 'err' : 'ok');
+      done();
+    };
+    if (selAll) selAll.onclick = null;
+    refresh();
+  }
+
+  // ---- Make any rendered table sortable by clicking a column header --------
+  function makeSortable(root) {
+    (root || document).querySelectorAll('table').forEach((tbl) => {
+      const ths = tbl.querySelectorAll('thead th.th-sort');
+      ths.forEach((th) => th.onclick = () => {
+        const ci = +th.dataset.ci, tbody = tbl.querySelector('tbody'); if (!tbody) return;
+        const asc = th.dataset.dir !== 'asc';
+        ths.forEach((o) => { o.dataset.dir = ''; const a = o.querySelector('.sort-ar'); if (a) a.textContent = ''; });
+        th.dataset.dir = asc ? 'asc' : 'desc';
+        const ar = th.querySelector('.sort-ar'); if (ar) ar.textContent = asc ? ' ▲' : ' ▼';
+        const rows = [...tbody.querySelectorAll('tr')];
+        rows.sort((a, b) => {
+          const av = (a.children[ci] ? a.children[ci].textContent : '').trim();
+          const bv = (b.children[ci] ? b.children[ci].textContent : '').trim();
+          const an = parseFloat(av.replace(/[^0-9.\-]/g, '')), bn = parseFloat(bv.replace(/[^0-9.\-]/g, ''));
+          const numeric = av !== '' && bv !== '' && !isNaN(an) && !isNaN(bn) && /[0-9]/.test(av) && /[0-9]/.test(bv);
+          const cmp = numeric ? an - bn : av.localeCompare(bv, 'ar');
+          return asc ? cmp : -cmp;
+        });
+        rows.forEach((r) => tbody.appendChild(r));
+      });
+    });
+  }
+
   return { el, esc, fmt, money, int, dateStr, today, curMonth, toast, modal, table, badge, statusBadge,
-    barChart, toolbar, wireToolbar, actions, importModal, formModal, printReport };
+    barChart, toolbar, wireToolbar, actions, importModal, formModal, printReport, makeSortable, bulkDelHTML, wireBulk };
 })();

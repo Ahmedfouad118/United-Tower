@@ -423,14 +423,16 @@ Object.assign(Pages, (() => {
     const tbCfg = { search: true, searchFn: (rs, q) => rs.filter((r) => [r.reference, r.memo, r.jtype].join(' ').toLowerCase().includes(q)),
       exportType: 'journals', templateType: 'journals', onImport: () => importModal('journals', '', () => journals(c)),
       onNew: canWrite() ? () => manualJournal(null, () => journals(c)) : null, newLabel: 'قيد يدوي' };
-    c.innerHTML = toolbar(tbCfg) + `<div class="card"><div class="hd"><h3>${t('m_journals')}</h3><button class="btn sm btn-print">🖨</button></div><div id="jt"></div></div>`;
-    const cols = [{ key: 'jdate', label: t('date'), render: (r) => dateStr(r.jdate) }, { key: 'jtype', label: 'النوع', render: (r) => JL[r.jtype] || r.jtype },
+    const canDel = canDo('delete');
+    c.innerHTML = toolbar(tbCfg) + `<div class="card"><div class="hd"><h3>${t('m_journals')}</h3><div style="display:flex;gap:6px">${canDel ? UI.bulkDelHTML() : ''}<button class="btn sm btn-print">🖨</button></div></div><div id="jt"></div></div>`;
+    const cols = [...(canDel ? [{ key: '_s', label: '<input type="checkbox" class="sel-all">', render: (r) => `<input type="checkbox" class="row-sel" data-id="${r.id}">` }] : []),
+      { key: 'jdate', label: t('date'), render: (r) => dateStr(r.jdate) }, { key: 'jtype', label: 'النوع', render: (r) => JL[r.jtype] || r.jtype },
       { key: 'reference', label: 'المرجع' }, { key: 'memo', label: t('description') },
       { key: 'total', label: 'الإجمالي', num: true, render: (r) => `<b>${money(r.total)}</b>` },
       { key: '_a', label: t('actions'), render: (r) => actions(r.id, canDo('edit') ? ['view', 'edit', 'print', 'delete'] : ['view', 'print']) }];
-    const draw = (rs) => c.querySelector('#jt').innerHTML = table(cols, rs);
+    const draw = (rs) => { c.querySelector('#jt').innerHTML = table(cols, rs); UI.makeSortable(c); UI.wireBulk(c, (id) => API.del('/journals/' + id), () => journals(c)); };
     draw(rows); wireToolbar(c, tbCfg, draw, rows);
-    c.querySelector('.btn-print').onclick = () => printTable(t('m_journals'), cols.slice(0, -1), rows);
+    c.querySelector('.btn-print').onclick = () => printTable(t('m_journals'), cols.filter((x) => x.key !== '_s' && x.key !== '_a'), rows);
     c.querySelector('#jt').onclick = async (e) => {
       const b = e.target.closest('[data-act]'); if (!b) return;
       const id = b.dataset.id, r = rows.find((x) => String(x.id) === String(id));

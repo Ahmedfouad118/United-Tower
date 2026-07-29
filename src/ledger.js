@@ -68,8 +68,17 @@ function postJournal(head, lines) {
   return jid;
 }
 
+// tables/columns that hold a foreign key to journals(id)
+const JOURNAL_REFS = [
+  ['invoices', 'issue_journal'], ['invoices', 'recog_journal'], ['payments', 'journal_id'],
+  ['vendor_bills', 'journal_id'], ['vendor_payments', 'journal_id'], ['contracts', 'deposit_journal'],
+  ['cheques', 'journal_id'], ['payroll_runs', 'journal_id'], ['depreciation_runs', 'journal_id'],
+];
 function deleteJournal(jid) {
   if (!jid) return;
+  // clear every incoming FK reference so the journal can be removed cleanly
+  for (const [tbl, col] of JOURNAL_REFS) { try { db.prepare(`UPDATE ${tbl} SET ${col}=NULL WHERE ${col}=?`).run(jid); } catch {} }
+  try { db.prepare('UPDATE bank_statement_lines SET reconciled=0, journal_line_id=NULL WHERE journal_line_id IN (SELECT id FROM journal_lines WHERE journal_id=?)').run(jid); } catch {}
   db.prepare('DELETE FROM journal_lines WHERE journal_id = ?').run(jid);
   db.prepare('DELETE FROM journals WHERE id = ?').run(jid);
 }
