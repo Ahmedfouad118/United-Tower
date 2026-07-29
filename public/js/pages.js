@@ -64,13 +64,19 @@ const Pages = (() => {
   // =========================================================== DASHBOARD
   async function dashboard(c) {
     loading(c);
-    const d = await API.get('/reports/dashboard' + (window.UT ? UT.bq(true) : ''));
+    const from = c._dfrom || '', to = c._dto || '';
+    const qs = '?' + (window.UT && UT.building ? 'building_id=' + UT.building + '&' : '') + (from ? 'from=' + from + '&' : '') + (to ? 'to=' + to : '');
+    const d = await API.get('/reports/dashboard' + qs);
     const ag = d.aging_buckets;
     const exp = d.expiring_contracts || [];
     const kpi = (lbl, val, sub, ico, cls) => `<div class="card kpi ${cls}"><div class="ico">${ico}</div>
       <div class="lbl">${lbl}</div><div class="val mono">${val}</div><div class="sub">${sub}</div></div>`;
     c.innerHTML = `
-      <div class="toolbar"><div class="spacer"></div><button class="btn" id="dashprint">🖨 ${t('print')}</button></div>
+      <div class="toolbar">
+        <div class="field" style="margin:0"><label>${t('from')}</label><input type="date" id="dfrom" value="${from}"></div>
+        <div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="dto" value="${to}"></div>
+        ${from || to ? '<button class="btn sm" id="dclear">↺</button>' : ''}
+        <div class="spacer"></div><button class="btn" id="dashprint">🖨 ${t('print')}</button></div>
       <div class="grid g-4">
         ${kpi(t('occupancy_rate'), d.occupancy_rate + '%', `${d.occupied} ${t('occupied')} · ${d.vacant} ${t('vacant')}`, '🏢', 'k-blue')}
         ${kpi(t('collected_month'), money(d.collected_this_month), 'OMR', '💰', 'k-green')}
@@ -94,6 +100,9 @@ const Pages = (() => {
           { key: 'monthly_rent', label: t('rent'), num: true, render: (r) => money(r.monthly_rent) },
         ], exp, { empty: 'لا يوجد عقود قرب انتهائها' })}</div></div>`;
     c.querySelector('#dashprint').onclick = () => printReport(t('m_dashboard'), c.innerHTML.replace(/<div class="toolbar">[\s\S]*?<\/div><\/div>/, ''));
+    c.querySelector('#dfrom').onchange = (e) => { c._dfrom = e.target.value; dashboard(c); };
+    c.querySelector('#dto').onchange = (e) => { c._dto = e.target.value; dashboard(c); };
+    const dc = c.querySelector('#dclear'); if (dc) dc.onclick = () => { c._dfrom = ''; c._dto = ''; dashboard(c); };
   }
   function agingBars(ag) {
     const rows = [['حالي', ag.current], ['30', ag.d30], ['60', ag.d60], ['90', ag.d90], ['180', ag.d180], ['+180', ag.d180p]];
@@ -136,8 +145,9 @@ const Pages = (() => {
       { key: 'monthly_rent', label: t('rent'), num: true, render: (r) => money(r.monthly_rent) },
       { key: 'contract_type', label: 'النوع', render: (r) => ({ residential: 'سكني', commercial: 'تجاري', shop: 'محل' }[r.contract_type] || r.contract_type || '') },
       { key: 'status', label: t('status'), render: (r) => statusBadge(r.status) },
-      { key: '_a', label: t('actions'), render: (r) => actions(r.id, canDo('add') || canDo('edit')
-        ? (r.status === 'active' ? ['view', 'edit', 'terminate'] : ['view', 'edit']) : ['view']) },
+      { key: '_a', label: t('actions'), render: (r) => actions(r.id,
+        [...(canDo('view') ? ['view'] : []), ...(canDo('edit') ? ['edit'] : []),
+         ...(canDo('edit') && r.status === 'active' ? ['terminate'] : []), ...(canDo('delete') ? ['delete'] : [])]) },
     ];
     const draw = (rs) => c.querySelector('#ct').innerHTML = table(cols, rs);
     draw(rows); wireToolbar(c, tbCfg, draw, rows);
@@ -148,6 +158,7 @@ const Pages = (() => {
       if (btn.dataset.act === 'terminate') return terminate(r.id, () => { clearCache(); contracts(c); });
       if (btn.dataset.act === 'view') return contractView(r);
       if (btn.dataset.act === 'edit') return contractForm(fl, tn, () => { clearCache(); contracts(c); }, r);
+      if (btn.dataset.act === 'delete') { if (confirm(t('confirm_delete') + '\nسيتم حذف العقد وفواتيره غير المدفوعة.')) API.del('/contracts/' + r.id).then(() => { toast(t('deleted')); clearCache(); contracts(c); }).catch((e) => toast(e.message, 'err')); return; }
     };
   }
   function contractView(r) {
@@ -218,7 +229,7 @@ const Pages = (() => {
       { key: 'total', label: t('total'), num: true, render: (r) => money(r.total) },
       { key: 'paid_amount', label: t('paid'), num: true, render: (r) => money(r.paid_amount) },
       { key: 'status', label: t('status'), render: (r) => statusBadge(r.status) },
-      { key: '_a', label: t('actions'), render: (r) => actions(r.id, canWrite() && r.paid_amount <= 0 ? ['view', 'print', 'email', 'delete'] : ['view', 'print', 'email']) },
+      { key: '_a', label: t('actions'), render: (r) => actions(r.id, canDo('edit') && r.paid_amount <= 0 ? ['view', 'print', 'email', 'edit', 'delete'] : ['view', 'print', 'email']) },
     ];
     const draw = (rs) => c.querySelector('#it').innerHTML = table(cols, rs);
     draw(rows); wireToolbar(c, tbCfg, draw, rows);
@@ -247,8 +258,16 @@ const Pages = (() => {
       if (btn.dataset.act === 'print') return printInvoice(r);
       if (btn.dataset.act === 'view') return printInvoice(r, true);
       if (btn.dataset.act === 'email') return emailInvoices([r.id]);
+      if (btn.dataset.act === 'edit') return invoiceEdit(r, () => invoices(c));
       if (btn.dataset.act === 'delete') { if (confirm(t('confirm_delete'))) API.del('/invoices/' + r.id).then(() => { toast(t('deleted')); invoices(c); }).catch((e) => toast(e.message, 'err')); return; }
     };
+  }
+  function invoiceEdit(r, done) {
+    formModal({ title: 'تعديل فاتورة ' + r.invoice_no, values: r, fields: [
+      { key: 'period', label: t('period'), type: 'month', value: r.period },
+      { key: 'rent_amount', label: t('rent'), type: 'number', step: '0.001', required: true },
+      { key: 'vat_percent', label: t('vat') + ' %', type: 'number', value: r.rent_amount ? Math.round(r.vat_amount / r.rent_amount * 100) : 5 },
+    ], onSave: async (d, close) => { await API.put('/invoices/' + r.id, d); toast(t('saved')); close(); done(); } });
   }
   // Group selected invoices by customer; download one Outlook draft (.eml) each.
   async function emailInvoices(ids) {
@@ -335,5 +354,5 @@ const Pages = (() => {
   }
 
   return { masterScreen, dashboard, occupancy, contracts, invoices, receipts,
-    _h: { ref, clearCache, canWrite, isAdmin, opt, nameOf, printReport, printTable, voucherPrint, importModal, cache } };
+    _h: { ref, clearCache, canWrite, isAdmin, canDo, opt, nameOf, printReport, printTable, voucherPrint, importModal, cache } };
 })();

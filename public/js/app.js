@@ -107,8 +107,8 @@
   function navHTML() {
     const isAdmin = (API.user() || {}).role === 'admin';
     return NAV.map((g) => {
-      if (g.single) return (isAdmin || UT.can(g.mod, 'view')) ? `<a href="#/${g.path}" data-path="${g.path}" class="nav-link"><span class="ic">${g.icon}</span>${esc(t(g.label))}</a>` : '';
-      const items = g.items.filter((it) => (!it.admin || isAdmin) && (isAdmin || UT.can(it.mod, 'view')));
+      if (g.single) return (isAdmin || UT.can(g.path, 'view')) ? `<a href="#/${g.path}" data-path="${g.path}" class="nav-link"><span class="ic">${g.icon}</span>${esc(t(g.label))}</a>` : '';
+      const items = g.items.filter((it) => (!it.admin || isAdmin) && (isAdmin || UT.can(it.path, 'view')));
       if (!items.length) return '';
       return `<div class="nav-group" data-group="${g.id}">
         <button class="nav-head"><span class="ic">${g.icon}</span><span class="lbl">${esc(t(g.label))}</span><span class="chev">▾</span></button>
@@ -136,11 +136,12 @@
           <div class="content" id="view"></div>
         </div>
       </div>`;
-    document.getElementById('logout').onclick = () => { API.logout(); location.hash = '#/login'; loginView(); };
+    document.getElementById('logout').onclick = () => { API.logout(); if (typeof AIWidget !== 'undefined') AIWidget.unmount(); location.hash = '#/login'; loginView(); };
     // collapsible groups
     document.querySelectorAll('.nav-head').forEach((h) => h.onclick = () => h.parentElement.classList.toggle('open'));
     wireLang();
     loadBuildingFilter();
+    if (typeof AIWidget !== 'undefined') AIWidget.mount();
   }
 
   async function loadBuildingFilter() {
@@ -174,9 +175,9 @@
     const { path, params } = parseHash();
     if (path === 'login') { location.hash = '#/dashboard'; return; }
     const item = findItem(path);
-    UT.mod = item ? item.mod : null;
-    // block direct access (typed hash) to a module the user can't view
-    if (item && UT.role !== 'admin' && UT.perms && !UT.can(item.mod, 'view')) {
+    UT.mod = item ? item.path : null;
+    // block direct access (typed hash) to a screen the user can't view
+    if (item && UT.role !== 'admin' && UT.perms && !UT.can(item.path, 'view')) {
       document.getElementById('ptitle').textContent = '';
       document.getElementById('view').innerHTML = '<div class="empty">لا تملك صلاحية فتح هذه الشاشة</div>';
       return;

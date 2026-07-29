@@ -11,6 +11,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api', require('./src/api'));
 app.use('/api', require('./src/exports'));
 app.use('/api', require('./src/email'));
+app.use('/api', require('./src/ai'));
 app.use('/api/import', require('./src/imports'));
 
 // no-cache so the browser always loads the latest UI (dev/local app)

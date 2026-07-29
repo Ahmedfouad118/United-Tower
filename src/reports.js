@@ -248,14 +248,18 @@ function chequesReport(status, direction) {
 }
 
 // ---- Dashboard ------------------------------------------------------------
-function dashboard(building_id) {
+function dashboard(building_id, from, to) {
   const today = new Date().toISOString().slice(0, 10);
-  const occ = occupancy(today, building_id);
-  const aging = receivablesAging(today, building_id);
-  const collected = db.prepare(`SELECT COALESCE(SUM(amount),0) s FROM payments WHERE substr(pdate,1,7)=substr(?,1,7)`).get(today).s;
+  const occ = occupancy(to || today, building_id);
+  const aging = receivablesAging(to || today, building_id);
+  // "collected" respects the selected date range, else current month
+  const collected = (from || to)
+    ? db.prepare(`SELECT COALESCE(SUM(amount),0) s FROM payments WHERE pdate>=? AND pdate<=?`).get(from || '0000', to || '9999').s
+    : db.prepare(`SELECT COALESCE(SUM(amount),0) s FROM payments WHERE substr(pdate,1,7)=substr(?,1,7)`).get(today).s;
   const monthly = db.prepare(`SELECT substr(pdate,1,7) m, SUM(amount) total FROM payments GROUP BY m ORDER BY m DESC LIMIT 12`).all().reverse();
   const incomeYtd = db.prepare(
-    `SELECT COALESCE(SUM(l.credit)-SUM(l.debit),0) s FROM journal_lines l JOIN accounts a ON a.code=l.account_code WHERE a.type='income'`).get().s;
+    `SELECT COALESCE(SUM(l.credit)-SUM(l.debit),0) s FROM journal_lines l JOIN journals j ON j.id=l.journal_id JOIN accounts a ON a.code=l.account_code
+     WHERE a.type='income' ${from ? 'AND j.jdate>=?' : ''} ${to ? 'AND j.jdate<=?' : ''}`).get(...[...(from ? [from] : []), ...(to ? [to] : [])]).s;
   const advance = db.prepare(`SELECT COALESCE(SUM(l.credit)-SUM(l.debit),0) s FROM journal_lines l WHERE l.account_code='21500'`).get().s;
   const deposits = db.prepare(`SELECT COALESCE(SUM(l.credit)-SUM(l.debit),0) s FROM journal_lines l WHERE l.account_code='21000'`).get().s;
   return {

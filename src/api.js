@@ -190,6 +190,21 @@ router.put('/contracts/:id', writers, (req, res) => {
     res.json({ ok: true });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
+router.delete('/contracts/:id', writers, (req, res) => {
+  const id = Number(req.params.id);
+  const c = db.prepare('SELECT * FROM contracts WHERE id=?').get(id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  const paid = db.prepare("SELECT COALESCE(SUM(paid_amount),0) s FROM invoices WHERE contract_id=?").get(id).s;
+  if (paid > 0.005) return res.status(400).json({ error: 'العقد عليه فواتير مدفوعة — احذف سندات القبض أولاً' });
+  const { deleteJournal } = require('./ledger');
+  for (const inv of db.prepare('SELECT * FROM invoices WHERE contract_id=?').all(id)) {
+    for (const j of db.prepare("SELECT id FROM journals WHERE source_table='invoices' AND source_id=?").all(inv.id)) deleteJournal(j.id);
+    db.prepare('DELETE FROM invoices WHERE id=?').run(inv.id);
+  }
+  if (c.deposit_journal) deleteJournal(c.deposit_journal);
+  db.prepare('DELETE FROM contracts WHERE id=?').run(id);
+  res.json({ ok: true });
+});
 router.post('/contracts/:id/terminate', writers, (req, res) => {
   try { res.json(svc.terminateContract(Number(req.params.id), req.body.date, req.body.settled_amount, req.user.id)); }
   catch (e) { res.status(400).json({ error: e.message }); }
@@ -231,6 +246,18 @@ router.post('/accruals/generate', writers, (req, res) => {
 router.post('/recognition/run', writers, (req, res) => {
   const period = req.body.period || svc.currentMonth();
   res.json(svc.recognizeRevenueForPeriod(period, req.user.id));
+});
+router.put('/invoices/:id', writers, (req, res) => {
+  const inv = db.prepare('SELECT * FROM invoices WHERE id=?').get(req.params.id);
+  if (!inv) return res.status(404).json({ error: 'not found' });
+  if (inv.paid_amount > 0.005) return res.status(400).json({ error: 'الفاتورة مدفوعة — احذف سند القبض أولاً' });
+  const { deleteJournal } = require('./ledger');
+  for (const j of db.prepare("SELECT id FROM journals WHERE source_table='invoices' AND source_id=?").all(inv.id)) deleteJournal(j.id);
+  db.prepare('DELETE FROM invoices WHERE id=?').run(inv.id);
+  try {
+    res.json(svc.issueAdHocInvoice({ tenant_id: inv.tenant_id, flat_id: inv.flat_id, building_id: inv.building_id,
+      period: req.body.period || inv.period, rent: req.body.rent_amount ?? inv.rent_amount, vat_percent: req.body.vat_percent ?? 5 }, req.user.id));
+  } catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.delete('/invoices/:id', writers, (req, res) => {
   const inv = db.prepare('SELECT * FROM invoices WHERE id=?').get(req.params.id);
@@ -390,7 +417,9 @@ router.get('/journals', (req, res) => {
   if (from) { where += ' AND jdate>=?'; p.push(from); }
   if (to) { where += ' AND jdate<=?'; p.push(to); }
   if (type) { where += ' AND jtype=?'; p.push(type); }
-  res.json(db.prepare(`SELECT * FROM journals WHERE ${where} ORDER BY jdate DESC, id DESC LIMIT 500`).all(...p));
+  res.json(db.prepare(
+    `SELECT j.*, (SELECT COALESCE(SUM(debit),0) FROM journal_lines WHERE journal_id=j.id) total
+     FROM journals j WHERE ${where} ORDER BY jdate DESC, id DESC LIMIT 500`).all(...p));
 });
 router.get('/journals/:id', (req, res) => {
   const j = db.prepare('SELECT * FROM journals WHERE id=?').get(req.params.id);
@@ -460,6 +489,6 @@ router.get('/reports/vat', (req, res) => res.json(R.vatReport(req.query.from, re
 router.get('/reports/depreciation', (req, res) => res.json(R.depreciationReport(req.query.building_id ? Number(req.query.building_id) : null)));
 router.get('/reports/customers-summary', (req, res) => res.json(R.customersSummary()));
 router.get('/reports/bank', (req, res) => res.json(R.bankReport(Number(req.query.bank_id) || 1, req.query.from, req.query.to)));
-router.get('/reports/dashboard', (req, res) => res.json(R.dashboard(effBuilding(req))));
+router.get('/reports/dashboard', (req, res) => res.json(R.dashboard(effBuilding(req), req.query.from, req.query.to)));
 
 module.exports = router;

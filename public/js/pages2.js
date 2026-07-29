@@ -1,7 +1,7 @@
 // Vendors, finance, reports, masters, users/permissions.
 Object.assign(Pages, (() => {
   const { esc, money, int, dateStr, today, curMonth, toast, modal, table, badge, statusBadge, toolbar, wireToolbar, actions, importModal, formModal, printReport } = UI;
-  const { ref, clearCache, canWrite, isAdmin, printTable, voucherPrint, cache } = Pages._h;
+  const { ref, clearCache, canWrite, isAdmin, canDo, printTable, voucherPrint, cache } = Pages._h;
   const loading = (c) => c.innerHTML = '<div class="spinner"></div>';
   const M = (c, cfg) => Pages.masterScreen(c, cfg);
   const catOpts = async (entity) => (await ref('categories')).filter((x) => x.entity === entity).map((x) => ({ value: x.id, label: x.name }));
@@ -426,7 +426,8 @@ Object.assign(Pages, (() => {
     c.innerHTML = toolbar(tbCfg) + `<div class="card"><div class="hd"><h3>${t('m_journals')}</h3><button class="btn sm btn-print">🖨</button></div><div id="jt"></div></div>`;
     const cols = [{ key: 'jdate', label: t('date'), render: (r) => dateStr(r.jdate) }, { key: 'jtype', label: 'النوع', render: (r) => JL[r.jtype] || r.jtype },
       { key: 'reference', label: 'المرجع' }, { key: 'memo', label: t('description') },
-      { key: '_a', label: t('actions'), render: (r) => actions(r.id, canWrite() ? ['view', 'edit', 'print', 'delete'] : ['view', 'print']) }];
+      { key: 'total', label: 'الإجمالي', num: true, render: (r) => `<b>${money(r.total)}</b>` },
+      { key: '_a', label: t('actions'), render: (r) => actions(r.id, canDo('edit') ? ['view', 'edit', 'print', 'delete'] : ['view', 'print']) }];
     const draw = (rs) => c.querySelector('#jt').innerHTML = table(cols, rs);
     draw(rows); wireToolbar(c, tbCfg, draw, rows);
     c.querySelector('.btn-print').onclick = () => printTable(t('m_journals'), cols.slice(0, -1), rows);
@@ -475,19 +476,18 @@ Object.assign(Pages, (() => {
   }
 
   // ---- Users & permissions ----
-  // permission modules (match the `mod` keys used by the sidebar in app.js)
-  const PMODULES = [
-    ['dashboard', 'لوحة التحكم'],
-    ['properties', 'الأملاك (بنايات ووحدات)'],
-    ['customers', 'العملاء / العقود / الفواتير / سندات القبض'],
-    ['vendors', 'الموردون / الفواتير / سندات الصرف'],
-    ['finance', 'المالية (شجرة الحسابات / القيود / التقارير)'],
-    ['treasury', 'الخزينة / البنوك / الشيكات / التسوية'],
-    ['assets', 'الأصول والإهلاك'],
-    ['tax', 'الضرائب'],
-    ['hr', 'الموظفون والرواتب'],
-    ['settings', 'الإعدادات والتصنيفات وطرق الدفع'],
-    ['users', 'المستخدمون والصلاحيات'],
+  // per-screen permissions grouped by category (each screen keyed by its nav path)
+  const PGROUPS = [
+    ['الرئيسية', [['dashboard', 'لوحة التحكم']]],
+    ['الأملاك', [['buildings', 'البنايات'], ['units', 'الوحدات'], ['calendar', 'كالندر الإشغال']]],
+    ['العملاء (ذمم مدينة)', [['customers', 'العملاء'], ['contracts', 'العقود'], ['invoices', 'الفواتير الشهرية'], ['receipts', 'سندات القبض'], ['cust_summary', 'ملخص حسابات العملاء'], ['statement', 'كشف حساب'], ['ar_aging', 'أعمار الذمم المدينة']]],
+    ['الموردون (ذمم دائنة)', [['vendors', 'الموردون'], ['bills', 'فواتير الموردين'], ['vpayments', 'سندات الصرف'], ['ap_aging', 'أعمار الذمم الدائنة']]],
+    ['المالية', [['coa', 'شجرة الحسابات'], ['journals', 'القيود اليومية'], ['tb', 'ميزان المراجعة'], ['is', 'قائمة الدخل'], ['bs', 'المركز المالي'], ['cashflow', 'التدفق النقدي'], ['ppl', 'أرباح العقارات'], ['roi', 'العائد ROI'], ['comparison', 'مقارنة أداء البنايات']]],
+    ['الخزينة والبنوك', [['banks', 'الحسابات البنكية'], ['cheques', 'الشيكات'], ['reconciliation', 'التسوية البنكية']]],
+    ['الأصول', [['assets', 'الأصول الثابتة'], ['depreciation', 'جدول الإهلاك']]],
+    ['الضرائب', [['vat', 'تقرير ض.ق.م']]],
+    ['الموارد البشرية', [['employees', 'الموظفون والرواتب']]],
+    ['الإعدادات', [['company', 'بيانات البناية'], ['categories', 'التصنيفات'], ['paymethods', 'طرق الدفع'], ['users', 'المستخدمون والصلاحيات']]],
   ];
   async function users(c) {
     loading(c);
@@ -516,15 +516,19 @@ Object.assign(Pages, (() => {
     modal({ title: t('permissions') + ' — ' + row.full_name, wide: true,
       bodyHTML: `<div class="section-title">البنايات المسموح بها (فارغ = لا شيء / الأدمن يرى الكل)</div>
         <div class="grid g-3" style="gap:6px">${allBld.map((b) => `<label style="font-weight:500"><input type="checkbox" data-bld="${b.id}" style="width:auto" ${myBld.includes(b.id) ? 'checked' : ''}> ${esc(b.name)}</label>`).join('')}</div>
-        <div class="section-title" style="margin-top:16px">صلاحيات المديولات (زي SPUR — تحكم كامل)</div>
-        <label style="font-weight:600;display:block;margin-bottom:8px"><input type="checkbox" id="perm-all" style="width:auto"> تحديد الكل (فتح كل صلاحية)</label>
-        <table><thead><tr><th>المديول</th><th>عرض</th><th>إضافة</th><th>تعديل</th><th>مسح</th></tr></thead><tbody>
-        ${PMODULES.map(([m, lbl]) => { const p = pm[m] || {}; return `<tr><td>${esc(lbl)}</td>
-          ${['can_view', 'can_add', 'can_edit', 'can_delete'].map((k) => `<td><input type="checkbox" data-m="${m}" data-k="${k}" ${p[k] ? 'checked' : ''}></td>`).join('')}</tr>`; }).join('')}</tbody></table>`,
+        <div class="section-title" style="margin-top:16px">صلاحيات الشاشات (كل شاشة على حدة — زي SPUR)</div>
+        <label style="font-weight:600;display:block;margin-bottom:8px"><input type="checkbox" id="perm-all" style="width:auto"> تحديد الكل</label>
+        <table><thead><tr><th>الشاشة</th><th>عرض</th><th>إضافة</th><th>تعديل</th><th>مسح</th></tr></thead><tbody>
+        ${PGROUPS.map(([grp, items]) => `<tr class="perm-grp"><td colspan="5" style="background:#eef2f7;font-weight:700">${esc(grp)}
+            <label style="float:left;font-weight:500;font-size:11px"><input type="checkbox" class="grp-all" data-grp="${esc(grp)}" style="width:auto"> الكل</label></td></tr>` +
+          items.map(([m, lbl]) => { const p = pm[m] || {}; return `<tr data-grp="${esc(grp)}"><td style="padding-inline-start:22px">${esc(lbl)}</td>
+          ${['can_view', 'can_add', 'can_edit', 'can_delete'].map((k) => `<td><input type="checkbox" data-m="${m}" data-k="${k}" ${p[k] ? 'checked' : ''}></td>`).join('')}</tr>`; }).join('')).join('')}
+        </tbody></table>`,
       footerHTML: `<button class="btn primary" id="ps">${t('save')}</button>`,
       onMount: (bg, close) => {
       const allChk = bg.querySelector('#perm-all');
       if (allChk) allChk.onchange = () => bg.querySelectorAll('[data-m]').forEach((i) => { i.checked = allChk.checked; });
+      bg.querySelectorAll('.grp-all').forEach((g) => g.onchange = () => bg.querySelectorAll(`tr[data-grp="${g.dataset.grp}"] [data-m]`).forEach((i) => { i.checked = g.checked; }));
       bg.querySelector('#ps').onclick = async () => {
         const map = {}; bg.querySelectorAll('[data-m]').forEach((i) => { map[i.dataset.m] = map[i.dataset.m] || { module: i.dataset.m }; map[i.dataset.m][i.dataset.k] = i.checked ? 1 : 0; });
         const blds = [...bg.querySelectorAll('[data-bld]:checked')].map((i) => +i.dataset.bld);
@@ -546,6 +550,7 @@ Object.assign(Pages, (() => {
         <div class="field"><label>ض.ق.م %</label><input id="vat_percent" value="${esc(s.vat_percent || '5')}"></div>
         <div class="field"><label>العملة</label><input id="currency" value="${esc(s.currency || 'OMR')}" readonly></div>
         <div class="field full"><label>📧 البريد الذي تُرسل منه الفواتير</label><input id="send_email" type="email" value="${esc(s.send_email || '')}" placeholder="accounts@usoman.com"></div>
+        <div class="field full"><label>🤖 مفتاح المساعد الذكي (Anthropic API Key)</label><input id="ai_api_key" type="password" value="${esc(s.ai_api_key || '')}" placeholder="sk-ant-..."><span class="muted" style="font-size:11px">لتفعيل زر المساعد الذكي 🤖 اللي بيعمل قيود وفواتير ويجاوب من بياناتك.</span></div>
         <div class="field full"><label>الشعار (Logo)</label><input type="file" id="logo_file" accept="image/*">
           <div style="margin-top:8px">${s.company_logo ? `<img id="logo_prev" src="${s.company_logo}" style="height:52px;border:1px solid var(--line);border-radius:8px;padding:4px">` : '<span class="muted" id="logo_prev">لا يوجد شعار</span>'}</div></div>
       </div>
@@ -558,7 +563,7 @@ Object.assign(Pages, (() => {
       rd.readAsDataURL(f);
     };
     c.querySelector('#csave').onclick = async () => {
-      const keys = ['company_name', 'company_name_ar', 'cr_number', 'vat_number', 'vat_percent', 'send_email'];
+      const keys = ['company_name', 'company_name_ar', 'cr_number', 'vat_number', 'vat_percent', 'send_email', 'ai_api_key'];
       const payload = { company_logo: logoData };
       keys.forEach((k) => payload[k] = c.querySelector('#' + k).value);
       try { await API.put('/settings', payload); toast(t('saved')); } catch (e) { toast(e.message, 'err'); }
