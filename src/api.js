@@ -165,7 +165,26 @@ router.get('/buildings', (req, res) => res.json(db.prepare(`SELECT * FROM buildi
 router.get('/flats', (req, res) => res.json(db.prepare(`SELECT * FROM flats WHERE 1=1${bScope(req, 'building_id')} ORDER BY code`).all()));
 crud('buildings', 'buildings', ['code', 'name', 'name_ar', 'name_ur', 'address', 'owner', 'purchase_value', 'notes', 'active'], { order: 'ORDER BY name' });
 crud('flats', 'flats', ['code', 'building_id', 'unit_type', 'floor', 'bedrooms', 'base_rent', 'category_id', 'notes'], { order: 'ORDER BY code' });
-crud('tenants', 'tenants', ['code', 'name', 'name_ar', 'phone', 'email', 'civil_id', 'category_id', 'opening_balance', 'notes'], { order: 'ORDER BY name' });
+// tenant create/update also posts a tenant-tagged opening-balance journal
+router.post('/tenants', writers, (req, res) => {
+  const f = ['code', 'name', 'name_ar', 'phone', 'email', 'civil_id', 'category_id', 'opening_balance', 'notes'].filter((k) => req.body[k] !== undefined);
+  try {
+    const r = db.prepare(`INSERT INTO tenants (${f.join(',')}) VALUES (${f.map(() => '?').join(',')})`).run(...f.map((k) => req.body[k]));
+    const id = Number(r.lastInsertRowid);
+    if (req.body.opening_balance) svc.setTenantOpening(id, req.body.opening_balance, req.user.id);
+    res.json({ id });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.put('/tenants/:id', writers, (req, res) => {
+  const f = ['code', 'name', 'name_ar', 'phone', 'email', 'civil_id', 'category_id', 'opening_balance', 'notes'].filter((k) => req.body[k] !== undefined);
+  try {
+    if (f.length) db.prepare(`UPDATE tenants SET ${f.map((c) => c + '=?').join(',')} WHERE id=?`).run(...f.map((k) => req.body[k]), req.params.id);
+    if (req.body.opening_balance !== undefined) svc.setTenantOpening(Number(req.params.id), req.body.opening_balance, req.user.id);
+    res.json({ ok: true });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.delete('/tenants/:id', writers, (req, res) => { try { db.prepare('DELETE FROM tenants WHERE id=?').run(req.params.id); res.json({ ok: true }); } catch (e) { res.status(400).json({ error: e.message }); } });
+router.get('/tenants', (req, res) => res.json(db.prepare('SELECT * FROM tenants ORDER BY name').all()));
 crud('vendors', 'vendors', ['code', 'name', 'name_ar', 'phone', 'email', 'tax_no', 'category_id', 'opening_balance', 'notes'], { order: 'ORDER BY name' });
 crud('categories', 'categories', ['entity', 'name', 'name_ar', 'name_ur', 'notes'], { order: 'ORDER BY entity,name' });
 crud('payment-methods', 'payment_methods', ['name', 'name_ar', 'name_ur', 'kind', 'gl_account', 'active'], { order: 'ORDER BY id' });

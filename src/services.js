@@ -55,27 +55,28 @@ function issueInvoiceForContract(contract, period, created_by) {
   const invNo = nextInvoiceNo();
   const due = firstOfMonth(period);
 
+  // Simple accrual: the invoice IS the accrual entry (Dr Receivable / Cr Rental
+  // Income + VAT). No separate deferred/recognition step. Collection settles it.
   const jid = postJournal(
-    { jdate: due, jtype: 'invoice', reference: invNo, memo: `Rent invoice ${period}`,
-      memo_ar: `فاتورة إيجار ${period}`, source_table: 'invoices', created_by },
+    { jdate: due, jtype: 'invoice', reference: invNo, memo: `Rent accrual ${period}`,
+      memo_ar: `استحقاق إيجار ${period}`, source_table: 'invoices', created_by },
     [
       { account_code: ACC.TENANT_RECV, debit: total, building_id: contract.building_id, flat_id: contract.flat_id, tenant_id: contract.tenant_id, memo: `Rent ${period}` },
-      { account_code: ACC.DEFERRED_REV, credit: rent, building_id: contract.building_id, flat_id: contract.flat_id, tenant_id: contract.tenant_id },
+      { account_code: ACC.RENT_INCOME, credit: rent, building_id: contract.building_id, flat_id: contract.flat_id, tenant_id: contract.tenant_id },
       ...(vat > 0 ? [{ account_code: ACC.VAT_PAYABLE, credit: vat, tenant_id: contract.tenant_id, memo: 'VAT 5%' }] : []),
     ]
   );
 
   const res = db.prepare(
     `INSERT INTO invoices (invoice_no,contract_id,building_id,flat_id,tenant_id,period,idate,due_date,
-      rent_amount,service_amount,vat_amount,total,status,issue_journal,created_by)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      rent_amount,service_amount,vat_amount,total,recognized_amount,status,issue_journal,created_by)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(invNo, contract.id, contract.building_id, contract.flat_id, contract.tenant_id, period, due, due,
-      rent, 0, vat, total, 'issued', jid, created_by || null);
+      rent, 0, vat, total, rent, 'issued', jid, created_by || null);
   const invId = Number(res.lastInsertRowid);
   db.prepare('UPDATE journals SET source_id=? WHERE id=?').run(invId, jid);
 
   applyAdvanceToInvoice(invId, created_by);
-  if (period <= currentMonth()) recognizeInvoice(invId, created_by);
   return { id: invId, invoice_no: invNo, journal_id: jid, total };
 }
 
@@ -85,18 +86,34 @@ function issueAdHocInvoice({ tenant_id, flat_id, building_id, period, rent, vat_
   const invNo = nextInvoiceNo();
   const due = firstOfMonth(period || currentMonth());
   const jid = postJournal(
-    { jdate: due, jtype: 'invoice', reference: invNo, memo: `Rent invoice ${period}`, memo_ar: `فاتورة إيجار ${period}`, source_table: 'invoices', created_by },
+    { jdate: due, jtype: 'invoice', reference: invNo, memo: `Rent accrual ${period}`, memo_ar: `استحقاق إيجار ${period}`, source_table: 'invoices', created_by },
     [
       { account_code: ACC.TENANT_RECV, debit: total, building_id, flat_id, tenant_id, memo: `Rent ${period}` },
-      { account_code: ACC.DEFERRED_REV, credit: r, building_id, flat_id, tenant_id },
+      { account_code: ACC.RENT_INCOME, credit: r, building_id, flat_id, tenant_id },
       ...(vat > 0 ? [{ account_code: ACC.VAT_PAYABLE, credit: vat, tenant_id, memo: 'VAT' }] : []),
     ]);
-  const res = db.prepare(`INSERT INTO invoices (invoice_no,building_id,flat_id,tenant_id,period,idate,due_date,rent_amount,vat_amount,total,status,issue_journal,created_by)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(invNo, building_id || null, flat_id || null, tenant_id, period, due, due, r, vat, total, 'issued', jid, created_by || null);
+  const res = db.prepare(`INSERT INTO invoices (invoice_no,building_id,flat_id,tenant_id,period,idate,due_date,rent_amount,vat_amount,total,recognized_amount,status,issue_journal,created_by)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(invNo, building_id || null, flat_id || null, tenant_id, period, due, due, r, vat, total, r, 'issued', jid, created_by || null);
   const invId = Number(res.lastInsertRowid);
   db.prepare('UPDATE journals SET source_id=? WHERE id=?').run(invId, jid);
-  if (period <= currentMonth()) recognizeInvoice(invId, created_by);
+  applyAdvanceToInvoice(invId, created_by);
   return { id: invId };
+}
+
+// Customer opening balance -> a tenant-tagged receivable so it appears in the
+// customer statement and receivables. Positive = customer owes us.
+function setTenantOpening(tenant_id, amount, created_by) {
+  amount = r2(amount || 0);
+  try { db.prepare("INSERT OR IGNORE INTO accounts (code,name,name_ar,type,normal_balance) VALUES ('39999','Opening Balance Equity','حقوق ملكية افتتاحية','equity','C')").run(); } catch {}
+  const ref = 'OB-CUST-' + tenant_id;
+  const ex = db.prepare("SELECT id FROM journals WHERE reference=?").get(ref);
+  if (ex) deleteJournal(ex.id);
+  if (Math.abs(amount) < 0.005) return;
+  const date = (db.prepare("SELECT value FROM settings WHERE key='opening_date'").get() || {}).value || '2025-12-31';
+  const lines = amount > 0
+    ? [{ account_code: ACC.TENANT_RECV, debit: amount, tenant_id, memo: 'رصيد افتتاحي' }, { account_code: '39999', credit: amount }]
+    : [{ account_code: '39999', debit: -amount }, { account_code: ACC.TENANT_RECV, credit: -amount, tenant_id, memo: 'رصيد افتتاحي دائن' }];
+  postJournal({ jdate: date, jtype: 'opening', reference: ref, memo: 'Customer opening balance', memo_ar: 'رصيد افتتاحي للعميل', source_table: 'tenants', source_id: tenant_id, created_by }, lines);
 }
 
 function issueInvoicesForPeriod(period, created_by) {
@@ -388,7 +405,7 @@ module.exports = {
   issueInvoiceForContract, issueInvoicesForPeriod, backfillInvoices, issueAdHocInvoice,
   recognizeInvoice, recognizeRevenueForPeriod,
   recordPayment, deletePayment, recordDeposit,
-  recordVendorBill, recordVendorPayment, runPayroll, terminateContract, runDepreciation,
+  recordVendorBill, recordVendorPayment, runPayroll, terminateContract, runDepreciation, setTenantOpening,
   tenantAdvanceBalance, addMonths, periodOf, firstOfMonth, currentMonth, today,
   CUSTOMER_ADVANCE,
 };

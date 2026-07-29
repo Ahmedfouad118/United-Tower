@@ -22,6 +22,8 @@ const AR = {
 };
 const insAcc = db.prepare('INSERT OR IGNORE INTO accounts (code,name,name_ar,type,normal_balance) VALUES (?,?,?,?,?)');
 for (const a of DATA.accounts) insAcc.run(a.code, a.name, AR[a.code] || null, a.type, a.normal_balance);
+// opening-balance equity contra (used for per-customer opening balances)
+insAcc.run('39999', 'Opening Balance Equity', 'حقوق ملكية افتتاحية', 'equity', 'C');
 
 // ---- Settings -------------------------------------------------------------
 const setS = db.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)');
