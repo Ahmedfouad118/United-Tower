@@ -49,8 +49,10 @@ function upsertTenant(name) {
   return Number(db.prepare('INSERT INTO tenants (name) VALUES (?)').run(name).lastInsertRowid);
 }
 function upsertFlat(code) {
-  code = norm(code); if (!code) return null;
-  const ex = db.prepare('SELECT id FROM flats WHERE code=?').get(code);
+  code = norm(code).replace(/\s+/g, ' '); if (!code) return null;
+  // match ignoring case + spacing so "FLAT 401", "flat401" resolve to one unit
+  const key = code.toUpperCase().replace(/\s+/g, '');
+  const ex = db.prepare(`SELECT id FROM flats WHERE UPPER(REPLACE(code,' ','')) = ?`).get(key);
   if (ex) return ex.id;
   return Number(db.prepare('INSERT INTO flats (code) VALUES (?)').run(code).lastInsertRowid);
 }

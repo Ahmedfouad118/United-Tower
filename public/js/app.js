@@ -44,6 +44,8 @@
       { path: 'journals', label: 'm_journals', page: 'journals', mod: 'finance' },
       { path: 'tb', label: 'm_tb', page: 'trialBalance', mod: 'finance' },
       { path: 'is', label: 'm_is', page: 'incomeStatement', mod: 'finance' },
+      { path: 'is_consolidated', label: 'm_is_consolidated', page: 'incomeStatementConsolidated', mod: 'finance' },
+      { path: 'gl', label: 'm_gl', page: 'generalLedger', mod: 'finance' },
       { path: 'bs', label: 'm_bs', page: 'balanceSheet', mod: 'finance' },
       { path: 'cashflow', label: 'm_cashflow', page: 'cashflow', mod: 'finance' },
       { path: 'ppl', label: 'm_ppl', page: 'propertyPL', mod: 'finance' },

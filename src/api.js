@@ -164,6 +164,44 @@ function crud(path, table, fields, opts = {}) {
 router.get('/buildings', (req, res) => res.json(db.prepare(`SELECT * FROM buildings WHERE 1=1${bScope(req, 'id')} ORDER BY name`).all()));
 router.get('/flats', (req, res) => res.json(db.prepare(`SELECT * FROM flats WHERE 1=1${bScope(req, 'building_id')} ORDER BY code`).all()));
 crud('buildings', 'buildings', ['code', 'name', 'name_ar', 'name_ur', 'address', 'owner', 'purchase_value', 'notes', 'active'], { order: 'ORDER BY name' });
+// Merge legacy duplicate units (same code ignoring case/spaces) into one, moving
+// every contract / invoice / receipt / bill / journal line to the kept unit so
+// NO transaction is lost — only the empty duplicate unit rows are removed.
+router.post('/flats/merge-duplicates', requireRole('admin'), (req, res) => {
+  const norm = (s) => String(s == null ? '' : s).toUpperCase().replace(/\s+/g, '');
+  const flats = db.prepare('SELECT id,code,building_id FROM flats').all();
+  const groups = {};
+  for (const f of flats) { (groups[norm(f.code)] = groups[norm(f.code)] || []).push(f); }
+  const refs = [['contracts', 'flat_id'], ['invoices', 'flat_id'], ['payments', 'flat_id'], ['vendor_bills', 'flat_id'], ['journal_lines', 'flat_id']];
+  let groups_merged = 0, units_removed = 0;
+  for (const grp of Object.values(groups)) {
+    if (grp.length < 2) continue;
+    grp.sort((a, b) => (b.building_id ? 1 : 0) - (a.building_id ? 1 : 0) || a.id - b.id);
+    const keeper = grp[0];
+    for (const extra of grp.slice(1)) {
+      for (const [tbl, col] of refs) { try { db.prepare(`UPDATE ${tbl} SET ${col}=? WHERE ${col}=?`).run(keeper.id, extra.id); } catch {} }
+      try { db.prepare('DELETE FROM flats WHERE id=?').run(extra.id); units_removed++; } catch {}
+    }
+    groups_merged++;
+  }
+  res.json({ groups_merged, units_removed });
+});
+// flats create/update with code normalization (trim + single spaces) so new
+// units never duplicate an existing one because of stray spacing/case.
+const normFlatCode = (s) => String(s == null ? '' : s).trim().replace(/\s+/g, ' ');
+router.post('/flats', writers, (req, res) => {
+  const b = req.body || {}; if (b.code) b.code = normFlatCode(b.code);
+  const fields = ['code', 'building_id', 'unit_type', 'floor', 'bedrooms', 'base_rent', 'category_id', 'notes'].filter((f) => b[f] !== undefined);
+  try { res.json({ id: Number(db.prepare(`INSERT INTO flats (${fields.join(',')}) VALUES (${fields.map(() => '?').join(',')})`).run(...fields.map((f) => b[f])).lastInsertRowid) }); }
+  catch (e) { res.status(400).json({ error: /UNIQUE/.test(e.message) ? 'رقم الوحدة موجود بالفعل' : e.message }); }
+});
+router.put('/flats/:id', writers, (req, res) => {
+  const b = req.body || {}; if (b.code) b.code = normFlatCode(b.code);
+  const fields = ['code', 'building_id', 'unit_type', 'floor', 'bedrooms', 'base_rent', 'category_id', 'notes'].filter((f) => b[f] !== undefined);
+  if (!fields.length) return res.json({ ok: true });
+  try { db.prepare(`UPDATE flats SET ${fields.map((c) => c + '=?').join(',')} WHERE id=?`).run(...fields.map((f) => b[f]), req.params.id); res.json({ ok: true }); }
+  catch (e) { res.status(400).json({ error: /UNIQUE/.test(e.message) ? 'رقم الوحدة موجود بالفعل' : e.message }); }
+});
 crud('flats', 'flats', ['code', 'building_id', 'unit_type', 'floor', 'bedrooms', 'base_rent', 'category_id', 'notes'], { order: 'ORDER BY code' });
 // tenant create/update also posts a tenant-tagged opening-balance journal
 router.post('/tenants', writers, (req, res) => {
@@ -513,6 +551,19 @@ router.put('/journals/:id', writers, (req, res) => {
 // ---- Reports --------------------------------------------------------------
 router.get('/reports/trial-balance', (req, res) => res.json(R.trialBalance(req.query.upto, lang(req))));
 router.get('/reports/income-statement', (req, res) => res.json(R.incomeStatement(req.query.from, req.query.to, lang(req), req.query.building_id ? Number(req.query.building_id) : null)));
+router.get('/reports/income-statement-consolidated', (req, res) => res.json(R.incomeStatementConsolidated(req.query.year, lang(req), effBuilding(req) && effBuilding(req) > 0 ? effBuilding(req) : (req.query.building_id ? Number(req.query.building_id) : null))));
+// Account movements (General Ledger report + click-through drill from any total)
+router.get('/reports/account-ledger', (req, res) => {
+  const accounts = req.query.accounts ? String(req.query.accounts).split(',').map((s) => s.trim()).filter(Boolean) : null;
+  res.json(R.accountLedger({
+    account: req.query.account || null, accounts,
+    from: req.query.from || null, to: req.query.to || null,
+    tenant_id: req.query.tenant_id ? Number(req.query.tenant_id) : null,
+    vendor_id: req.query.vendor_id ? Number(req.query.vendor_id) : null,
+    building_id: req.query.building_id ? Number(req.query.building_id) : null,
+    flat_id: req.query.flat_id ? Number(req.query.flat_id) : null,
+  }, lang(req)));
+});
 router.get('/reports/balance-sheet', (req, res) => res.json(R.balanceSheet(req.query.upto, lang(req))));
 router.get('/reports/aging', (req, res) => res.json(R.receivablesAging(req.query.asOf, effBuilding(req))));
 router.get('/reports/contract-expiry', (req, res) => res.json(R.contractExpiry(Number(req.query.days) || 60, effBuilding(req))));

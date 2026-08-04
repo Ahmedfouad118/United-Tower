@@ -198,3 +198,9 @@ tfoot td{font-weight:700;background:#f5f8fc;border-top:2px solid var(--line)}
 .pill-tabs{display:flex;gap:6px;background:#eef2f7;padding:4px;border-radius:12px;width:fit-content;margin-bottom:16px}
 .pill-tabs button{border:none;background:transparent;padding:7px 16px;border-radius:9px;font-weight:600;color:var(--muted)}
 .pill-tabs button.active{background:#fff;color:var(--brand);box-shadow:var(--shadow)}
+
+/* ---- Drill-down amount links (click a total -> see movements) ---------- */
+.drill{color:var(--brand);cursor:pointer;text-decoration:none;border-bottom:1px dashed rgba(31,111,235,.5)}
+.drill:hover{color:var(--brand-d);border-bottom-style:solid}
+tr.sec td{background:#eef2f7;font-weight:700}
+tr.tot td{border-top:2px solid #c9d6ea;background:#f7f9fc;font-weight:700}

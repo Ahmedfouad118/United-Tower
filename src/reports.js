@@ -8,6 +8,9 @@ const { r2 } = require('./ledger');
 
 const nameCol = (lang) => (lang === 'ar' ? "COALESCE(a.name_ar,a.name)" : lang === 'ur' ? "COALESCE(a.name_ur,a.name)" : "a.name");
 
+// normalize a unit code so "FLAT 401", "flat401" and "FLAT  401" collapse to one
+const normCode = (s) => String(s == null ? '' : s).toUpperCase().replace(/\s+/g, '');
+
 // ---- Trial Balance --------------------------------------------------------
 function trialBalance(upto, lang = 'en') {
   const rows = db.prepare(
@@ -40,6 +43,84 @@ function incomeStatement(from, to, lang = 'en', building_id) {
   const total_income = r2(income.reduce((s, x) => s + x.amt, 0));
   const total_expense = r2(expense.reduce((s, x) => s + x.amt, 0));
   return { income, expense, total_income, total_expense, net: r2(total_income - total_expense) };
+}
+
+// ---- Consolidated Income Statement (month-by-month, whole year) -----------
+// One row per account with 12 monthly columns + total, so the year can be
+// analysed horizontally (like the Excel A.mobasher sheet).
+function incomeStatementConsolidated(year, lang = 'en', building_id) {
+  year = String(year || new Date().getFullYear());
+  const from = `${year}-01-01`, to = `${year}-12-31`;
+  const bf = building_id ? ' AND l.building_id=?' : '';
+  const grab = (type, sign) => db.prepare(
+    `SELECT a.code, ${nameCol(lang)} name, CAST(substr(j.jdate,6,2) AS INTEGER) mo,
+            (COALESCE(SUM(l.credit),0)-COALESCE(SUM(l.debit),0))*? amt
+     FROM accounts a JOIN journal_lines l ON l.account_code=a.code JOIN journals j ON j.id=l.journal_id
+     WHERE a.type=? AND j.jdate>=? AND j.jdate<=? ${bf}
+     GROUP BY a.code, mo`)
+    .all(...[sign, type, from, to, ...(building_id ? [building_id] : [])]);
+  const build = (raw) => {
+    const byAcc = {};
+    for (const r of raw) {
+      if (r.mo < 1 || r.mo > 12) continue;
+      if (!byAcc[r.code]) byAcc[r.code] = { code: r.code, name: r.name, months: Array(12).fill(0), total: 0 };
+      byAcc[r.code].months[r.mo - 1] = r2(byAcc[r.code].months[r.mo - 1] + r.amt);
+      byAcc[r.code].total = r2(byAcc[r.code].total + r.amt);
+    }
+    return Object.values(byAcc).filter((x) => Math.abs(x.total) > 0.005).sort((a, b) => a.code.localeCompare(b.code));
+  };
+  const income = build(grab('income', 1));
+  const expense = build(grab('expense', -1));
+  const sumMonths = (rows) => {
+    const m = Array(12).fill(0); let tot = 0;
+    for (const r of rows) { r.months.forEach((v, i) => m[i] = r2(m[i] + v)); tot = r2(tot + r.total); }
+    return { months: m, total: tot };
+  };
+  const ti = sumMonths(income), te = sumMonths(expense);
+  const net = { months: ti.months.map((v, i) => r2(v - te.months[i])), total: r2(ti.total - te.total) };
+  return { year, income, expense, total_income: ti, total_expense: te, net };
+}
+
+// ---- General Ledger / account drill-down (movements on an account) --------
+// Serves both the GL report (search accounts + see movements) and the
+// click-through drill from any total in a report.
+function accountLedger({ account, accounts, from, to, tenant_id, vendor_id, building_id, flat_id } = {}, lang = 'en') {
+  const codes = (accounts && accounts.length ? accounts : (account ? [account] : [])).map(String);
+  const p = []; let where = '1=1';
+  if (codes.length) { where += ` AND l.account_code IN (${codes.map(() => '?').join(',')})`; p.push(...codes); }
+  if (tenant_id) { where += ' AND l.tenant_id=?'; p.push(tenant_id); }
+  if (vendor_id) { where += ' AND l.vendor_id=?'; p.push(vendor_id); }
+  if (building_id) { where += ' AND l.building_id=?'; p.push(building_id); }
+  if (flat_id) { where += ' AND l.flat_id=?'; p.push(flat_id); }
+  // opening balance = net movement strictly before `from`
+  let opening = 0;
+  if (from) {
+    const orow = db.prepare(
+      `SELECT COALESCE(SUM(l.debit),0)-COALESCE(SUM(l.credit),0) bal
+       FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+       WHERE ${where} AND j.jdate < ?`).get(...p, from);
+    opening = r2(orow.bal);
+  }
+  const lines = db.prepare(
+    `SELECT j.jdate, j.jtype, j.reference, j.memo j_memo, l.memo l_memo, l.account_code,
+            ${nameCol(lang)} account_name, l.debit, l.credit,
+            t.name tenant, v.name vendor, f.code flat, b.name building
+     FROM journal_lines l JOIN journals j ON j.id=l.journal_id JOIN accounts a ON a.code=l.account_code
+     LEFT JOIN tenants t ON t.id=l.tenant_id LEFT JOIN vendors v ON v.id=l.vendor_id
+     LEFT JOIN flats f ON f.id=l.flat_id LEFT JOIN buildings b ON b.id=l.building_id
+     WHERE ${where} ${from ? 'AND j.jdate>=?' : ''} ${to ? 'AND j.jdate<=?' : ''}
+     ORDER BY j.jdate, j.id, l.id`)
+    .all(...p, ...(from ? [from] : []), ...(to ? [to] : []));
+  let running = opening;
+  const rows = lines.map((ln) => {
+    running = r2(running + ln.debit - ln.credit);
+    return { jdate: ln.jdate, jtype: ln.jtype, reference: ln.reference, account_code: ln.account_code,
+      account_name: ln.account_name, memo: ln.l_memo || ln.j_memo, tenant: ln.tenant, vendor: ln.vendor,
+      flat: ln.flat, building: ln.building, debit: r2(ln.debit), credit: r2(ln.credit), balance: running };
+  });
+  const total_debit = r2(lines.reduce((s, x) => s + x.debit, 0));
+  const total_credit = r2(lines.reduce((s, x) => s + x.credit, 0));
+  return { codes, opening: r2(opening), rows, total_debit, total_credit, closing: r2(running) };
 }
 
 // ---- Balance Sheet --------------------------------------------------------
@@ -146,12 +227,19 @@ function customersSummary() {
 function occupancy(onDate, building_id) {
   const ref = onDate || new Date().toISOString().slice(0, 10);
   const flats = db.prepare(`SELECT * FROM flats ${building_id ? 'WHERE building_id=?' : ''} ORDER BY code`).all(...(building_id ? [building_id] : []));
-  const result = flats.map((f) => {
+  // Deduplicate by normalized code so legacy duplicate units don't inflate the
+  // calendar or the occupancy rate. A unit counts as occupied if ANY of the
+  // duplicate rows sharing its code has an active contract.
+  const groups = {};
+  for (const f of flats) { const k = normCode(f.code); (groups[k] = groups[k] || []).push(f); }
+  const result = Object.values(groups).map((grp) => {
+    const f = grp[0];
+    const ids = grp.map((x) => x.id);
     const c = db.prepare(
       `SELECT c.*, t.name tenant FROM contracts c JOIN tenants t ON t.id=c.tenant_id
-       WHERE c.flat_id=? AND c.start_date<=? AND (c.end_date>=? OR c.end_date IS NULL OR c.end_date='')
+       WHERE c.flat_id IN (${ids.map(() => '?').join(',')}) AND c.start_date<=? AND (c.end_date>=? OR c.end_date IS NULL OR c.end_date='')
          AND c.status NOT IN ('terminated','vacated')
-       ORDER BY c.start_date DESC LIMIT 1`).get(f.id, ref, ref);
+       ORDER BY c.start_date DESC LIMIT 1`).get(...ids, ref, ref);
     return { flat_id: f.id, flat: f.code, floor: f.floor, unit_type: f.unit_type, base_rent: f.base_rent,
       status: c ? 'occupied' : 'vacant', tenant: c ? c.tenant : null, contract_no: c ? c.contract_no : null,
       end_date: c ? c.end_date : null, monthly_rent: c ? c.monthly_rent : null };
@@ -302,7 +390,7 @@ function buildingComparison(from, to) {
 }
 
 module.exports = {
-  trialBalance, incomeStatement, balanceSheet, receivablesAging, payablesAging,
+  trialBalance, incomeStatement, incomeStatementConsolidated, accountLedger, balanceSheet, receivablesAging, payablesAging,
   flatStatement, occupancy, propertyPL, roi, cashFlowForecast, vatReport,
   bankReport, chequesReport, dashboard, contractExpiry, buildingComparison,
   depreciationReport, customersSummary,

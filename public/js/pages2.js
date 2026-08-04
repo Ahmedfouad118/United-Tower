@@ -31,9 +31,20 @@ Object.assign(Pages, (() => {
   }
   async function units(c) {
     const bl = await ref('buildings');
-    return M(c, { title: t('m_units'), endpoint: 'flats', type: 'flats', template: true, import: true,
+    await M(c, { title: t('m_units'), endpoint: 'flats', type: 'flats', template: true, import: true,
       columns: [{ key: 'code', label: t('unit') }, { key: 'building_id', label: t('building'), render: (r) => esc(Pages._h.nameOf(bl, r.building_id)) }, { key: 'unit_type', label: 'النوع' }, { key: 'floor', label: 'الطابق' }, { key: 'base_rent', label: t('rent'), num: true, render: (r) => money(r.base_rent) }],
       fields: [{ key: 'code', label: t('unit'), required: true }, { key: 'building_id', label: t('building'), type: 'select', options: bl.map((b) => ({ value: b.id, label: b.name })) }, { key: 'unit_type', label: 'النوع' }, { key: 'floor', label: 'الطابق' }, { key: 'base_rent', label: t('rent'), type: 'number', step: '0.001', value: 260 }] });
+    // Admin: clean up legacy duplicate units (same code, different spacing/case)
+    const tb = c.querySelector('.toolbar');
+    if (tb && isAdmin()) {
+      const b = document.createElement('button'); b.className = 'btn'; b.textContent = '🧹 دمج الوحدات المكررة';
+      b.onclick = async () => {
+        if (!confirm('سيتم دمج الوحدات اللي ليها نفس الرقم (مع اختلاف المسافات/الحروف) في وحدة واحدة، مع نقل كل العقود والفواتير والقيود إليها. لن تُفقد أي حركة. متابعة؟')) return;
+        try { const r = await API.post('/flats/merge-duplicates', {}); toast(r.units_removed ? `تم دمج ${r.groups_merged} مجموعة · إزالة ${r.units_removed} وحدة مكررة` : 'لا توجد وحدات مكررة'); clearCache(); units(c); }
+        catch (e) { toast(e.message, 'err'); }
+      };
+      tb.insertBefore(b, tb.querySelector('.tb-new') || null);
+    }
   }
   async function categories(c) {
     return M(c, { title: t('m_categories'), endpoint: 'categories', type: 'categories',
@@ -143,14 +154,127 @@ Object.assign(Pages, (() => {
   }
   function bindPrint(c, title) { c.querySelector('#rprint').onclick = () => printReport(title, c.querySelector('#rbody').innerHTML); }
 
+  // ---- Account drill-down: click any total/amount -> see the movements ------
+  // opts: {title, account | accounts:[codes], from, to, tenant_id, vendor_id, building_id}
+  async function accountDrill(opts = {}) {
+    const qp = new URLSearchParams();
+    if (opts.account) qp.set('account', opts.account);
+    if (opts.accounts && opts.accounts.length) qp.set('accounts', opts.accounts.join(','));
+    ['from', 'to', 'tenant_id', 'vendor_id', 'building_id', 'flat_id'].forEach((k) => { if (opts[k]) qp.set(k, opts[k]); });
+    let r;
+    try { r = await API.get('/reports/account-ledger?' + qp.toString()); }
+    catch (e) { return toast(e.message, 'err'); }
+    if (!r.rows.length && !Math.abs(r.opening)) return toast('لا توجد حركات على هذا الحساب في الفترة', 'err');
+    const cols = [
+      { key: 'jdate', label: t('date'), render: (x) => dateStr(x.jdate) },
+      { key: 'reference', label: t('reference') },
+      { key: 'account_name', label: t('account') },
+      { key: 'party', label: t('tenant') + '/' + t('vendor'), render: (x) => esc(x.tenant || x.vendor || '') },
+      { key: 'memo', label: t('description'), render: (x) => esc(x.memo || '') },
+      { key: 'debit', label: t('debit'), num: true, render: (x) => x.debit ? money(x.debit) : '' },
+      { key: 'credit', label: t('credit'), num: true, render: (x) => x.credit ? money(x.credit) : '' },
+      { key: 'balance', label: t('balance'), num: true, render: (x) => money(x.balance) },
+    ];
+    const openRow = Math.abs(r.opening) > 0.005
+      ? `<tr><td></td><td></td><td></td><td></td><td><i>${t('opening')}</i></td><td></td><td></td><td class="num"><b>${money(r.opening)}</b></td></tr>` : '';
+    const body = table(cols, r.rows, {
+      foot: [{ v: '' }, { v: '' }, { v: '' }, { v: '' }, { v: t('total') }, { v: money(r.total_debit), num: true }, { v: money(r.total_credit), num: true }, { v: money(r.closing), num: true }],
+    }).replace('<tbody>', '<tbody>' + openRow);
+    modal({
+      title: opts.title || t('movements'), wide: true, bodyHTML: body,
+      footerHTML: `<button class="btn" id="dprint">🖨 ${t('print')}</button>`,
+      onMount: (bg) => { bg.querySelector('#dprint').onclick = () => printReport(opts.title || t('movements'), body); },
+    });
+  }
+  // expose for other page modules
+  Pages.accountDrill = accountDrill;
+  const drillA = (label, attrs) => `<a href="#" class="drill" ${attrs}>${label}</a>`;
+
+  // ---- Consolidated Income Statement (month-by-month, horizontal analysis) --
+  const MONTHS_AR = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+  async function incomeStatementConsolidated(c) {
+    const year = c._year || String(new Date().getFullYear());
+    reportShell(c, 'm_is_consolidated', `<div class="field" style="margin:0"><label>${t('year')}</label><input type="number" id="yr" value="${year}" style="width:100px"></div>`, 'income-statement-consolidated');
+    c._qs = '?year=' + year + (window.UT ? UT.bq() : '');
+    const r = await API.get('/reports/income-statement-consolidated?year=' + year + (window.UT ? UT.bq() : ''));
+    const mo = (i) => MONTHS_AR[i] || (i + 1);
+    const head = `<tr><th>${t('code')}</th><th>${t('account')}</th>${MONTHS_AR.map((m) => `<th class="num">${m}</th>`).join('')}<th class="num">${t('total')}</th></tr>`;
+    const cell = (v, acc, m) => `<td class="num">${v ? drillA(money(v), `data-acc="${acc}" data-mo="${m}"`) : ''}</td>`;
+    const dataRow = (x) => `<tr><td>${esc(x.code)}</td><td>${esc(x.name)}</td>${x.months.map((v, i) => cell(v, x.code, i)).join('')}<td class="num">${x.total ? drillA(`<b>${money(x.total)}</b>`, `data-acc="${x.code}"`) : ''}</td></tr>`;
+    const totRow = (lbl, tot, cls) => `<tr class="tot"><td></td><td><b>${lbl}</b></td>${tot.months.map((v) => `<td class="num ${cls}">${money(v)}</td>`).join('')}<td class="num ${cls}"><b>${money(tot.total)}</b></td></tr>`;
+    c.querySelector('#rbody').innerHTML = `<div class="table-wrap"><table>
+      <thead>${head}</thead>
+      <tbody>
+        <tr class="sec"><td colspan="${MONTHS_AR.length + 3}"><b>${t('income')}</b></td></tr>
+        ${r.income.map(dataRow).join('') || `<tr><td colspan="${MONTHS_AR.length + 3}" class="muted">${t('no_data')}</td></tr>`}
+        ${totRow(t('total_income'), r.total_income, 'pos')}
+        <tr class="sec"><td colspan="${MONTHS_AR.length + 3}"><b>${t('expense')}</b></td></tr>
+        ${r.expense.map(dataRow).join('') || `<tr><td colspan="${MONTHS_AR.length + 3}" class="muted">${t('no_data')}</td></tr>`}
+        ${totRow(t('total_expense'), r.total_expense, 'neg')}
+        ${totRow(t('net'), r.net, '')}
+      </tbody></table></div>`;
+    // click a month cell or account total -> movements for that account
+    c.querySelector('#rbody').onclick = (e) => {
+      const a = e.target.closest('.drill'); if (!a) return; e.preventDefault();
+      const acc = a.dataset.acc; if (!acc) return;
+      const moIdx = a.dataset.mo != null ? Number(a.dataset.mo) : null;
+      const from = moIdx != null ? `${year}-${String(moIdx + 1).padStart(2, '0')}-01` : `${year}-01-01`;
+      const to = moIdx != null ? `${year}-${String(moIdx + 1).padStart(2, '0')}-31` : `${year}-12-31`;
+      accountDrill({ title: `${acc} — ${moIdx != null ? mo(moIdx) + ' ' : ''}${year}`, account: acc, from, to, building_id: (window.UT && UT.building) || null });
+    };
+    c.querySelector('#yr').onchange = (e) => { c._year = e.target.value; incomeStatementConsolidated(c); };
+    bindPrint(c, t('m_is_consolidated'));
+  }
+
+  // ---- General Ledger report (search accounts, see movements) ---------------
+  async function generalLedger(c) {
+    const ac = await ref('accounts');
+    const from = c._from || (new Date().getFullYear() + '-01-01'), to = c._to || today();
+    const acc = c._acc || '';
+    reportShell(c, 'm_gl', `
+      <div class="field" style="margin:0"><label>${t('account')}</label>
+        <select id="glacc" style="min-width:240px"><option value="">${t('all_accounts')}</option>
+        ${ac.filter((a) => !a.is_group).map((a) => `<option value="${a.code}" ${a.code === acc ? 'selected' : ''}>${esc(a.code + ' - ' + (a.name_ar || a.name))}</option>`).join('')}</select></div>
+      <div class="field" style="margin:0"><label>${t('from')}</label><input type="date" id="glf" value="${from}"></div>
+      <div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="glt" value="${to}"></div>
+      <button class="btn primary" id="glgo">${t('run')}</button>`, null);
+    const run = async () => {
+      const qp = new URLSearchParams();
+      const a = c.querySelector('#glacc').value, f = c.querySelector('#glf').value, tt = c.querySelector('#glt').value;
+      if (a) qp.set('account', a); if (f) qp.set('from', f); if (tt) qp.set('to', tt);
+      if (window.UT && UT.building) qp.set('building_id', UT.building);
+      const r = await API.get('/reports/account-ledger?' + qp.toString());
+      const openRow = Math.abs(r.opening) > 0.005
+        ? `<tr><td></td><td></td><td></td><td></td><td><i>${t('opening')}</i></td><td></td><td></td><td class="num"><b>${money(r.opening)}</b></td></tr>` : '';
+      c.querySelector('#rbody').innerHTML = table([
+        { key: 'jdate', label: t('date'), render: (x) => dateStr(x.jdate) },
+        { key: 'reference', label: t('reference') },
+        { key: 'account_name', label: t('account') },
+        { key: 'party', label: t('tenant') + '/' + t('vendor'), render: (x) => esc(x.tenant || x.vendor || '') },
+        { key: 'memo', label: t('description'), render: (x) => esc(x.memo || '') },
+        { key: 'debit', label: t('debit'), num: true, render: (x) => x.debit ? money(x.debit) : '' },
+        { key: 'credit', label: t('credit'), num: true, render: (x) => x.credit ? money(x.credit) : '' },
+        { key: 'balance', label: t('balance'), num: true, render: (x) => money(x.balance) },
+      ], r.rows, { foot: [{ v: '' }, { v: '' }, { v: '' }, { v: '' }, { v: t('total') }, { v: money(r.total_debit), num: true }, { v: money(r.total_credit), num: true }, { v: money(r.closing), num: true }] })
+        .replace('<tbody>', '<tbody>' + openRow);
+    };
+    c.querySelector('#glgo').onclick = () => { c._acc = c.querySelector('#glacc').value; c._from = c.querySelector('#glf').value; c._to = c.querySelector('#glt').value; run(); };
+    bindPrint(c, t('m_gl'));
+    run();
+  }
+
   async function trialBalance(c) {
     const upto = c._upto || today();
     reportShell(c, 'm_tb', `<div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="u" value="${upto}"></div>`, 'trial-balance');
     c._qs = '?upto=' + upto;
     const r = await API.get('/reports/trial-balance?upto=' + upto);
-    c.querySelector('#rbody').innerHTML = table([{ key: 'code', label: t('code') }, { key: 'name', label: t('account') },
+    c.querySelector('#rbody').innerHTML = table([{ key: 'code', label: t('code'), render: (x) => drillA(esc(x.code), `data-acc="${esc(x.code)}"`) }, { key: 'name', label: t('account') },
       { key: 'debit', label: t('debit'), num: true, render: (x) => x.debit ? money(x.debit) : '' }, { key: 'credit', label: t('credit'), num: true, render: (x) => x.credit ? money(x.credit) : '' }],
       r.rows, { foot: [{ v: '' }, { v: t('total') }, { v: money(r.total_debit), num: true }, { v: money(r.total_credit), num: true }] });
+    c.querySelector('#rbody').onclick = (e) => {
+      const a = e.target.closest('.drill'); if (!a || !a.dataset.acc) return; e.preventDefault();
+      accountDrill({ title: a.dataset.acc, account: a.dataset.acc, to: upto, building_id: (window.UT && UT.building) || null });
+    };
     c.querySelector('#u').onchange = (e) => { c._upto = e.target.value; trialBalance(c); };
     bindPrint(c, t('m_tb'));
   }
@@ -160,12 +284,19 @@ Object.assign(Pages, (() => {
       <div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="t2" value="${to}"></div>`, 'income-statement');
     c._qs = `?from=${from}&to=${to}`;
     const r = await API.get(`/reports/income-statement?from=${from}&to=${to}`);
-    const rowH = (x) => `<tr><td>${esc(x.code)}</td><td>${esc(x.name)}</td><td class="num">${money(x.amt)}</td></tr>`;
+    const rowH = (x) => `<tr><td>${esc(x.code)}</td><td>${esc(x.name)}</td><td class="num">${drillA(money(x.amt), `data-acc="${esc(x.code)}"`)}</td></tr>`;
+    const incCodes = r.income.map((x) => x.code).join(','), expCodes = r.expense.map((x) => x.code).join(',');
     c.querySelector('#rbody').innerHTML = `<div class="bd"><h3>${t('income')}</h3><table><tbody>${r.income.map(rowH).join('') || ''}</tbody>
-      <tfoot><tr><td></td><td>${t('total_income')}</td><td class="num">${money(r.total_income)}</td></tr></tfoot></table>
+      <tfoot><tr><td></td><td>${t('total_income')}</td><td class="num">${drillA(money(r.total_income), `data-accs="${incCodes}"`)}</td></tr></tfoot></table>
       <h3>${t('expense')}</h3><table><tbody>${r.expense.map(rowH).join('') || ''}</tbody>
-      <tfoot><tr><td></td><td>${t('total_expense')}</td><td class="num">${money(r.total_expense)}</td></tr></tfoot></table>
+      <tfoot><tr><td></td><td>${t('total_expense')}</td><td class="num">${drillA(money(r.total_expense), `data-accs="${expCodes}"`)}</td></tr></tfoot></table>
       <h3 style="margin-top:14px">${t('net')}: <span class="${r.net >= 0 ? 'pos' : 'neg'}">${money(r.net)}</span></h3></div>`;
+    c.querySelector('#rbody').onclick = (e) => {
+      const a = e.target.closest('.drill'); if (!a) return; e.preventDefault();
+      const bid = (window.UT && UT.building) || null;
+      if (a.dataset.acc) accountDrill({ title: a.dataset.acc, account: a.dataset.acc, from, to, building_id: bid });
+      else if (a.dataset.accs) accountDrill({ title: t('total'), accounts: a.dataset.accs.split(',').filter(Boolean), from, to, building_id: bid });
+    };
     c.querySelector('#f').onchange = (e) => { c._from = e.target.value; incomeStatement(c); };
     c.querySelector('#t2').onchange = (e) => { c._to = e.target.value; incomeStatement(c); };
     bindPrint(c, t('m_is'));
@@ -298,10 +429,15 @@ Object.assign(Pages, (() => {
     c.querySelector('#rbody').innerHTML = table([
       { key: 'tenant', label: t('tenant'), render: (x) => `<a href="#/statement?tenant=${x.id}">${esc(x.tenant)}</a>` },
       { key: 'phone', label: t('phone') },
-      { key: 'receivable', label: 'مدين (مستحق)', num: true, render: (x) => money(x.receivable) },
-      { key: 'advance', label: 'دفعات مقدمة', num: true, render: (x) => money(x.advance) },
+      { key: 'receivable', label: 'مدين (مستحق)', num: true, render: (x) => x.receivable ? drillA(money(x.receivable), `data-tid="${x.id}" data-kind="recv"`) : money(x.receivable) },
+      { key: 'advance', label: 'دفعات مقدمة', num: true, render: (x) => x.advance ? drillA(money(x.advance), `data-tid="${x.id}" data-kind="adv"`) : money(x.advance) },
       { key: 'net', label: 'الصافي', num: true, render: (x) => `<b class="${x.net > 0 ? 'neg' : 'pos'}">${money(x.net)}</b>` }],
       r, { foot: [{ v: t('total') }, { v: '' }, { v: money(r.reduce((s, x) => s + x.receivable, 0)), num: true }, { v: money(r.reduce((s, x) => s + x.advance, 0)), num: true }, { v: money(r.reduce((s, x) => s + x.net, 0)), num: true }] });
+    c.querySelector('#rbody').onclick = (e) => {
+      const a = e.target.closest('.drill'); if (!a || !a.dataset.tid) return; e.preventDefault();
+      const name = (r.find((x) => String(x.id) === a.dataset.tid) || {}).tenant || '';
+      accountDrill({ title: name, tenant_id: a.dataset.tid, accounts: a.dataset.kind === 'adv' ? ['21500'] : ['11000', '11100'] });
+    };
     bindPrint(c, t('m_cust_summary'));
   }
   async function propertyPL(c) {
@@ -484,7 +620,7 @@ Object.assign(Pages, (() => {
     ['الأملاك', [['buildings', 'البنايات'], ['units', 'الوحدات'], ['calendar', 'كالندر الإشغال']]],
     ['العملاء (ذمم مدينة)', [['customers', 'العملاء'], ['contracts', 'العقود'], ['invoices', 'الفواتير الشهرية'], ['receipts', 'سندات القبض'], ['cust_summary', 'ملخص حسابات العملاء'], ['statement', 'كشف حساب'], ['ar_aging', 'أعمار الذمم المدينة']]],
     ['الموردون (ذمم دائنة)', [['vendors', 'الموردون'], ['bills', 'فواتير الموردين'], ['vpayments', 'سندات الصرف'], ['ap_aging', 'أعمار الذمم الدائنة']]],
-    ['المالية', [['coa', 'شجرة الحسابات'], ['journals', 'القيود اليومية'], ['tb', 'ميزان المراجعة'], ['is', 'قائمة الدخل'], ['bs', 'المركز المالي'], ['cashflow', 'التدفق النقدي'], ['ppl', 'أرباح العقارات'], ['roi', 'العائد ROI'], ['comparison', 'مقارنة أداء البنايات']]],
+    ['المالية', [['coa', 'شجرة الحسابات'], ['journals', 'القيود اليومية'], ['tb', 'ميزان المراجعة'], ['is', 'قائمة الدخل'], ['is_consolidated', 'قائمة الدخل المجمعة'], ['gl', 'دفتر الأستاذ'], ['bs', 'المركز المالي'], ['cashflow', 'التدفق النقدي'], ['ppl', 'أرباح العقارات'], ['roi', 'العائد ROI'], ['comparison', 'مقارنة أداء البنايات']]],
     ['الخزينة والبنوك', [['banks', 'الحسابات البنكية'], ['cheques', 'الشيكات'], ['reconciliation', 'التسوية البنكية']]],
     ['الأصول', [['assets', 'الأصول الثابتة'], ['depreciation', 'جدول الإهلاك']]],
     ['الضرائب', [['vat', 'تقرير ض.ق.م']]],
@@ -574,6 +710,6 @@ Object.assign(Pages, (() => {
   }
 
   return { customers, vendors, buildings, units, categories, paymethods, banks, employees, coa,
-    vendorBills, vendorPayments, trialBalance, incomeStatement, balanceSheet, arAging, apAging,
+    vendorBills, vendorPayments, trialBalance, incomeStatement, incomeStatementConsolidated, generalLedger, balanceSheet, arAging, apAging,
     statement, propertyPL, roi, cashflow, comparison, vat, cheques, journals, users, company, assets, depreciation, customersSummary, reconciliation };
 })());

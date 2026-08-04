@@ -145,6 +145,15 @@ router.get('/export-report/:name', (req, res) => {
       ...r.assets.map((x) => ['Asset', x.code, x.name, x.amt]), ['', '', 'Total Assets', r.total_assets],
       ...r.liabilities.map((x) => ['Liability', x.code, x.name, x.amt]), ['', '', 'Total Liabilities', r.total_liabilities],
       ...r.equity.map((x) => ['Equity', x.code, x.name, x.amt]), ['', '', 'Net Income', r.net_income], ['', '', 'Total Equity', r.total_equity]];
+  } else if (name === 'income-statement-consolidated') {
+    const r = R.incomeStatementConsolidated(req.query.year, 'en', req.query.building_id ? Number(req.query.building_id) : null);
+    const MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const hdr = ['Code', 'Account', ...MO, 'Total'];
+    const line = (x) => [x.code, x.name, ...x.months, x.total];
+    aoa = [[`Consolidated Income Statement — ${r.year}`], hdr,
+      ['', 'INCOME'], ...r.income.map(line), ['', 'Total Income', ...r.total_income.months, r.total_income.total],
+      ['', ''], ['', 'EXPENSES'], ...r.expense.map(line), ['', 'Total Expense', ...r.total_expense.months, r.total_expense.total],
+      ['', ''], ['', 'NET PROFIT', ...r.net.months, r.net.total]];
   } else return res.status(404).json({ error: 'unknown report' });
   sendWorkbook(res, aoa, name);
 });
