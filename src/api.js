@@ -223,6 +223,24 @@ router.put('/tenants/:id', writers, (req, res) => {
 });
 router.delete('/tenants/:id', writers, (req, res) => { try { db.prepare('DELETE FROM tenants WHERE id=?').run(req.params.id); res.json({ ok: true }); } catch (e) { res.status(400).json({ error: e.message }); } });
 router.get('/tenants', (req, res) => res.json(db.prepare('SELECT * FROM tenants ORDER BY name').all()));
+// vendor create/update also posts a vendor-tagged opening-balance journal
+router.post('/vendors', writers, (req, res) => {
+  const f = ['code', 'name', 'name_ar', 'phone', 'email', 'tax_no', 'category_id', 'opening_balance', 'notes'].filter((k) => req.body[k] !== undefined);
+  try {
+    const r = db.prepare(`INSERT INTO vendors (${f.join(',')}) VALUES (${f.map(() => '?').join(',')})`).run(...f.map((k) => req.body[k]));
+    const id = Number(r.lastInsertRowid);
+    if (req.body.opening_balance) svc.setVendorOpening(id, req.body.opening_balance, req.user.id);
+    res.json({ id });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.put('/vendors/:id', writers, (req, res) => {
+  const f = ['code', 'name', 'name_ar', 'phone', 'email', 'tax_no', 'category_id', 'opening_balance', 'notes'].filter((k) => req.body[k] !== undefined);
+  try {
+    if (f.length) db.prepare(`UPDATE vendors SET ${f.map((c) => c + '=?').join(',')} WHERE id=?`).run(...f.map((k) => req.body[k]), req.params.id);
+    if (req.body.opening_balance !== undefined) svc.setVendorOpening(Number(req.params.id), req.body.opening_balance, req.user.id);
+    res.json({ ok: true });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
 crud('vendors', 'vendors', ['code', 'name', 'name_ar', 'phone', 'email', 'tax_no', 'category_id', 'opening_balance', 'notes'], { order: 'ORDER BY name' });
 crud('categories', 'categories', ['entity', 'name', 'name_ar', 'name_ur', 'notes'], { order: 'ORDER BY entity,name' });
 crud('payment-methods', 'payment_methods', ['name', 'name_ar', 'name_ur', 'kind', 'gl_account', 'active'], { order: 'ORDER BY id' });
@@ -505,8 +523,8 @@ router.get('/journals/:id', (req, res) => {
   const j = db.prepare('SELECT * FROM journals WHERE id=?').get(req.params.id);
   if (!j) return res.status(404).json({ error: 'not found' });
   j.lines = db.prepare(
-    `SELECT l.*, a.name account_name, t.name tenant, f.code flat, b.name building FROM journal_lines l
-     JOIN accounts a ON a.code=l.account_code LEFT JOIN tenants t ON t.id=l.tenant_id
+    `SELECT l.*, a.name account_name, t.name tenant, v.name vendor, f.code flat, b.name building FROM journal_lines l
+     JOIN accounts a ON a.code=l.account_code LEFT JOIN tenants t ON t.id=l.tenant_id LEFT JOIN vendors v ON v.id=l.vendor_id
      LEFT JOIN flats f ON f.id=l.flat_id LEFT JOIN buildings b ON b.id=l.building_id WHERE l.journal_id=?`).all(req.params.id);
   res.json(j);
 });
@@ -565,6 +583,9 @@ router.get('/reports/account-ledger', (req, res) => {
   }, lang(req)));
 });
 router.get('/reports/balance-sheet', (req, res) => res.json(R.balanceSheet(req.query.upto, lang(req))));
+router.get('/reports/general-ledger-full', (req, res) => res.json(R.generalLedgerFull({ from: req.query.from || null, to: req.query.to || null, building_id: req.query.building_id ? Number(req.query.building_id) : null }, lang(req))));
+router.get('/reports/liquidity', (req, res) => res.json(R.liquidityReport(req.query.upto, lang(req))));
+router.get('/reports/financial-ratios', (req, res) => res.json(R.financialRatios(req.query.from, req.query.to, effBuilding(req) && effBuilding(req) > 0 ? effBuilding(req) : null)));
 router.get('/reports/aging', (req, res) => res.json(R.receivablesAging(req.query.asOf, effBuilding(req))));
 router.get('/reports/contract-expiry', (req, res) => res.json(R.contractExpiry(Number(req.query.days) || 60, effBuilding(req))));
 router.get('/reports/building-comparison', (req, res) => res.json(scopeRows(req, R.buildingComparison(req.query.from, req.query.to).map((r) => r))));

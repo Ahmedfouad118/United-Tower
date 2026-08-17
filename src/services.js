@@ -116,6 +116,22 @@ function setTenantOpening(tenant_id, amount, created_by) {
   postJournal({ jdate: date, jtype: 'opening', reference: ref, memo: 'Customer opening balance', memo_ar: 'رصيد افتتاحي للعميل', source_table: 'tenants', source_id: tenant_id, created_by }, lines);
 }
 
+// Vendor opening balance -> a vendor-tagged payable (Cr AP / Dr Opening Equity)
+// Positive = we owe the vendor. Mirrors setTenantOpening for customers.
+function setVendorOpening(vendor_id, amount, created_by) {
+  amount = r2(amount || 0);
+  try { db.prepare("INSERT OR IGNORE INTO accounts (code,name,name_ar,type,normal_balance) VALUES ('39999','Opening Balance Equity','حقوق ملكية افتتاحية','equity','C')").run(); } catch {}
+  const ref = 'OB-VEND-' + vendor_id;
+  const ex = db.prepare("SELECT id FROM journals WHERE reference=?").get(ref);
+  if (ex) deleteJournal(ex.id);
+  if (Math.abs(amount) < 0.005) return;
+  const date = (db.prepare("SELECT value FROM settings WHERE key='opening_date'").get() || {}).value || '2025-12-31';
+  const lines = amount > 0
+    ? [{ account_code: '39999', debit: amount }, { account_code: ACC.AP, credit: amount, vendor_id, memo: 'رصيد افتتاحي مورد' }]
+    : [{ account_code: ACC.AP, debit: -amount, vendor_id, memo: 'رصيد افتتاحي مورد مدين' }, { account_code: '39999', credit: -amount }];
+  postJournal({ jdate: date, jtype: 'opening', reference: ref, memo: 'Vendor opening balance', memo_ar: 'رصيد افتتاحي للمورد', source_table: 'vendors', source_id: vendor_id, created_by }, lines);
+}
+
 function issueInvoicesForPeriod(period, created_by) {
   const contracts = db.prepare("SELECT * FROM contracts").all();
   let created = 0, skipped = 0;
@@ -405,7 +421,7 @@ module.exports = {
   issueInvoiceForContract, issueInvoicesForPeriod, backfillInvoices, issueAdHocInvoice,
   recognizeInvoice, recognizeRevenueForPeriod,
   recordPayment, deletePayment, recordDeposit,
-  recordVendorBill, recordVendorPayment, runPayroll, terminateContract, runDepreciation, setTenantOpening,
+  recordVendorBill, recordVendorPayment, runPayroll, terminateContract, runDepreciation, setTenantOpening, setVendorOpening,
   tenantAdvanceBalance, addMonths, periodOf, firstOfMonth, currentMonth, today,
   CUSTOMER_ADVANCE,
 };

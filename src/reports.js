@@ -102,7 +102,7 @@ function accountLedger({ account, accounts, from, to, tenant_id, vendor_id, buil
     opening = r2(orow.bal);
   }
   const lines = db.prepare(
-    `SELECT j.jdate, j.jtype, j.reference, j.memo j_memo, l.memo l_memo, l.account_code,
+    `SELECT j.id journal_id, j.jdate, j.jtype, j.reference, j.memo j_memo, l.memo l_memo, l.account_code,
             ${nameCol(lang)} account_name, l.debit, l.credit,
             t.name tenant, v.name vendor, f.code flat, b.name building
      FROM journal_lines l JOIN journals j ON j.id=l.journal_id JOIN accounts a ON a.code=l.account_code
@@ -114,13 +114,103 @@ function accountLedger({ account, accounts, from, to, tenant_id, vendor_id, buil
   let running = opening;
   const rows = lines.map((ln) => {
     running = r2(running + ln.debit - ln.credit);
-    return { jdate: ln.jdate, jtype: ln.jtype, reference: ln.reference, account_code: ln.account_code,
+    return { journal_id: ln.journal_id, jdate: ln.jdate, jtype: ln.jtype, reference: ln.reference, account_code: ln.account_code,
       account_name: ln.account_name, memo: ln.l_memo || ln.j_memo, tenant: ln.tenant, vendor: ln.vendor,
       flat: ln.flat, building: ln.building, debit: r2(ln.debit), credit: r2(ln.credit), balance: running };
   });
   const total_debit = r2(lines.reduce((s, x) => s + x.debit, 0));
   const total_credit = r2(lines.reduce((s, x) => s + x.credit, 0));
   return { codes, opening: r2(opening), rows, total_debit, total_credit, closing: r2(running) };
+}
+
+// ---- Full General Ledger (every account with activity, grouped) -----------
+// Selecting "all accounts" returns each account with its own opening + running
+// balance, so it reads like a real GL rather than one mixed running total.
+function generalLedgerFull({ from, to, building_id } = {}, lang = 'en') {
+  const p = []; let where = '1=1';
+  if (building_id) { where += ' AND l.building_id=?'; p.push(building_id); }
+  const openings = {};
+  if (from) {
+    const orows = db.prepare(
+      `SELECT l.account_code code, COALESCE(SUM(l.debit),0)-COALESCE(SUM(l.credit),0) bal
+       FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+       WHERE ${where} AND j.jdate < ? GROUP BY l.account_code`).all(...p, from);
+    for (const o of orows) openings[o.code] = r2(o.bal);
+  }
+  const lines = db.prepare(
+    `SELECT j.id journal_id, j.jdate, j.reference, j.memo j_memo, l.memo l_memo, l.account_code,
+            ${nameCol(lang)} account_name, l.debit, l.credit, t.name tenant, v.name vendor
+     FROM journal_lines l JOIN journals j ON j.id=l.journal_id JOIN accounts a ON a.code=l.account_code
+     LEFT JOIN tenants t ON t.id=l.tenant_id LEFT JOIN vendors v ON v.id=l.vendor_id
+     WHERE ${where} ${from ? 'AND j.jdate>=?' : ''} ${to ? 'AND j.jdate<=?' : ''}
+     ORDER BY l.account_code, j.jdate, j.id, l.id`)
+    .all(...p, ...(from ? [from] : []), ...(to ? [to] : []));
+  const byAcc = {};
+  for (const ln of lines) {
+    if (!byAcc[ln.account_code]) byAcc[ln.account_code] = { code: ln.account_code, name: ln.account_name, opening: openings[ln.account_code] || 0, rows: [], total_debit: 0, total_credit: 0, running: openings[ln.account_code] || 0 };
+    const acc = byAcc[ln.account_code];
+    acc.running = r2(acc.running + ln.debit - ln.credit);
+    acc.total_debit = r2(acc.total_debit + ln.debit);
+    acc.total_credit = r2(acc.total_credit + ln.credit);
+    acc.rows.push({ journal_id: ln.journal_id, jdate: ln.jdate, reference: ln.reference, memo: ln.l_memo || ln.j_memo, party: ln.tenant || ln.vendor || '', debit: r2(ln.debit), credit: r2(ln.credit), balance: acc.running });
+  }
+  // include accounts that only have an opening balance (activity before `from`)
+  for (const [code, bal] of Object.entries(openings)) {
+    if (!byAcc[code] && Math.abs(bal) > 0.005) {
+      const a = db.prepare(`SELECT ${nameCol(lang)} name FROM accounts a WHERE a.code=?`).get(code);
+      byAcc[code] = { code, name: a ? a.name : code, opening: bal, rows: [], total_debit: 0, total_credit: 0, running: bal };
+    }
+  }
+  const accounts = Object.values(byAcc).map((a) => ({ ...a, closing: r2(a.running) })).sort((x, y) => x.code.localeCompare(y.code));
+  return { accounts };
+}
+
+// ---- Liquidity report (current assets vs current liabilities) -------------
+// Fixed assets (buildings/land + their accumulated depreciation) are excluded
+// from current assets; everything else asset = current/liquid within a year.
+const FIXED_ASSET_CODES = ['15500', '16900', '17500', '15000', '16000', '18000'];
+const CASH_CODES = ['10000', '10400', '10500', '10100', '10200', '10300'];
+function liquidityReport(upto, lang = 'en') {
+  const bal = (type, sign) => db.prepare(
+    `SELECT a.code, ${nameCol(lang)} name, (COALESCE(SUM(l.debit),0)-COALESCE(SUM(l.credit),0))*? amt
+     FROM accounts a JOIN journal_lines l ON l.account_code=a.code JOIN journals j ON j.id=l.journal_id
+     WHERE a.type=? ${upto ? 'AND j.jdate<=?' : ''}
+     GROUP BY a.code HAVING ABS(amt)>0.005 ORDER BY a.code`).all(...[sign, type, ...(upto ? [upto] : [])]);
+  const allAssets = bal('asset', 1), liabilities = bal('liability', -1);
+  const current_assets = allAssets.filter((a) => !FIXED_ASSET_CODES.includes(a.code));
+  const cash = current_assets.filter((a) => CASH_CODES.includes(a.code));
+  const ca = r2(current_assets.reduce((s, x) => s + x.amt, 0));
+  const cl = r2(liabilities.reduce((s, x) => s + x.amt, 0));
+  const cashTotal = r2(cash.reduce((s, x) => s + x.amt, 0));
+  // quick assets = current assets excluding inventory (no inventory here => same as CA)
+  const quick = ca;
+  const ratio = (n, d) => d ? r2(n / d) : 0;
+  return {
+    upto, current_assets, current_liabilities: liabilities,
+    total_current_assets: ca, total_current_liabilities: cl, cash: cashTotal,
+    working_capital: r2(ca - cl),
+    current_ratio: ratio(ca, cl), quick_ratio: ratio(quick, cl), cash_ratio: ratio(cashTotal, cl),
+  };
+}
+
+// ---- Financial ratios (profitability + liquidity) for the dashboard -------
+function financialRatios(from, to, building_id) {
+  const is = incomeStatement(from, to, 'en', building_id);
+  const bs = balanceSheet(to, 'en');
+  const liq = liquidityReport(to, 'en');
+  const rev = is.total_income, net = is.net;
+  const totalAssets = bs.total_assets, equity = bs.total_equity;
+  const pct = (n, d) => d ? r2((n / d) * 100) : 0;
+  return {
+    revenue: rev, net_income: net, total_assets: totalAssets, equity,
+    // profitability
+    gross_margin: pct(net, rev), net_margin: pct(net, rev),
+    roa: pct(net, totalAssets), roe: pct(net, equity),
+    asset_turnover: totalAssets ? r2(rev / totalAssets) : 0,
+    // liquidity
+    current_ratio: liq.current_ratio, quick_ratio: liq.quick_ratio, cash_ratio: liq.cash_ratio,
+    working_capital: liq.working_capital,
+  };
 }
 
 // ---- Balance Sheet --------------------------------------------------------
@@ -390,7 +480,8 @@ function buildingComparison(from, to) {
 }
 
 module.exports = {
-  trialBalance, incomeStatement, incomeStatementConsolidated, accountLedger, balanceSheet, receivablesAging, payablesAging,
+  trialBalance, incomeStatement, incomeStatementConsolidated, accountLedger, generalLedgerFull,
+  liquidityReport, financialRatios, balanceSheet, receivablesAging, payablesAging,
   flatStatement, occupancy, propertyPL, roi, cashFlowForecast, vatReport,
   bankReport, chequesReport, dashboard, contractExpiry, buildingComparison,
   depreciationReport, customersSummary,

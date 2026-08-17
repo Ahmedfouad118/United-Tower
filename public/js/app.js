@@ -47,6 +47,7 @@
       { path: 'is_consolidated', label: 'm_is_consolidated', page: 'incomeStatementConsolidated', mod: 'finance' },
       { path: 'gl', label: 'm_gl', page: 'generalLedger', mod: 'finance' },
       { path: 'bs', label: 'm_bs', page: 'balanceSheet', mod: 'finance' },
+      { path: 'liquidity', label: 'm_liquidity', page: 'liquidity', mod: 'finance' },
       { path: 'cashflow', label: 'm_cashflow', page: 'cashflow', mod: 'finance' },
       { path: 'ppl', label: 'm_ppl', page: 'propertyPL', mod: 'finance' },
       { path: 'roi', label: 'm_roi', page: 'roi', mod: 'finance' },

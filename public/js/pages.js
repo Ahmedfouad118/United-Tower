@@ -69,6 +69,7 @@ const Pages = (() => {
     const from = c._dfrom || '', to = c._dto || '';
     const qs = '?' + (window.UT && UT.building ? 'building_id=' + UT.building + '&' : '') + (from ? 'from=' + from + '&' : '') + (to ? 'to=' + to : '');
     const d = await API.get('/reports/dashboard' + qs);
+    let fr = null; try { fr = await API.get('/reports/financial-ratios' + qs); } catch {}
     const ag = d.aging_buckets;
     const exp = d.expiring_contracts || [];
     const kpi = (lbl, val, sub, ico, cls) => `<div class="card kpi ${cls}"><div class="ico">${ico}</div>
@@ -85,6 +86,18 @@ const Pages = (() => {
         ${kpi(t('outstanding'), money(d.outstanding_receivables), '', '📈', 'k-amber')}
         ${kpi(t('advance_held'), money(d.advance_held), t('deposits_held') + ': ' + money(d.deposits_held), '🔒', 'k-teal')}
       </div>
+      ${fr ? `<div class="grid g-4" style="margin-top:16px">
+        ${kpi('هامش صافي الربح', fr.net_margin + '%', 'صافي الربح ÷ الإيرادات', '💹', fr.net_margin >= 0 ? 'k-green' : 'k-red')}
+        ${kpi('العائد على الأصول ROA', fr.roa + '%', 'صافي الربح ÷ الأصول', '📊', 'k-blue')}
+        ${kpi('العائد على حقوق الملكية ROE', fr.roe + '%', 'صافي الربح ÷ حقوق الملكية', '🏦', 'k-teal')}
+        ${kpi('نسبة التداول', fr.current_ratio, 'أصول متداولة ÷ التزامات (>1)', '💧', fr.current_ratio >= 1 ? 'k-green' : 'k-amber')}
+      </div>
+      <div class="grid g-4" style="margin-top:12px">
+        ${kpi('السيولة السريعة', fr.quick_ratio, 'Quick Ratio', '⚡', fr.quick_ratio >= 1 ? 'k-green' : 'k-amber')}
+        ${kpi('نسبة النقدية', fr.cash_ratio, 'النقدية ÷ الالتزامات', '💵', 'k-blue')}
+        ${kpi('رأس المال العامل', money(fr.working_capital), 'أصول متداولة − التزامات', '🧮', fr.working_capital >= 0 ? 'k-green' : 'k-red')}
+        ${kpi('معدل دوران الأصول', fr.asset_turnover, 'الإيرادات ÷ الأصول', '🔄', 'k-teal')}
+      </div>` : ''}
       <div class="grid g-2" style="margin-top:16px">
         <div class="card"><div class="hd"><h3>${t('monthly_collection')}</h3></div><div class="bd">${barChart(d.monthly_collection, 'total', 'm')}</div></div>
         <div class="card"><div class="hd"><h3>${t('aging')}</h3></div><div class="bd">${agingBars(ag)}</div></div>
@@ -331,7 +344,7 @@ const Pages = (() => {
       { key: 'amount', label: t('amount'), num: true, render: (r) => money(r.amount) },
       { key: 'applied_amount', label: 'سداد', num: true, render: (r) => money(r.applied_amount) },
       { key: 'advance_amount', label: 'مقدم', num: true, render: (r) => money(r.advance_amount) },
-      { key: '_a', label: t('actions'), render: (r) => actions(r.id, canDo('edit') ? ['print', 'edit', 'delete'] : ['print']) },
+      { key: '_a', label: t('actions'), render: (r) => actions(r.id, canDo('edit') ? ['view', 'print', 'edit', 'delete'] : ['view', 'print']) },
     ];
     const draw = (rs) => c.querySelector('#pt').innerHTML = table(cols, rs);
     draw(rows); wireToolbar(c, tbCfg, draw, rows);
@@ -342,6 +355,7 @@ const Pages = (() => {
       if (btn.dataset.act === 'delete') { if (confirm(t('confirm_delete'))) { await API.del('/payments/' + r.id); toast(t('deleted')); receipts(c); } }
       if (btn.dataset.act === 'print') voucherPrint('سند قبض', r, r.tenant);
       if (btn.dataset.act === 'edit') receiptForm(tn, fl, pm, () => receipts(c), r);
+      if (btn.dataset.act === 'view') { if (r.journal_id && Pages.viewJournal) Pages.viewJournal(r.journal_id); else toast('لا يوجد قيد مرتبط', 'err'); }
     };
   }
   function receiptForm(tn, fl, pm, done, row) {

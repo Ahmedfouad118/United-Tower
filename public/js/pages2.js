@@ -167,7 +167,7 @@ Object.assign(Pages, (() => {
     if (!r.rows.length && !Math.abs(r.opening)) return toast('لا توجد حركات على هذا الحساب في الفترة', 'err');
     const cols = [
       { key: 'jdate', label: t('date'), render: (x) => dateStr(x.jdate) },
-      { key: 'reference', label: t('reference') },
+      { key: 'reference', label: t('reference'), render: (x) => `<a href="#" class="drill" data-jid="${x.journal_id}">${esc(x.reference || ('#' + x.journal_id))}</a>` },
       { key: 'account_name', label: t('account') },
       { key: 'party', label: t('tenant') + '/' + t('vendor'), render: (x) => esc(x.tenant || x.vendor || '') },
       { key: 'memo', label: t('description'), render: (x) => esc(x.memo || '') },
@@ -181,13 +181,30 @@ Object.assign(Pages, (() => {
       foot: [{ v: '' }, { v: '' }, { v: '' }, { v: '' }, { v: t('total') }, { v: money(r.total_debit), num: true }, { v: money(r.total_credit), num: true }, { v: money(r.closing), num: true }],
     }).replace('<tbody>', '<tbody>' + openRow);
     modal({
-      title: opts.title || t('movements'), wide: true, bodyHTML: body,
+      title: opts.title || t('movements'), wide: true, bodyHTML: body + `<p class="muted" style="font-size:11px;margin-top:8px">اضغط على «المرجع» لعرض القيد الكامل (جه منين).</p>`,
       footerHTML: `<button class="btn" id="dprint">🖨 ${t('print')}</button>`,
-      onMount: (bg) => { bg.querySelector('#dprint').onclick = () => printReport(opts.title || t('movements'), body); },
+      onMount: (bg) => {
+        bg.querySelector('#dprint').onclick = () => printReport(opts.title || t('movements'), body);
+        bg.querySelector('.m-bd').addEventListener('click', (e) => { const a = e.target.closest('.drill[data-jid]'); if (a) { e.preventDefault(); viewJournal(a.dataset.jid); } });
+      },
     });
   }
   // expose for other page modules
   Pages.accountDrill = accountDrill;
+
+  // ---- Reusable journal viewer (the actual double-entry behind a line) -----
+  async function viewJournal(id) {
+    let j; try { j = await API.get('/journals/' + id); } catch (e) { return toast(e.message, 'err'); }
+    if (!j) return;
+    const html = `<p class="muted">${esc(j.memo || '')} — ${dateStr(j.jdate)}${j.reference ? ' · ' + esc(j.reference) : ''}</p>` +
+      table([{ key: 'account_code', label: t('code') }, { key: 'account_name', label: t('account') },
+        { key: 'party', label: t('tenant') + '/' + t('vendor'), render: (x) => esc(x.tenant || x.vendor || '') },
+        { key: 'debit', label: t('debit'), num: true, render: (x) => x.debit ? money(x.debit) : '' },
+        { key: 'credit', label: t('credit'), num: true, render: (x) => x.credit ? money(x.credit) : '' }], j.lines);
+    modal({ title: `قيد #${j.id}`, wide: true, bodyHTML: html, footerHTML: `<button class="btn" id="pj">🖨 ${t('print')}</button>`,
+      onMount: (bg) => bg.querySelector('#pj').onclick = () => printReport('Journal #' + j.id, html) });
+  }
+  Pages.viewJournal = viewJournal;
   const drillA = (label, attrs) => `<a href="#" class="drill" ${attrs}>${label}</a>`;
 
   // ---- Consolidated Income Statement (month-by-month, horizontal analysis) --
@@ -238,17 +255,37 @@ Object.assign(Pages, (() => {
       <div class="field" style="margin:0"><label>${t('from')}</label><input type="date" id="glf" value="${from}"></div>
       <div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="glt" value="${to}"></div>
       <button class="btn primary" id="glgo">${t('run')}</button>`, null);
+    const jref = (x) => `<a href="#" class="drill" data-jid="${x.journal_id}">${esc(x.reference || ('#' + x.journal_id))}</a>`;
     const run = async () => {
-      const qp = new URLSearchParams();
       const a = c.querySelector('#glacc').value, f = c.querySelector('#glf').value, tt = c.querySelector('#glt').value;
-      if (a) qp.set('account', a); if (f) qp.set('from', f); if (tt) qp.set('to', tt);
+      const bq = (window.UT && UT.building) ? '&building_id=' + UT.building : '';
+      const rb = c.querySelector('#rbody');
+      if (!a) {
+        // ALL accounts -> full GL grouped per account (each with its own balance)
+        const r = await API.get(`/reports/general-ledger-full?from=${f}&to=${tt}${bq}`);
+        rb.innerHTML = r.accounts.map((ac) => {
+          const openRow = Math.abs(ac.opening) > 0.005 ? `<tr><td></td><td></td><td><i>${t('opening')}</i></td><td></td><td></td><td class="num"><b>${money(ac.opening)}</b></td></tr>` : '';
+          const body = table([
+            { key: 'jdate', label: t('date'), render: (x) => dateStr(x.jdate) },
+            { key: 'reference', label: t('reference'), render: jref },
+            { key: 'party', label: t('tenant') + '/' + t('vendor'), render: (x) => esc(x.party || '') },
+            { key: 'memo', label: t('description'), render: (x) => esc(x.memo || '') },
+            { key: 'debit', label: t('debit'), num: true, render: (x) => x.debit ? money(x.debit) : '' },
+            { key: 'credit', label: t('credit'), num: true, render: (x) => x.credit ? money(x.credit) : '' },
+            { key: 'balance', label: t('balance'), num: true, render: (x) => money(x.balance) },
+          ], ac.rows, { foot: [{ v: '' }, { v: '' }, { v: '' }, { v: t('total') }, { v: money(ac.total_debit), num: true }, { v: money(ac.total_credit), num: true }, { v: money(ac.closing), num: true }] }).replace('<tbody>', '<tbody>' + openRow);
+          return `<div style="margin-bottom:18px"><h3 style="margin:0 0 4px">${esc(ac.code)} — ${esc(ac.name)}</h3>${body}</div>`;
+        }).join('') || `<div class="empty">${t('no_data')}</div>`;
+        return;
+      }
+      const qp = new URLSearchParams(); qp.set('account', a); if (f) qp.set('from', f); if (tt) qp.set('to', tt);
       if (window.UT && UT.building) qp.set('building_id', UT.building);
       const r = await API.get('/reports/account-ledger?' + qp.toString());
       const openRow = Math.abs(r.opening) > 0.005
         ? `<tr><td></td><td></td><td></td><td></td><td><i>${t('opening')}</i></td><td></td><td></td><td class="num"><b>${money(r.opening)}</b></td></tr>` : '';
-      c.querySelector('#rbody').innerHTML = table([
+      rb.innerHTML = table([
         { key: 'jdate', label: t('date'), render: (x) => dateStr(x.jdate) },
-        { key: 'reference', label: t('reference') },
+        { key: 'reference', label: t('reference'), render: jref },
         { key: 'account_name', label: t('account') },
         { key: 'party', label: t('tenant') + '/' + t('vendor'), render: (x) => esc(x.tenant || x.vendor || '') },
         { key: 'memo', label: t('description'), render: (x) => esc(x.memo || '') },
@@ -259,8 +296,31 @@ Object.assign(Pages, (() => {
         .replace('<tbody>', '<tbody>' + openRow);
     };
     c.querySelector('#glgo').onclick = () => { c._acc = c.querySelector('#glacc').value; c._from = c.querySelector('#glf').value; c._to = c.querySelector('#glt').value; run(); };
+    c.querySelector('#rbody').addEventListener('click', (e) => { const a = e.target.closest('.drill[data-jid]'); if (a) { e.preventDefault(); viewJournal(a.dataset.jid); } });
     bindPrint(c, t('m_gl'));
     run();
+  }
+
+  // ---- Liquidity report (current assets vs current liabilities) ------------
+  async function liquidity(c) {
+    const upto = c._upto || today();
+    reportShell(c, 'm_liquidity', `<div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="u" value="${upto}"></div>`, null);
+    const r = await API.get('/reports/liquidity?upto=' + upto);
+    const sec = (title, rows, total, cls) => `<h3>${title}</h3><table><tbody>${rows.map((x) => `<tr><td>${esc(x.code)}</td><td>${esc(x.name)}</td><td class="num">${money(x.amt)}</td></tr>`).join('') || `<tr><td colspan="3" class="muted">${t('no_data')}</td></tr>`}</tbody><tfoot><tr><td></td><td>${t('total')}</td><td class="num ${cls}"><b>${money(total)}</b></td></tr></tfoot></table>`;
+    const kpi = (lbl, val, sub, cls) => `<div class="card kpi ${cls}"><div class="lbl">${lbl}</div><div class="val mono">${val}</div><div class="sub">${sub}</div></div>`;
+    c.querySelector('#rbody').innerHTML = `<div class="bd">
+      <div class="grid g-4" style="margin-bottom:16px">
+        ${kpi('رأس المال العامل', money(r.working_capital), 'أصول متداولة − التزامات', r.working_capital >= 0 ? 'k-green' : 'k-red')}
+        ${kpi('نسبة التداول', r.current_ratio, 'الأصول ÷ الالتزامات (>1 جيد)', r.current_ratio >= 1 ? 'k-green' : 'k-amber')}
+        ${kpi('السيولة السريعة', r.quick_ratio, 'Quick Ratio', r.quick_ratio >= 1 ? 'k-green' : 'k-amber')}
+        ${kpi('نسبة النقدية', r.cash_ratio, 'النقدية ÷ الالتزامات', 'k-blue')}
+      </div>
+      ${sec('الأصول المتداولة (نقدية + ذمم مدينة — تتحصّل خلال سنة)', r.current_assets, r.total_current_assets, 'pos')}
+      ${sec('الالتزامات المتداولة (ذمم دائنة + مقدمات + ض.ق.م — تُدفع خلال سنة)', r.current_liabilities, r.total_current_liabilities, 'neg')}
+      <p class="muted" style="margin-top:10px">رأس المال العامل = <b>${money(r.working_capital)}</b> — ${r.working_capital >= 0 ? 'عندك فائض سيولة يغطي التزاماتك القصيرة ✅' : 'التزاماتك القصيرة أكبر من أصولك المتداولة ⚠️'}</p>
+    </div>`;
+    c.querySelector('#u').onchange = (e) => { c._upto = e.target.value; liquidity(c); };
+    bindPrint(c, t('m_liquidity'));
   }
 
   async function trialBalance(c) {
@@ -620,7 +680,7 @@ Object.assign(Pages, (() => {
     ['الأملاك', [['buildings', 'البنايات'], ['units', 'الوحدات'], ['calendar', 'كالندر الإشغال']]],
     ['العملاء (ذمم مدينة)', [['customers', 'العملاء'], ['contracts', 'العقود'], ['invoices', 'الفواتير الشهرية'], ['receipts', 'سندات القبض'], ['cust_summary', 'ملخص حسابات العملاء'], ['statement', 'كشف حساب'], ['ar_aging', 'أعمار الذمم المدينة']]],
     ['الموردون (ذمم دائنة)', [['vendors', 'الموردون'], ['bills', 'فواتير الموردين'], ['vpayments', 'سندات الصرف'], ['ap_aging', 'أعمار الذمم الدائنة']]],
-    ['المالية', [['coa', 'شجرة الحسابات'], ['journals', 'القيود اليومية'], ['tb', 'ميزان المراجعة'], ['is', 'قائمة الدخل'], ['is_consolidated', 'قائمة الدخل المجمعة'], ['gl', 'دفتر الأستاذ'], ['bs', 'المركز المالي'], ['cashflow', 'التدفق النقدي'], ['ppl', 'أرباح العقارات'], ['roi', 'العائد ROI'], ['comparison', 'مقارنة أداء البنايات']]],
+    ['المالية', [['coa', 'شجرة الحسابات'], ['journals', 'القيود اليومية'], ['tb', 'ميزان المراجعة'], ['is', 'قائمة الدخل'], ['is_consolidated', 'قائمة الدخل المجمعة'], ['gl', 'دفتر الأستاذ'], ['bs', 'المركز المالي'], ['liquidity', 'تقرير السيولة'], ['cashflow', 'التدفق النقدي'], ['ppl', 'أرباح العقارات'], ['roi', 'العائد ROI'], ['comparison', 'مقارنة أداء البنايات']]],
     ['الخزينة والبنوك', [['banks', 'الحسابات البنكية'], ['cheques', 'الشيكات'], ['reconciliation', 'التسوية البنكية']]],
     ['الأصول', [['assets', 'الأصول الثابتة'], ['depreciation', 'جدول الإهلاك']]],
     ['الضرائب', [['vat', 'تقرير ض.ق.م']]],
@@ -711,5 +771,5 @@ Object.assign(Pages, (() => {
 
   return { customers, vendors, buildings, units, categories, paymethods, banks, employees, coa,
     vendorBills, vendorPayments, trialBalance, incomeStatement, incomeStatementConsolidated, generalLedger, balanceSheet, arAging, apAging,
-    statement, propertyPL, roi, cashflow, comparison, vat, cheques, journals, users, company, assets, depreciation, customersSummary, reconciliation };
+    statement, propertyPL, roi, cashflow, comparison, vat, cheques, journals, users, company, assets, depreciation, customersSummary, reconciliation, liquidity };
 })());
