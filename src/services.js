@@ -10,7 +10,10 @@
 const { db } = require('./db');
 const { postJournal, deleteJournal, r2, ACC } = require('./ledger');
 
-const CUSTOMER_ADVANCE = '21500';
+const CUSTOMER_ADVANCE = '21500';   // legacy customer advances (kept as-is)
+const DEFERRED_ADVANCE = '23100';   // NEW prepaid rent / advances land here
+const ADV_ACCOUNTS = [DEFERRED_ADVANCE, CUSTOMER_ADVANCE]; // consume 23100 first
+const TENANT_RECV_ACCS = ['11000', '11100'];
 
 const firstOfMonth = (period) => `${period}-01`;
 const currentMonth = () => new Date().toISOString().slice(0, 7);
@@ -30,10 +33,23 @@ const nextVoucher = (prefix, table) => {
   return prefix + '-' + String(n).padStart(6, '0');
 };
 
-function tenantAdvanceBalance(tenant_id) {
+// advance held in a specific account (credit-debit) for a tenant
+function advanceBalanceIn(code, tenant_id) {
   const row = db.prepare(
     `SELECT COALESCE(SUM(l.credit),0)-COALESCE(SUM(l.debit),0) bal
-     FROM journal_lines l WHERE l.account_code=? AND l.tenant_id=?`).get(CUSTOMER_ADVANCE, tenant_id);
+     FROM journal_lines l WHERE l.account_code=? AND l.tenant_id=?`).get(code, tenant_id);
+  return r2(row.bal);
+}
+// total advance across BOTH advance accounts (old 21500 + new 23100)
+function tenantAdvanceBalance(tenant_id) {
+  return r2(ADV_ACCOUNTS.reduce((s, code) => s + advanceBalanceIn(code, tenant_id), 0));
+}
+// net receivable owed by a tenant (opening balance + all invoices), in 11000/11100
+function tenantReceivableBalance(tenant_id) {
+  const row = db.prepare(
+    `SELECT COALESCE(SUM(l.debit),0)-COALESCE(SUM(l.credit),0) bal
+     FROM journal_lines l WHERE l.account_code IN (${TENANT_RECV_ACCS.map(() => '?').join(',')}) AND l.tenant_id=?`)
+    .get(...TENANT_RECV_ACCS, tenant_id);
   return r2(row.bal);
 }
 
@@ -186,12 +202,18 @@ function applyAdvanceToInvoice(invId, created_by) {
   const adv = tenantAdvanceBalance(inv.tenant_id);
   if (adv <= 0) return;
   const apply = r2(Math.min(adv, remaining));
+  // consume the advance from 23100 first, then any legacy 21500 balance
+  const from23 = r2(Math.min(advanceBalanceIn(DEFERRED_ADVANCE, inv.tenant_id), apply));
+  const from21 = r2(apply - from23);
+  const advLines = [];
+  if (from23 > 0) advLines.push({ account_code: DEFERRED_ADVANCE, debit: from23, tenant_id: inv.tenant_id });
+  if (from21 > 0) advLines.push({ account_code: CUSTOMER_ADVANCE, debit: from21, tenant_id: inv.tenant_id });
   const jid = postJournal(
     { jdate: inv.due_date, jtype: 'adjustment', reference: `ADV-${inv.invoice_no}`,
       memo: `Apply advance to ${inv.period}`, memo_ar: `استخدام دفعة مقدمة ${inv.period}`,
       source_table: 'invoices', source_id: invId, created_by },
     [
-      { account_code: CUSTOMER_ADVANCE, debit: apply, tenant_id: inv.tenant_id },
+      ...advLines,
       { account_code: ACC.TENANT_RECV, credit: apply, tenant_id: inv.tenant_id, building_id: inv.building_id, flat_id: inv.flat_id },
     ]
   );
@@ -212,16 +234,26 @@ function recordPayment(input, created_by) {
        AND status NOT IN ('paid','cancelled') ORDER BY due_date ASC`)
     .all(...(contract_id ? [tenant_id, contract_id] : [tenant_id]));
 
-  let left = total; const allocs = [];
-  for (const inv of invoices) {
+  // Settle the OLD debt first: the opening/other receivable that isn't tied to an
+  // invoice (dated before any invoice) is the oldest, so it gets paid before the
+  // current-month invoices. Any excess beyond total owed becomes a prepaid advance.
+  const invoiceDue = r2(invoices.reduce((s, inv) => s + Math.max(0, r2(inv.total - inv.paid_amount)), 0));
+  const netReceivable = tenantReceivableBalance(tenant_id);
+  const openingDue = r2(Math.max(0, r2(netReceivable - invoiceDue))); // opening balance / misc — oldest
+
+  let left = total;
+  const toOpening = r2(Math.min(left, openingDue)); // pay down the old balance first
+  left = r2(left - toOpening);
+  const allocs = [];
+  for (const inv of invoices) {              // then the current invoices, oldest-first
     if (left <= 0) break;
     const need = r2(inv.total - inv.paid_amount);
     if (need <= 0) continue;
     const take = r2(Math.min(need, left));
     allocs.push({ inv, amount: take }); left = r2(left - take);
   }
-  const applied = r2(total - left);
-  const advance = r2(left);
+  const applied = r2(total - left);   // total that reduces the receivable (11100)
+  const advance = r2(left);           // excess -> prepaid rent (23100)
   const vno = input.voucher_no || nextVoucher('RCV', 'payments');
 
   const pay = db.prepare(
@@ -244,7 +276,7 @@ function recordPayment(input, created_by) {
   const lines = [{ account_code: cash_account, debit: total, tenant_id, building_id: building_id || null, flat_id: flat_id || null,
     memo: method === 'cheque' ? `Cheque ${cheque_no || ''}` : 'Receipt' }];
   if (applied > 0) lines.push({ account_code: ACC.TENANT_RECV, credit: applied, tenant_id, building_id: building_id || null, flat_id: flat_id || null, memo: 'Settle dues' });
-  if (advance > 0) lines.push({ account_code: CUSTOMER_ADVANCE, credit: advance, tenant_id, memo: 'Advance / prepaid' });
+  if (advance > 0) lines.push({ account_code: DEFERRED_ADVANCE, credit: advance, tenant_id, memo: 'دفعة مقدمة / إيراد مقدم' });
 
   const jid = postJournal(
     { jdate: pdate, jtype: 'receipt', reference: vno, memo: memo || 'Receipt voucher',
