@@ -337,8 +337,10 @@ const Pages = (() => {
     const tbCfg = { search: true, searchFn: (rs, q) => rs.filter((r) => [r.tenant, r.voucher_no].join(' ').toLowerCase().includes(q)),
       exportType: 'payments', onImport: () => importModal('payments', '', () => receipts(c)), templateType: 'payments',
       onNew: canWrite() ? () => receiptForm(tn, fl, pm, () => receipts(c)) : null, newLabel: 'سند قبض' };
-    c.innerHTML = toolbar(tbCfg) + `<div class="card"><div class="hd"><h3>${t('m_receipts')}</h3><button class="btn sm btn-print">🖨 ${t('print')}</button></div><div id="pt"></div></div>`;
+    const canDel = canDo('delete');
+    c.innerHTML = toolbar(tbCfg) + `<div class="card"><div class="hd"><h3>${t('m_receipts')}</h3><div style="display:flex;gap:6px">${canDel ? UI.bulkDelHTML() : ''}<button class="btn sm btn-print">🖨 ${t('print')}</button></div></div><div id="pt"></div></div>`;
     const cols = [
+      ...(canDel ? [{ key: '_s', label: '<input type="checkbox" class="sel-all">', render: (r) => `<input type="checkbox" class="row-sel" data-id="${r.id}">` }] : []),
       { key: 'voucher_no', label: t('voucher') }, { key: 'pdate', label: t('date'), render: (r) => dateStr(r.pdate) },
       { key: 'tenant', label: t('tenant') }, { key: 'flat', label: t('unit') },
       { key: 'amount', label: t('amount'), num: true, render: (r) => money(r.amount) },
@@ -346,9 +348,9 @@ const Pages = (() => {
       { key: 'advance_amount', label: 'مقدم', num: true, render: (r) => money(r.advance_amount) },
       { key: '_a', label: t('actions'), render: (r) => actions(r.id, canDo('edit') ? ['view', 'print', 'edit', 'delete'] : ['view', 'print']) },
     ];
-    const draw = (rs) => c.querySelector('#pt').innerHTML = table(cols, rs);
+    const draw = (rs) => { c.querySelector('#pt').innerHTML = table(cols, rs); UI.makeSortable(c); UI.wireBulk(c, (id) => API.del('/payments/' + id), () => receipts(c)); };
     draw(rows); wireToolbar(c, tbCfg, draw, rows);
-    c.querySelector('.btn-print').onclick = () => printTable(t('m_receipts'), cols.slice(0, -1), rows);
+    c.querySelector('.btn-print').onclick = () => printTable(t('m_receipts'), cols.filter((x) => x.key !== '_s' && x.key !== '_a'), rows);
     c.querySelector('#pt').onclick = async (e) => {
       const btn = e.target.closest('[data-act]'); if (!btn) return;
       const r = rows.find((x) => x.id === +btn.dataset.id);

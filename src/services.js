@@ -126,9 +126,12 @@ function setTenantOpening(tenant_id, amount, created_by) {
   if (ex) deleteJournal(ex.id);
   if (Math.abs(amount) < 0.005) return;
   const date = (db.prepare("SELECT value FROM settings WHERE key='opening_date'").get() || {}).value || '2025-12-31';
+  // Positive = customer owes us -> Receivable (11100). Negative = customer holds
+  // a credit with us -> a prepaid/advance in 23100 on its own (NOT a negative
+  // receivable), so it never nets against other debit balances.
   const lines = amount > 0
     ? [{ account_code: ACC.TENANT_RECV, debit: amount, tenant_id, memo: 'رصيد افتتاحي' }, { account_code: '39999', credit: amount }]
-    : [{ account_code: '39999', debit: -amount }, { account_code: ACC.TENANT_RECV, credit: -amount, tenant_id, memo: 'رصيد افتتاحي دائن' }];
+    : [{ account_code: '39999', debit: -amount }, { account_code: DEFERRED_ADVANCE, credit: -amount, tenant_id, memo: 'رصيد افتتاحي دائن (دفعة مقدمة)' }];
   postJournal({ jdate: date, jtype: 'opening', reference: ref, memo: 'Customer opening balance', memo_ar: 'رصيد افتتاحي للعميل', source_table: 'tenants', source_id: tenant_id, created_by }, lines);
 }
 
@@ -273,14 +276,21 @@ function recordPayment(input, created_by) {
       .run(paid, paid >= al.inv.total - 0.005 ? 'paid' : 'partial', al.inv.id);
   }
 
+  // Descriptive narration: "قبض من {عميل} - وحدة {رقم} - {الشهور المسددة}"
+  const tName = (db.prepare('SELECT name FROM tenants WHERE id=?').get(tenant_id) || {}).name || '';
+  const fCode = flat_id ? ((db.prepare('SELECT code FROM flats WHERE id=?').get(flat_id) || {}).code || '') : '';
+  const periods = [...new Set(allocs.map((a) => a.inv.period).filter(Boolean))].join('، ');
+  const monthsTxt = periods || (advance > 0 ? 'دفعة مقدمة' : periodOf(pdate));
+  const narr = `قبض من ${tName}${fCode ? ' - وحدة ' + fCode : ''} - ${monthsTxt}`;
+
   const lines = [{ account_code: cash_account, debit: total, tenant_id, building_id: building_id || null, flat_id: flat_id || null,
-    memo: method === 'cheque' ? `Cheque ${cheque_no || ''}` : 'Receipt' }];
-  if (applied > 0) lines.push({ account_code: ACC.TENANT_RECV, credit: applied, tenant_id, building_id: building_id || null, flat_id: flat_id || null, memo: 'Settle dues' });
-  if (advance > 0) lines.push({ account_code: DEFERRED_ADVANCE, credit: advance, tenant_id, memo: 'دفعة مقدمة / إيراد مقدم' });
+    memo: (method === 'cheque' ? `شيك ${cheque_no || ''} — ` : '') + narr }];
+  if (applied > 0) lines.push({ account_code: ACC.TENANT_RECV, credit: applied, tenant_id, building_id: building_id || null, flat_id: flat_id || null, memo: `سداد ${tName}${fCode ? ' - وحدة ' + fCode : ''}${periods ? ' - ' + periods : ''}` });
+  if (advance > 0) lines.push({ account_code: DEFERRED_ADVANCE, credit: advance, tenant_id, memo: `دفعة مقدمة ${tName}${fCode ? ' - وحدة ' + fCode : ''}` });
 
   const jid = postJournal(
-    { jdate: pdate, jtype: 'receipt', reference: vno, memo: memo || 'Receipt voucher',
-      memo_ar: 'سند قبض', source_table: 'payments', source_id: payId, created_by }, lines);
+    { jdate: pdate, jtype: 'receipt', reference: vno, memo: memo || narr,
+      memo_ar: narr, source_table: 'payments', source_id: payId, created_by }, lines);
   db.prepare('UPDATE payments SET journal_id=? WHERE id=?').run(jid, payId);
 
   if (method === 'cheque' && cheque_no) {
