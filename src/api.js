@@ -417,6 +417,7 @@ router.post('/payroll/run', writers, (req, res) => {
 
 // ---- Cheques --------------------------------------------------------------
 router.get('/cheques', (req, res) => res.json(R.chequesReport(req.query.status, req.query.direction)));
+router.get('/reports/cheques-dashboard', (req, res) => res.json(R.chequesDashboard(req.query.asOf)));
 router.post('/cheques', writers, (req, res) => {
   const { direction, cheque_no, bank_id, party, amount, issue_date, due_date } = req.body;
   const r = db.prepare(`INSERT INTO cheques (direction,cheque_no,bank_id,party,amount,issue_date,due_date,status) VALUES (?,?,?,?,?,?,?,'pending')`)

@@ -96,7 +96,7 @@ const Pages = (() => {
         ${kpi('السيولة السريعة', fr.quick_ratio, 'Quick Ratio', '⚡', fr.quick_ratio >= 1 ? 'k-green' : 'k-amber')}
         ${kpi('نسبة النقدية', fr.cash_ratio, 'النقدية ÷ الالتزامات', '💵', 'k-blue')}
         ${kpi('رأس المال العامل', money(fr.working_capital), 'أصول متداولة − التزامات', '🧮', fr.working_capital >= 0 ? 'k-green' : 'k-red')}
-        ${kpi('معدل دوران الأصول', fr.asset_turnover, 'الإيرادات ÷ الأصول', '🔄', 'k-teal')}
+        ${kpi('معدل دوران الأصول', fr.asset_turnover + '%', 'الإيرادات ÷ الأصول', '🔄', 'k-teal')}
       </div>` : ''}
       <div class="grid g-2" style="margin-top:16px">
         <div class="card"><div class="hd"><h3>${t('monthly_collection')}</h3></div><div class="bd">${barChart(d.monthly_collection, 'total', 'm')}</div></div>

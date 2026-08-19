@@ -56,6 +56,7 @@
     { id: 'treasury', icon: '💵', label: 'm_treasury', items: [
       { path: 'banks', label: 'm_banks', page: 'banks', mod: 'treasury' },
       { path: 'cheques', label: 'm_cheques', page: 'cheques', mod: 'treasury' },
+      { path: 'cheques_dash', label: 'm_cheques_dash', page: 'chequesDashboard', mod: 'treasury' },
       { path: 'reconciliation', label: 'm_recon', page: 'reconciliation', mod: 'treasury' },
     ] },
     { id: 'assets', icon: '🏗️', label: 'm_assets_mod', items: [

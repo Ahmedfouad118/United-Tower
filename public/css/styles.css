@@ -103,7 +103,9 @@ input,select,textarea{font-family:inherit;font-size:14px}
 .kpi .lbl{color:var(--muted);font-size:12.5px;margin-bottom:6px}
 .kpi .val{font-size:26px;font-weight:800;letter-spacing:-.5px}
 .kpi .sub{font-size:11.5px;color:var(--muted);margin-top:4px}
-.kpi .ico{position:absolute;inset-inline-start:16px;top:16px;width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-size:20px}
+.kpi .ico{position:absolute;inset-inline-end:16px;top:16px;width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-size:20px}
+.kpi{transition:transform .12s ease, box-shadow .12s ease}
+.kpi:hover{transform:translateY(-2px);box-shadow:0 6px 22px rgba(16,32,64,.10)}
 .kpi.k-blue .ico{background:#e7effd;color:var(--brand)}
 .kpi.k-green .ico{background:var(--green-bg);color:var(--green)}
 .kpi.k-amber .ico{background:var(--amber-bg);color:var(--amber)}
@@ -118,7 +120,9 @@ th{color:var(--muted);font-weight:600;font-size:12px;background:#f7f9fc;position
 th.th-sort{cursor:pointer;user-select:none}
 th.th-sort:hover{color:var(--brand)}
 th .sort-ar{font-size:10px;color:var(--brand)}
-tbody tr:hover{background:#f7fafd}
+tbody tr{transition:background .1s ease}
+tbody tr:hover{background:#fff1dc;box-shadow:inset 3px 0 0 var(--amber)}
+tbody tr:hover td{color:var(--ink)}
 td.num,th.num{text-align:left;font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
 tfoot td{font-weight:700;background:#f5f8fc;border-top:2px solid var(--line)}
 

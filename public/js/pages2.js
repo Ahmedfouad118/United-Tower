@@ -611,6 +611,38 @@ Object.assign(Pages, (() => {
     ], onSave: async (d, close) => { await API.post('/cheques', d); toast(t('saved')); close(); done(); } });
   }
 
+  // ---- Cheques dashboard (to-collect vs to-pay, with roll-over of overdue) --
+  async function chequesDashboard(c) {
+    const asOf = c._asOf || today();
+    reportShell(c, 'm_cheques_dash', `<div class="field" style="margin:0"><label>${t('date')}</label><input type="date" id="a" value="${asOf}"></div>`, null);
+    const r = await API.get('/reports/cheques-dashboard?asOf=' + asOf);
+    const kpi = (lbl, val, sub, cls) => `<div class="card kpi ${cls}"><div class="lbl">${lbl}</div><div class="val mono">${val}</div><div class="sub">${sub}</div></div>`;
+    const stBadge = (x) => { const d = (x.due_date || '').slice(0, 10); return d && d < asOf ? badge('متأخر', 'b-red') : (d === asOf ? badge('اليوم', 'b-amber') : badge('قادم', 'b-blue')); };
+    const chTbl = (list) => table([
+      { key: 'due_date', label: t('due_date'), render: (x) => dateStr(x.due_date) },
+      { key: 'cheque_no', label: 'رقم الشيك' },
+      { key: 'party', label: 'الطرف' },
+      { key: 'amount', label: t('amount'), num: true, render: (x) => money(x.amount) },
+      { key: 'st', label: t('status'), render: stBadge },
+    ], list, { empty: 'لا يوجد' });
+    const inc = r.incoming, out = r.outgoing;
+    c.querySelector('#rbody').innerHTML = `<div class="bd">
+      <div class="grid g-4" style="margin-bottom:16px">
+        ${kpi('وارد مستحق تحصيله الآن', money(inc.due_now.amount), inc.due_now.count + ' شيك (متأخر + اليوم)', inc.due_now.amount ? 'k-amber' : 'k-green')}
+        ${kpi('صادر مستحق صرفه الآن', money(out.due_now.amount), out.due_now.count + ' شيك', out.due_now.amount ? 'k-red' : 'k-green')}
+        ${kpi('وارد قادم', money(inc.upcoming.amount), inc.upcoming.count + ' شيك', 'k-blue')}
+        ${kpi('صادر قادم', money(out.upcoming.amount), out.upcoming.count + ' شيك', 'k-teal')}
+      </div>
+      <h3>🟢 شيكات واردة (تحصيل من العملاء) — مستحقة الآن</h3>${chTbl(inc.due_now.list)}
+      <h3 style="margin-top:14px">شيكات واردة قادمة</h3>${chTbl(inc.upcoming.list)}
+      <h3 style="margin-top:18px">🔴 شيكات صادرة (صرف للموردين) — مستحقة الآن</h3>${chTbl(out.due_now.list)}
+      <h3 style="margin-top:14px">شيكات صادرة قادمة</h3>${chTbl(out.upcoming.list)}
+      <p class="muted" style="margin-top:10px">أي شيك فات تاريخ استحقاقه ولم يُحصّل يظل ضمن «مستحق الآن» تلقائيًا لحد ما ترحّله من شاشة «${t('m_cheques')}».</p>
+    </div>`;
+    c.querySelector('#a').onchange = (e) => { c._asOf = e.target.value; chequesDashboard(c); };
+    bindPrint(c, t('m_cheques_dash'));
+  }
+
   // ---- Journals ----
   const JL = { invoice: 'فاتورة', recognition: 'تحقق إيراد', receipt: 'قبض', payment: 'صرف', expense: 'مصروف', deposit: 'تأمين', opening: 'افتتاحي', manual: 'يدوي', adjustment: 'تسوية' };
   async function journals(c) {
@@ -681,7 +713,7 @@ Object.assign(Pages, (() => {
     ['العملاء (ذمم مدينة)', [['customers', 'العملاء'], ['contracts', 'العقود'], ['invoices', 'الفواتير الشهرية'], ['receipts', 'سندات القبض'], ['cust_summary', 'ملخص حسابات العملاء'], ['statement', 'كشف حساب'], ['ar_aging', 'أعمار الذمم المدينة']]],
     ['الموردون (ذمم دائنة)', [['vendors', 'الموردون'], ['bills', 'فواتير الموردين'], ['vpayments', 'سندات الصرف'], ['ap_aging', 'أعمار الذمم الدائنة']]],
     ['المالية', [['coa', 'شجرة الحسابات'], ['journals', 'القيود اليومية'], ['tb', 'ميزان المراجعة'], ['is', 'قائمة الدخل'], ['is_consolidated', 'قائمة الدخل المجمعة'], ['gl', 'دفتر الأستاذ'], ['bs', 'المركز المالي'], ['liquidity', 'تقرير السيولة'], ['cashflow', 'التدفق النقدي'], ['ppl', 'أرباح العقارات'], ['roi', 'العائد ROI'], ['comparison', 'مقارنة أداء البنايات']]],
-    ['الخزينة والبنوك', [['banks', 'الحسابات البنكية'], ['cheques', 'الشيكات'], ['reconciliation', 'التسوية البنكية']]],
+    ['الخزينة والبنوك', [['banks', 'الحسابات البنكية'], ['cheques', 'الشيكات'], ['cheques_dash', 'متابعة الشيكات'], ['reconciliation', 'التسوية البنكية']]],
     ['الأصول', [['assets', 'الأصول الثابتة'], ['depreciation', 'جدول الإهلاك']]],
     ['الضرائب', [['vat', 'تقرير ض.ق.م']]],
     ['الموارد البشرية', [['employees', 'الموظفون والرواتب']]],
@@ -771,5 +803,5 @@ Object.assign(Pages, (() => {
 
   return { customers, vendors, buildings, units, categories, paymethods, banks, employees, coa,
     vendorBills, vendorPayments, trialBalance, incomeStatement, incomeStatementConsolidated, generalLedger, balanceSheet, arAging, apAging,
-    statement, propertyPL, roi, cashflow, comparison, vat, cheques, journals, users, company, assets, depreciation, customersSummary, reconciliation, liquidity };
+    statement, propertyPL, roi, cashflow, comparison, vat, cheques, chequesDashboard, journals, users, company, assets, depreciation, customersSummary, reconciliation, liquidity };
 })());

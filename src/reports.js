@@ -178,7 +178,10 @@ function liquidityReport(upto, lang = 'en') {
      GROUP BY a.code HAVING ABS(amt)>0.005 ORDER BY a.code`).all(...[sign, type, ...(upto ? [upto] : [])]);
   const allAssets = bal('asset', 1), liabilities = bal('liability', -1);
   const current_assets = allAssets.filter((a) => !FIXED_ASSET_CODES.includes(a.code));
-  const cash = current_assets.filter((a) => CASH_CODES.includes(a.code));
+  // cash & equivalents = petty cash + EVERY bank's GL account (not just 10400)
+  const bankAccs = db.prepare("SELECT DISTINCT gl_account c FROM banks WHERE gl_account IS NOT NULL AND gl_account<>''").all().map((x) => x.c);
+  const cashSet = new Set([...CASH_CODES, ...bankAccs]);
+  const cash = current_assets.filter((a) => cashSet.has(a.code));
   const ca = r2(current_assets.reduce((s, x) => s + x.amt, 0));
   const cl = r2(liabilities.reduce((s, x) => s + x.amt, 0));
   const cashTotal = r2(cash.reduce((s, x) => s + x.amt, 0));
@@ -206,7 +209,7 @@ function financialRatios(from, to, building_id) {
     // profitability
     gross_margin: pct(net, rev), net_margin: pct(net, rev),
     roa: pct(net, totalAssets), roe: pct(net, equity),
-    asset_turnover: totalAssets ? r2(rev / totalAssets) : 0,
+    asset_turnover: pct(rev, totalAssets), // expressed as a percentage
     // liquidity
     current_ratio: liq.current_ratio, quick_ratio: liq.quick_ratio, cash_ratio: liq.cash_ratio,
     working_capital: liq.working_capital,
@@ -425,6 +428,36 @@ function chequesReport(status, direction) {
   return db.prepare(`SELECT * FROM cheques WHERE ${where} ORDER BY due_date`).all(...p);
 }
 
+// ---- Cheques dashboard: cheques to collect (incoming) vs to pay (outgoing) --
+// Pending cheques whose due date has passed keep rolling forward as "due now"
+// until they are cleared, so nothing gets lost.
+function chequesDashboard(asOf) {
+  const ref = asOf || new Date().toISOString().slice(0, 10);
+  const all = db.prepare('SELECT * FROM cheques ORDER BY due_date').all();
+  const side = (direction) => {
+    const rows = all.filter((c) => c.direction === direction);
+    const pending = rows.filter((c) => c.status === 'pending');
+    const bucketOf = (c) => { const d = (c.due_date || '').slice(0, 10); if (!d || d < ref) return 'overdue'; if (d === ref) return 'today'; return 'upcoming'; };
+    const buckets = { overdue: [], today: [], upcoming: [] };
+    for (const c of pending) buckets[bucketOf(c)].push(c);
+    const sum = (list) => r2(list.reduce((s, c) => s + (c.amount || 0), 0));
+    const cleared = rows.filter((c) => c.status === 'cleared');
+    const bounced = rows.filter((c) => c.status === 'bounced');
+    // "due now" rolls overdue + today together (uncollected carries to next days)
+    const dueNow = buckets.overdue.concat(buckets.today).sort((a, b) => (a.due_date || '').localeCompare(b.due_date || ''));
+    return {
+      overdue: { count: buckets.overdue.length, amount: sum(buckets.overdue) },
+      today: { count: buckets.today.length, amount: sum(buckets.today) },
+      upcoming: { count: buckets.upcoming.length, amount: sum(buckets.upcoming), list: buckets.upcoming },
+      due_now: { count: dueNow.length, amount: sum(dueNow), list: dueNow },
+      pending_total: sum(pending),
+      cleared: { count: cleared.length, amount: sum(cleared) },
+      bounced: { count: bounced.length, amount: sum(bounced) },
+    };
+  };
+  return { asOf: ref, incoming: side('incoming'), outgoing: side('outgoing') };
+}
+
 // ---- Dashboard ------------------------------------------------------------
 function dashboard(building_id, from, to) {
   const today = new Date().toISOString().slice(0, 10);
@@ -438,12 +471,20 @@ function dashboard(building_id, from, to) {
   const incomeYtd = db.prepare(
     `SELECT COALESCE(SUM(l.credit)-SUM(l.debit),0) s FROM journal_lines l JOIN journals j ON j.id=l.journal_id JOIN accounts a ON a.code=l.account_code
      WHERE a.type='income' ${from ? 'AND j.jdate>=?' : ''} ${to ? 'AND j.jdate<=?' : ''}`).get(...[...(from ? [from] : []), ...(to ? [to] : [])]).s;
-  const advance = db.prepare(`SELECT COALESCE(SUM(l.credit)-SUM(l.debit),0) s FROM journal_lines l WHERE l.account_code='21500'`).get().s;
+  // customer advances now live in 23100 (new) AND legacy 21500 — count both,
+  // but only the tenant-tagged part (so deferred-rent GL entries aren't included)
+  const advance = db.prepare(`SELECT COALESCE(SUM(l.credit)-SUM(l.debit),0) s FROM journal_lines l WHERE l.account_code IN ('21500','23100') AND l.tenant_id IS NOT NULL`).get().s;
   const deposits = db.prepare(`SELECT COALESCE(SUM(l.credit)-SUM(l.debit),0) s FROM journal_lines l WHERE l.account_code='21000'`).get().s;
+  // outstanding receivables = actual net balance of the receivable accounts up to
+  // the period end (opening balances + invoices − collections), not just unpaid invoices
+  const recvBal = db.prepare(
+    `SELECT COALESCE(SUM(l.debit)-SUM(l.credit),0) s FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+     WHERE l.account_code IN ('11000','11100') ${to ? 'AND j.jdate<=?' : ''} ${building_id ? 'AND l.building_id=?' : ''}`)
+    .get(...[...(to ? [to] : []), ...(building_id ? [building_id] : [])]).s;
   return {
     occupancy_rate: occ.total ? Math.round((occ.occupied / occ.total) * 100) : 0,
     total_flats: occ.total, occupied: occ.occupied, vacant: occ.vacant,
-    collected_this_month: r2(collected), outstanding_receivables: aging.grand_total,
+    collected_this_month: r2(collected), outstanding_receivables: r2(recvBal),
     income_ytd: r2(incomeYtd), advance_held: r2(advance), deposits_held: r2(deposits),
     monthly_collection: monthly, aging_buckets: aging.totals, top_debtors: aging.rows.slice(0, 8),
     cash_flow: cashFlowForecast(6), expiring_contracts: contractExpiry(60, building_id),
@@ -483,6 +524,6 @@ module.exports = {
   trialBalance, incomeStatement, incomeStatementConsolidated, accountLedger, generalLedgerFull,
   liquidityReport, financialRatios, balanceSheet, receivablesAging, payablesAging,
   flatStatement, occupancy, propertyPL, roi, cashFlowForecast, vatReport,
-  bankReport, chequesReport, dashboard, contractExpiry, buildingComparison,
+  bankReport, chequesReport, chequesDashboard, dashboard, contractExpiry, buildingComparison,
   depreciationReport, customersSummary,
 };
