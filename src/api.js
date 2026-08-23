@@ -567,6 +567,40 @@ router.put('/journals/:id', writers, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+// ---- Reconcile opening balances -------------------------------------------
+// The manual opening journal (OB-2025) carries AGGREGATE balances for
+// receivables/payables/advances, but those are now entered per customer/vendor
+// (OB-CUST / OB-VEND). This removes the duplicated aggregate lines from OB-2025
+// and rebalances via Opening Balance Equity (39999) so nothing is double-counted.
+router.post('/opening/reconcile', requireRole('admin'), (req, res) => {
+  const REMOVE = ['11100', '11000', '20000', '21500', '23100'];
+  let j = db.prepare("SELECT * FROM journals WHERE reference='OB-2025'").get();
+  if (!j) j = db.prepare("SELECT j.* FROM journals j WHERE j.jtype='opening' AND (j.reference IS NULL OR (j.reference NOT LIKE 'OB-CUST%' AND j.reference NOT LIKE 'OB-VEND%')) ORDER BY (SELECT COALESCE(SUM(debit),0) FROM journal_lines WHERE journal_id=j.id) DESC LIMIT 1").get();
+  if (!j) return res.status(404).json({ error: 'لا يوجد قيد افتتاحي يدوي (OB-2025)' });
+  const lines = db.prepare('SELECT * FROM journal_lines WHERE journal_id=?').all(j.id);
+  const removed = lines.filter((l) => REMOVE.includes(l.account_code));
+  if (!removed.length) return res.json({ ok: true, message: 'لا توجد أرصدة مكررة في القيد الافتتاحي', removed: 0, journal_id: j.id });
+  const r3 = (n) => Math.round(n * 1000) / 1000;
+  const remDr = r3(removed.reduce((s, l) => s + l.debit, 0));
+  const remCr = r3(removed.reduce((s, l) => s + l.credit, 0));
+  const del = db.prepare('DELETE FROM journal_lines WHERE id=?');
+  for (const l of removed) del.run(l.id);
+  const rem = db.prepare('SELECT COALESCE(SUM(debit),0) d, COALESCE(SUM(credit),0) c FROM journal_lines WHERE journal_id=?').get(j.id);
+  const diff = r3(rem.d - rem.c); // >0 => remaining is debit-heavy, add a credit to balance
+  if (Math.abs(diff) > 0.005) {
+    try { db.prepare("INSERT OR IGNORE INTO accounts (code,name,name_ar,type,normal_balance) VALUES ('39999','Opening Balance Equity','حقوق ملكية افتتاحية','equity','C')").run(); } catch {}
+    const ex = db.prepare("SELECT id,debit,credit FROM journal_lines WHERE journal_id=? AND account_code='39999'").get(j.id);
+    if (ex) {
+      const net = r3((ex.credit - ex.debit) + diff); // fold into existing 39999 line
+      db.prepare('UPDATE journal_lines SET debit=?, credit=? WHERE id=?').run(net < 0 ? -net : 0, net > 0 ? net : 0, ex.id);
+    } else {
+      db.prepare('INSERT INTO journal_lines (journal_id,account_code,debit,credit,memo) VALUES (?,?,?,?,?)')
+        .run(j.id, '39999', diff < 0 ? -diff : 0, diff > 0 ? diff : 0, 'تسوية توحيد الأرصدة الافتتاحية');
+    }
+  }
+  res.json({ ok: true, journal_id: j.id, removed: removed.length, removed_accounts: REMOVE, removed_debit: remDr, removed_credit: remCr, rebalanced_to_39999: diff });
+});
+
 // ---- Reports --------------------------------------------------------------
 router.get('/reports/trial-balance', (req, res) => res.json(R.trialBalance(req.query.upto, lang(req))));
 router.get('/reports/income-statement', (req, res) => res.json(R.incomeStatement(req.query.from, req.query.to, lang(req), req.query.building_id ? Number(req.query.building_id) : null)));

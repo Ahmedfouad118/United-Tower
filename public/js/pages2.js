@@ -248,16 +248,19 @@ Object.assign(Pages, (() => {
     const ac = await ref('accounts');
     const from = c._from || (new Date().getFullYear() + '-01-01'), to = c._to || today();
     const acc = c._acc || '';
+    const accLabel = acc ? ((ac.find((a) => a.code === acc) || {}) ) : null;
+    const accVal = accLabel && accLabel.code ? (accLabel.code + ' - ' + (accLabel.name_ar || accLabel.name)) : '';
     reportShell(c, 'm_gl', `
       <div class="field" style="margin:0"><label>${t('account')}</label>
-        <select id="glacc" style="min-width:240px"><option value="">${t('all_accounts')}</option>
-        ${ac.filter((a) => !a.is_group).map((a) => `<option value="${a.code}" ${a.code === acc ? 'selected' : ''}>${esc(a.code + ' - ' + (a.name_ar || a.name))}</option>`).join('')}</select></div>
+        <input id="glacc" list="glaccdl" placeholder="${t('all_accounts')} — ابحث بالكود أو الاسم" style="min-width:300px" value="${esc(accVal)}">
+        <datalist id="glaccdl">${ac.filter((a) => !a.is_group).map((a) => `<option value="${esc(a.code + ' - ' + (a.name_ar || a.name))}"></option>`).join('')}</datalist></div>
       <div class="field" style="margin:0"><label>${t('from')}</label><input type="date" id="glf" value="${from}"></div>
       <div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="glt" value="${to}"></div>
       <button class="btn primary" id="glgo">${t('run')}</button>`, null);
+    const parseAcc = () => { const raw = c.querySelector('#glacc').value.trim(); const m = raw.match(/^\s*([0-9A-Za-z]+)/); return m ? m[1] : ''; };
     const jref = (x) => `<a href="#" class="drill" data-jid="${x.journal_id}">${esc(x.reference || ('#' + x.journal_id))}</a>`;
     const run = async () => {
-      const a = c.querySelector('#glacc').value, f = c.querySelector('#glf').value, tt = c.querySelector('#glt').value;
+      const a = parseAcc(), f = c.querySelector('#glf').value, tt = c.querySelector('#glt').value;
       const bq = (window.UT && UT.building) ? '&building_id=' + UT.building : '';
       const rb = c.querySelector('#rbody');
       if (!a) {
@@ -295,7 +298,8 @@ Object.assign(Pages, (() => {
       ], r.rows, { foot: [{ v: '' }, { v: '' }, { v: '' }, { v: '' }, { v: t('total') }, { v: money(r.total_debit), num: true }, { v: money(r.total_credit), num: true }, { v: money(r.closing), num: true }] })
         .replace('<tbody>', '<tbody>' + openRow);
     };
-    c.querySelector('#glgo').onclick = () => { c._acc = c.querySelector('#glacc').value; c._from = c.querySelector('#glf').value; c._to = c.querySelector('#glt').value; run(); };
+    c.querySelector('#glgo').onclick = () => { c._acc = parseAcc(); c._from = c.querySelector('#glf').value; c._to = c.querySelector('#glt').value; run(); };
+    c.querySelector('#glacc').addEventListener('change', () => c.querySelector('#glgo').click());
     c.querySelector('#rbody').addEventListener('click', (e) => { const a = e.target.closest('.drill[data-jid]'); if (a) { e.preventDefault(); viewJournal(a.dataset.jid); } });
     bindPrint(c, t('m_gl'));
     run();
@@ -541,9 +545,15 @@ Object.assign(Pages, (() => {
         <tr><td>ض.ق.م غير محصّلة (ضمن ذمم العملاء)</td><td class="num neg">${money(r.vat_outstanding)}</td></tr></table>
       <div class="section-title" style="margin-top:14px">التسوية مع الضرائب</div>
       <table>
-        <tr><td>ض.ق.م المخرجات (Output)</td><td class="num">${money(r.output_vat)}</td></tr>
-        <tr><td>ض.ق.م المدخلات (Input)</td><td class="num">${money(r.input_vat)}</td></tr>
-        <tfoot><tr><td>صافي المستحق للضرائب</td><td class="num"><b>${money(r.net_payable)}</b></td></tr></tfoot></table></div>`;
+        <tr><td>ض.ق.م المخرجات (Output) — حساب 23200</td><td class="num">${drillA(money(r.output_vat), 'data-acc="23200"')}</td></tr>
+        <tr><td>ض.ق.م المدخلات (Input) — حساب 11600</td><td class="num">${drillA(money(r.input_vat), 'data-acc="11600"')}</td></tr>
+        <tfoot><tr><td>صافي المستحق للضرائب</td><td class="num"><b>${drillA(money(r.net_payable), 'data-accs="23200,11600"')}</b></td></tr></tfoot></table>
+      <p class="muted" style="font-size:11px;margin-top:8px">اضغط على أي رقم في «التسوية مع الضرائب» لعرض الحركات والقيود اللي كوّنته.</p></div>`;
+    c.querySelector('#rbody').onclick = (e) => {
+      const a = e.target.closest('.drill'); if (!a) return; e.preventDefault();
+      if (a.dataset.acc) accountDrill({ title: 'ض.ق.م ' + a.dataset.acc, account: a.dataset.acc, from, to });
+      else if (a.dataset.accs) accountDrill({ title: 'صافي ض.ق.م', accounts: a.dataset.accs.split(','), from, to });
+    };
     c.querySelector('#f').onchange = (e) => { c._from = e.target.value; vat(c); };
     c.querySelector('#t2').onchange = (e) => { c._to = e.target.value; vat(c); };
     bindPrint(c, t('m_vat'));
@@ -771,7 +781,7 @@ Object.assign(Pages, (() => {
   async function company(c) {
     loading(c);
     const s = await API.get('/settings');
-    c.innerHTML = `<div class="card" style="max-width:720px"><div class="hd"><h3>${t('m_company')}</h3><div style="display:flex;gap:6px"><button class="btn" id="cbackup">💾 نسخة احتياطية</button><button class="btn primary" id="csave">${t('save')}</button></div></div><div class="bd">
+    c.innerHTML = `<div class="card" style="max-width:720px"><div class="hd"><h3>${t('m_company')}</h3><div style="display:flex;gap:6px">${isAdmin() ? '<button class="btn" id="creconcile">🧹 توحيد الأرصدة الافتتاحية</button>' : ''}<button class="btn" id="cbackup">💾 نسخة احتياطية</button><button class="btn primary" id="csave">${t('save')}</button></div></div><div class="bd">
       <div class="form-grid">
         <div class="field"><label>اسم الشركة (EN)</label><input id="company_name" value="${esc(s.company_name || '')}"></div>
         <div class="field"><label>الاسم عربي</label><input id="company_name_ar" value="${esc(s.company_name_ar || '')}"></div>
@@ -793,6 +803,12 @@ Object.assign(Pages, (() => {
       rd.readAsDataURL(f);
     };
     c.querySelector('#cbackup').onclick = () => API.download('/backup', 'united-tower-backup.db').catch((e) => toast(e.message, 'err'));
+    const rec = c.querySelector('#creconcile');
+    if (rec) rec.onclick = async () => {
+      if (!confirm('هيشيل أرصدة (ذمم مدينة/موردين/مقدم) الإجمالية من القيد الافتتاحي اليدوي OB-2025 (لأنها متسجلة لكل عميل/مورد على حدة) ويعيد التوازن على حقوق الملكية الافتتاحية 39999.\n\n⚠️ خُد نسخة احتياطية الأول! متابعة؟')) return;
+      try { const r = await API.post('/opening/reconcile', {}); toast(r.removed ? `تم حذف ${r.removed} سطر مكرر · تسوية 39999 بمبلغ ${money(r.rebalanced_to_39999)}` : (r.message || 'لا توجد أرصدة مكررة')); }
+      catch (e) { toast(e.message, 'err'); }
+    };
     c.querySelector('#csave').onclick = async () => {
       const keys = ['company_name', 'company_name_ar', 'cr_number', 'vat_number', 'vat_percent', 'send_email', 'ai_api_key'];
       const payload = { company_logo: logoData };
