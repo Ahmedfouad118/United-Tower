@@ -165,6 +165,30 @@ function generalLedgerFull({ from, to, building_id } = {}, lang = 'en') {
   return { accounts };
 }
 
+// ---- Grouped journals: combine each batch (date + type) into one entry -----
+// A read-only view that rolls all lines of the same day+type into a single
+// consolidated journal — so an uploaded batch of receipts/invoices reads as ONE
+// entry, without touching the real journals.
+function groupedJournals(from, to, lang = 'en') {
+  const rows = db.prepare(
+    `SELECT j.jdate, j.jtype, l.account_code, ${nameCol(lang)} account_name,
+            COALESCE(SUM(l.debit),0) debit, COALESCE(SUM(l.credit),0) credit
+     FROM journal_lines l JOIN journals j ON j.id=l.journal_id JOIN accounts a ON a.code=l.account_code
+     WHERE 1=1 ${from ? 'AND j.jdate>=?' : ''} ${to ? 'AND j.jdate<=?' : ''}
+     GROUP BY j.jdate, j.jtype, l.account_code
+     HAVING ABS(debit)>0.005 OR ABS(credit)>0.005
+     ORDER BY j.jdate DESC, j.jtype, l.account_code`).all(...[...(from ? [from] : []), ...(to ? [to] : [])]);
+  const groups = {};
+  for (const l of rows) {
+    const k = l.jdate + '|' + l.jtype;
+    if (!groups[k]) groups[k] = { jdate: l.jdate, jtype: l.jtype, lines: [], total_debit: 0, total_credit: 0 };
+    groups[k].lines.push({ account_code: l.account_code, account_name: l.account_name, debit: r2(l.debit), credit: r2(l.credit) });
+    groups[k].total_debit = r2(groups[k].total_debit + l.debit);
+    groups[k].total_credit = r2(groups[k].total_credit + l.credit);
+  }
+  return Object.values(groups);
+}
+
 // ---- Liquidity report (current assets vs current liabilities) -------------
 // Fixed assets (buildings/land + their accumulated depreciation) are excluded
 // from current assets; everything else asset = current/liquid within a year.
@@ -521,7 +545,7 @@ function buildingComparison(from, to) {
 }
 
 module.exports = {
-  trialBalance, incomeStatement, incomeStatementConsolidated, accountLedger, generalLedgerFull,
+  trialBalance, incomeStatement, incomeStatementConsolidated, accountLedger, generalLedgerFull, groupedJournals,
   liquidityReport, financialRatios, balanceSheet, receivablesAging, payablesAging,
   flatStatement, occupancy, propertyPL, roi, cashFlowForecast, vatReport,
   bankReport, chequesReport, chequesDashboard, dashboard, contractExpiry, buildingComparison,

@@ -127,13 +127,16 @@ Object.assign(Pages, (() => {
     const tbCfg = { search: true, searchFn: (rs, q) => rs.filter((r) => [r.vendor, r.voucher_no].join(' ').toLowerCase().includes(q)),
       exportType: 'vendor-payments', onNew: canWrite() ? () => vpayForm(vn, () => vendorPayments(c)) : null, newLabel: 'سند صرف' };
     c.innerHTML = toolbar(tbCfg) + `<div class="card"><div class="hd"><h3>${t('m_vpayments')}</h3><button class="btn sm btn-print">🖨</button></div><div id="vt"></div></div>`;
-    const cols = [{ key: 'voucher_no', label: t('voucher') }, { key: 'pdate', label: t('date'), render: (r) => dateStr(r.pdate) }, { key: 'vendor', label: t('vendor') },
+    const cols = [{ key: 'voucher_no', label: t('voucher'), render: (r) => r.journal_id ? `<a href="#" class="drill" data-jid="${r.journal_id}">${esc(r.voucher_no)}</a>` : esc(r.voucher_no) }, { key: 'pdate', label: t('date'), render: (r) => dateStr(r.pdate) }, { key: 'vendor', label: t('vendor') },
       { key: 'amount', label: t('amount'), num: true, render: (r) => money(r.amount) }, { key: 'method', label: t('method') },
       { key: '_a', label: t('actions'), render: (r) => actions(r.id, ['print']) }];
     const draw = (rs) => c.querySelector('#vt').innerHTML = table(cols, rs);
     draw(rows); wireToolbar(c, tbCfg, draw, rows);
     c.querySelector('.btn-print').onclick = () => printTable(t('m_vpayments'), cols.slice(0, -1), rows);
-    c.querySelector('#vt').onclick = (e) => { const b = e.target.closest('[data-act]'); if (b) voucherPrint('سند صرف', rows.find((x) => x.id === +b.dataset.id), rows.find((x) => x.id === +b.dataset.id).vendor); };
+    c.querySelector('#vt').onclick = (e) => {
+      const drill = e.target.closest('.drill[data-jid]'); if (drill) { e.preventDefault(); return Pages.viewJournal(drill.dataset.jid); }
+      const b = e.target.closest('[data-act]'); if (b) voucherPrint('سند صرف', rows.find((x) => x.id === +b.dataset.id), rows.find((x) => x.id === +b.dataset.id).vendor);
+    };
   }
   function vpayForm(vn, done) {
     formModal({ title: 'سند صرف', wide: true, fields: [
@@ -256,12 +259,13 @@ Object.assign(Pages, (() => {
         <datalist id="glaccdl">${ac.filter((a) => !a.is_group).map((a) => `<option value="${esc(a.code + ' - ' + (a.name_ar || a.name))}"></option>`).join('')}</datalist></div>
       <div class="field" style="margin:0"><label>${t('from')}</label><input type="date" id="glf" value="${from}"></div>
       <div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="glt" value="${to}"></div>
-      <button class="btn primary" id="glgo">${t('run')}</button>`, null);
+      <button class="btn primary" id="glgo">${t('run')}</button>`, 'general-ledger');
     const parseAcc = () => { const raw = c.querySelector('#glacc').value.trim(); const m = raw.match(/^\s*([0-9A-Za-z]+)/); return m ? m[1] : ''; };
     const jref = (x) => `<a href="#" class="drill" data-jid="${x.journal_id}">${esc(x.reference || ('#' + x.journal_id))}</a>`;
     const run = async () => {
       const a = parseAcc(), f = c.querySelector('#glf').value, tt = c.querySelector('#glt').value;
       const bq = (window.UT && UT.building) ? '&building_id=' + UT.building : '';
+      c._qs = `?from=${f}&to=${tt}${a ? '&account=' + a : ''}${bq}`;
       const rb = c.querySelector('#rbody');
       if (!a) {
         // ALL accounts -> full GL grouped per account (each with its own balance)
@@ -715,6 +719,24 @@ Object.assign(Pages, (() => {
       } });
   }
 
+  // ---- Grouped journals report (each day+type batch as ONE combined entry) --
+  async function groupedJournals(c) {
+    const from = c._from || (new Date().getFullYear() + '-01-01'), to = c._to || today();
+    reportShell(c, 'm_gjournals', `<div class="field" style="margin:0"><label>${t('from')}</label><input type="date" id="f" value="${from}"></div>
+      <div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="t2" value="${to}"></div>`, null);
+    const r = await API.get(`/reports/grouped-journals?from=${from}&to=${to}`);
+    const GJL = { invoice: 'فواتير عملاء', recognition: 'تحقق إيراد', receipt: 'سندات قبض', payment: 'سندات صرف', expense: 'مصروفات/فواتير موردين', deposit: 'تأمينات', opening: 'افتتاحي', manual: 'يدوي', adjustment: 'تسويات' };
+    c.querySelector('#rbody').innerHTML = r.map((g) => `<div style="margin-bottom:16px"><h3 style="margin:0 0 4px">${dateStr(g.jdate)} — ${GJL[g.jtype] || g.jtype}</h3>${
+      table([{ key: 'account_code', label: t('code') }, { key: 'account_name', label: t('account') },
+        { key: 'debit', label: t('debit'), num: true, render: (x) => x.debit ? money(x.debit) : '' },
+        { key: 'credit', label: t('credit'), num: true, render: (x) => x.credit ? money(x.credit) : '' }], g.lines,
+        { foot: [{ v: '' }, { v: t('total') }, { v: money(g.total_debit), num: true }, { v: money(g.total_credit), num: true }] })
+    }</div>`).join('') || `<div class="empty">${t('no_data')}</div>`;
+    c.querySelector('#f').onchange = (e) => { c._from = e.target.value; groupedJournals(c); };
+    c.querySelector('#t2').onchange = (e) => { c._to = e.target.value; groupedJournals(c); };
+    bindPrint(c, t('m_gjournals'));
+  }
+
   // ---- Users & permissions ----
   // per-screen permissions grouped by category (each screen keyed by its nav path)
   const PGROUPS = [
@@ -722,7 +744,7 @@ Object.assign(Pages, (() => {
     ['الأملاك', [['buildings', 'البنايات'], ['units', 'الوحدات'], ['calendar', 'كالندر الإشغال']]],
     ['العملاء (ذمم مدينة)', [['customers', 'العملاء'], ['contracts', 'العقود'], ['invoices', 'الفواتير الشهرية'], ['receipts', 'سندات القبض'], ['cust_summary', 'ملخص حسابات العملاء'], ['statement', 'كشف حساب'], ['ar_aging', 'أعمار الذمم المدينة']]],
     ['الموردون (ذمم دائنة)', [['vendors', 'الموردون'], ['bills', 'فواتير الموردين'], ['vpayments', 'سندات الصرف'], ['ap_aging', 'أعمار الذمم الدائنة']]],
-    ['المالية', [['coa', 'شجرة الحسابات'], ['journals', 'القيود اليومية'], ['tb', 'ميزان المراجعة'], ['is', 'قائمة الدخل'], ['is_consolidated', 'قائمة الدخل المجمعة'], ['gl', 'دفتر الأستاذ'], ['bs', 'المركز المالي'], ['liquidity', 'تقرير السيولة'], ['cashflow', 'التدفق النقدي'], ['ppl', 'أرباح العقارات'], ['roi', 'العائد ROI'], ['comparison', 'مقارنة أداء البنايات']]],
+    ['المالية', [['coa', 'شجرة الحسابات'], ['journals', 'القيود اليومية'], ['gjournals', 'القيود المجمعة'], ['tb', 'ميزان المراجعة'], ['is', 'قائمة الدخل'], ['is_consolidated', 'قائمة الدخل المجمعة'], ['gl', 'دفتر الأستاذ'], ['bs', 'المركز المالي'], ['liquidity', 'تقرير السيولة'], ['cashflow', 'التدفق النقدي'], ['ppl', 'أرباح العقارات'], ['roi', 'العائد ROI'], ['comparison', 'مقارنة أداء البنايات']]],
     ['الخزينة والبنوك', [['banks', 'الحسابات البنكية'], ['cheques', 'الشيكات'], ['cheques_dash', 'متابعة الشيكات'], ['reconciliation', 'التسوية البنكية']]],
     ['الأصول', [['assets', 'الأصول الثابتة'], ['depreciation', 'جدول الإهلاك']]],
     ['الضرائب', [['vat', 'تقرير ض.ق.م']]],
@@ -819,5 +841,5 @@ Object.assign(Pages, (() => {
 
   return { customers, vendors, buildings, units, categories, paymethods, banks, employees, coa,
     vendorBills, vendorPayments, trialBalance, incomeStatement, incomeStatementConsolidated, generalLedger, balanceSheet, arAging, apAging,
-    statement, propertyPL, roi, cashflow, comparison, vat, cheques, chequesDashboard, journals, users, company, assets, depreciation, customersSummary, reconciliation, liquidity };
+    statement, propertyPL, roi, cashflow, comparison, vat, cheques, chequesDashboard, journals, groupedJournals, users, company, assets, depreciation, customersSummary, reconciliation, liquidity };
 })());

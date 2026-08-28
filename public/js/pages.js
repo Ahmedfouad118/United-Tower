@@ -341,7 +341,7 @@ const Pages = (() => {
     c.innerHTML = toolbar(tbCfg) + `<div class="card"><div class="hd"><h3>${t('m_receipts')}</h3><div style="display:flex;gap:6px">${canDel ? UI.bulkDelHTML() : ''}<button class="btn sm btn-print">🖨 ${t('print')}</button></div></div><div id="pt"></div></div>`;
     const cols = [
       ...(canDel ? [{ key: '_s', label: '<input type="checkbox" class="sel-all">', render: (r) => `<input type="checkbox" class="row-sel" data-id="${r.id}">` }] : []),
-      { key: 'voucher_no', label: t('voucher') }, { key: 'pdate', label: t('date'), render: (r) => dateStr(r.pdate) },
+      { key: 'voucher_no', label: t('voucher'), render: (r) => r.journal_id ? `<a href="#" class="drill" data-jid="${r.journal_id}">${esc(r.voucher_no)}</a>` : esc(r.voucher_no) }, { key: 'pdate', label: t('date'), render: (r) => dateStr(r.pdate) },
       { key: 'tenant', label: t('tenant') }, { key: 'flat', label: t('unit') },
       { key: 'amount', label: t('amount'), num: true, render: (r) => money(r.amount) },
       { key: 'applied_amount', label: 'سداد', num: true, render: (r) => money(r.applied_amount) },
@@ -352,6 +352,7 @@ const Pages = (() => {
     draw(rows); wireToolbar(c, tbCfg, draw, rows);
     c.querySelector('.btn-print').onclick = () => printTable(t('m_receipts'), cols.filter((x) => x.key !== '_s' && x.key !== '_a'), rows);
     c.querySelector('#pt').onclick = async (e) => {
+      const drill = e.target.closest('.drill[data-jid]'); if (drill) { e.preventDefault(); if (Pages.viewJournal) Pages.viewJournal(drill.dataset.jid); return; }
       const btn = e.target.closest('[data-act]'); if (!btn) return;
       const r = rows.find((x) => x.id === +btn.dataset.id);
       if (btn.dataset.act === 'delete') { if (confirm(t('confirm_delete'))) { await API.del('/payments/' + r.id); toast(t('deleted')); receipts(c); } }

@@ -145,6 +145,24 @@ router.get('/export-report/:name', (req, res) => {
       ...r.assets.map((x) => ['Asset', x.code, x.name, x.amt]), ['', '', 'Total Assets', r.total_assets],
       ...r.liabilities.map((x) => ['Liability', x.code, x.name, x.amt]), ['', '', 'Total Liabilities', r.total_liabilities],
       ...r.equity.map((x) => ['Equity', x.code, x.name, x.amt]), ['', '', 'Net Income', r.net_income], ['', '', 'Total Equity', r.total_equity]];
+  } else if (name === 'general-ledger') {
+    const acc = req.query.account;
+    aoa = [['Date', 'Ref', 'Account', 'Party', 'Memo', 'Debit', 'Credit', 'Balance']];
+    if (acc) {
+      const r = R.accountLedger({ account: acc, from: req.query.from, to: req.query.to }, 'en');
+      if (Math.abs(r.opening) > 0.005) aoa.push(['', '', '', '', 'Opening', '', '', r.opening]);
+      for (const x of r.rows) aoa.push([x.jdate, x.reference, x.account_name, x.tenant || x.vendor || '', x.memo, x.debit, x.credit, x.balance]);
+      aoa.push(['', '', '', '', 'Total', r.total_debit, r.total_credit, r.closing]);
+    } else {
+      const r = R.generalLedgerFull({ from: req.query.from, to: req.query.to }, 'en');
+      for (const a of r.accounts) {
+        aoa.push([`${a.code} - ${a.name}`]);
+        if (Math.abs(a.opening) > 0.005) aoa.push(['', '', '', '', 'Opening', '', '', a.opening]);
+        for (const x of a.rows) aoa.push([x.jdate, x.reference, '', x.party, x.memo, x.debit, x.credit, x.balance]);
+        aoa.push(['', '', '', '', 'Total', a.total_debit, a.total_credit, a.closing]);
+        aoa.push([]);
+      }
+    }
   } else if (name === 'income-statement-consolidated') {
     const r = R.incomeStatementConsolidated(req.query.year, 'en', req.query.building_id ? Number(req.query.building_id) : null);
     const MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

@@ -360,8 +360,13 @@ router.put('/invoices/:id', writers, (req, res) => {
 router.delete('/invoices/:id', writers, (req, res) => {
   const inv = db.prepare('SELECT * FROM invoices WHERE id=?').get(req.params.id);
   if (!inv) return res.status(404).json({ error: 'not found' });
-  if (inv.paid_amount > 0.005) return res.status(400).json({ error: 'الفاتورة مدفوعة جزئياً/كلياً — احذف سند القبض أولاً' });
+  // An accountant must clear the receipt first; an admin may remove it anyway.
+  // When forced, the receipt allocations are unlinked so no orphan rows remain —
+  // the money already received stays as a credit on the customer's ledger.
+  if (inv.paid_amount > 0.005 && req.user.role !== 'admin')
+    return res.status(400).json({ error: 'الفاتورة مدفوعة جزئياً/كلياً — احذف سند القبض أولاً (أو استخدم مدير النظام)' });
   const { deleteJournal } = require('./ledger');
+  db.prepare('DELETE FROM payment_allocations WHERE invoice_id=?').run(inv.id);
   for (const j of db.prepare("SELECT id FROM journals WHERE source_table='invoices' AND source_id=?").all(inv.id)) deleteJournal(j.id);
   db.prepare('DELETE FROM invoices WHERE id=?').run(inv.id);
   res.json({ ok: true });
@@ -619,6 +624,7 @@ router.get('/reports/account-ledger', (req, res) => {
 });
 router.get('/reports/balance-sheet', (req, res) => res.json(R.balanceSheet(req.query.upto, lang(req))));
 router.get('/reports/general-ledger-full', (req, res) => res.json(R.generalLedgerFull({ from: req.query.from || null, to: req.query.to || null, building_id: req.query.building_id ? Number(req.query.building_id) : null }, lang(req))));
+router.get('/reports/grouped-journals', (req, res) => res.json(R.groupedJournals(req.query.from, req.query.to, lang(req))));
 router.get('/reports/liquidity', (req, res) => res.json(R.liquidityReport(req.query.upto, lang(req))));
 router.get('/reports/financial-ratios', (req, res) => res.json(R.financialRatios(req.query.from, req.query.to, effBuilding(req) && effBuilding(req) > 0 ? effBuilding(req) : null)));
 router.get('/reports/aging', (req, res) => res.json(R.receivablesAging(req.query.asOf, effBuilding(req))));
