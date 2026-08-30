@@ -193,6 +193,22 @@ const UI = (() => {
     w.document.close();
   }
 
+  // ---- Client-side Excel export of whatever is rendered (any report/statement)
+  // Builds an Excel-readable HTML workbook from the given HTML (tables), so every
+  // screen can be exported next to its print button without a server endpoint.
+  function exportTableToExcel(title, containerHTML) {
+    const dir = I18N.dir();
+    const doc = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head><meta charset="utf-8"><style>table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:4px;mso-number-format:"\\@"}th{background:#f0f0f0;font-weight:bold}</style></head>
+      <body dir="${dir}"><h3>${esc(title)}</h3>${containerHTML}</body></html>`;
+    const blob = new Blob(['\ufeff' + doc], { type: 'application/vnd.ms-excel' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = (title || 'report').replace(/[\\/:*?"<>|]/g, '_') + '.xls';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   // ---- Bulk select + delete -------------------------------------------------
   // container must contain: a `.sel-all` header checkbox, `.row-sel[data-id]`
   // row checkboxes, and a `.bulk-del` button. `del(id)` deletes one row.
@@ -247,5 +263,5 @@ const UI = (() => {
   }
 
   return { el, esc, fmt, money, int, dateStr, today, curMonth, toast, modal, table, badge, statusBadge,
-    barChart, toolbar, wireToolbar, actions, importModal, formModal, printReport, makeSortable, bulkDelHTML, wireBulk };
+    barChart, toolbar, wireToolbar, actions, importModal, formModal, printReport, exportTableToExcel, makeSortable, bulkDelHTML, wireBulk };
 })();

@@ -151,9 +151,11 @@ Object.assign(Pages, (() => {
   // ---- Reports: report wrapper with print + export ----
   function reportShell(c, titleKey, controlsHTML, exportName) {
     c.innerHTML = `<div class="toolbar">${controlsHTML}<div class="spacer"></div>
-      ${exportName ? `<button class="btn" id="rexp">📊 ${t('export')}</button>` : ''}
+      ${exportName ? `<button class="btn" id="rexp">📊 ${t('export')}</button>` : `<button class="btn" id="rxls">📊 Excel</button>`}
       <button class="btn" id="rprint">🖨 ${t('print')}</button></div><div class="card" id="rbody"></div>`;
     if (exportName) c.querySelector('#rexp').onclick = () => API.download('/export-report/' + exportName + (c._qs || ''), exportName + '.xlsx').catch((e) => toast(e.message, 'err'));
+    const xls = c.querySelector('#rxls');
+    if (xls) xls.onclick = () => UI.exportTableToExcel(t(titleKey), c.querySelector('#rbody').innerHTML);
   }
   function bindPrint(c, title) { c.querySelector('#rprint').onclick = () => printReport(title, c.querySelector('#rbody').innerHTML); }
 
@@ -722,9 +724,12 @@ Object.assign(Pages, (() => {
   // ---- Grouped journals report (each day+type batch as ONE combined entry) --
   async function groupedJournals(c) {
     const from = c._from || (new Date().getFullYear() + '-01-01'), to = c._to || today();
+    const grp = c._grp || 'month';
+    const gOpt = (v, lbl) => `<option value="${v}" ${grp === v ? 'selected' : ''}>${lbl}</option>`;
     reportShell(c, 'm_gjournals', `<div class="field" style="margin:0"><label>${t('from')}</label><input type="date" id="f" value="${from}"></div>
-      <div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="t2" value="${to}"></div>`, null);
-    const r = await API.get(`/reports/grouped-journals?from=${from}&to=${to}`);
+      <div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="t2" value="${to}"></div>
+      <div class="field" style="margin:0"><label>التجميع</label><select id="grp">${gOpt('day', 'يومي')}${gOpt('month', 'شهري')}${gOpt('range', 'الفترة كلها')}</select></div>`, null);
+    const r = await API.get(`/reports/grouped-journals?from=${from}&to=${to}&group=${grp}`);
     const GJL = { invoice: 'فواتير عملاء', recognition: 'تحقق إيراد', receipt: 'سندات قبض', payment: 'سندات صرف', expense: 'مصروفات/فواتير موردين', deposit: 'تأمينات', opening: 'افتتاحي', manual: 'يدوي', adjustment: 'تسويات' };
     c.querySelector('#rbody').innerHTML = r.map((g) => `<div style="margin-bottom:16px"><h3 style="margin:0 0 4px">${dateStr(g.jdate)} — ${GJL[g.jtype] || g.jtype}</h3>${
       table([{ key: 'account_code', label: t('code') }, { key: 'account_name', label: t('account') },
@@ -734,6 +739,7 @@ Object.assign(Pages, (() => {
     }</div>`).join('') || `<div class="empty">${t('no_data')}</div>`;
     c.querySelector('#f').onchange = (e) => { c._from = e.target.value; groupedJournals(c); };
     c.querySelector('#t2').onchange = (e) => { c._to = e.target.value; groupedJournals(c); };
+    c.querySelector('#grp').onchange = (e) => { c._grp = e.target.value; groupedJournals(c); };
     bindPrint(c, t('m_gjournals'));
   }
 
