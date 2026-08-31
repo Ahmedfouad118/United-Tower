@@ -210,9 +210,15 @@ function legacyJournals(from, to, lang = 'en', side = 'all') {
   const groups = {};
   for (const l of rows) {
     if (!groups[l.period]) groups[l.period] = { period: l.period, lines: [], total_debit: 0, total_credit: 0 };
-    groups[l.period].lines.push({ account_code: l.account_code, account_name: l.account_name, acctype: l.acctype, debit: r2(l.debit), credit: r2(l.credit) });
-    groups[l.period].total_debit = r2(groups[l.period].total_debit + l.debit);
-    groups[l.period].total_credit = r2(groups[l.period].total_credit + l.credit);
+    // NET each account to a single figure (the month's movement) — like a manual
+    // summary JE, not the gross cumulative that looks noisy on big accounts.
+    const net = r2(l.debit - l.credit);
+    groups[l.period].lines.push({ account_code: l.account_code, account_name: l.account_name, acctype: l.acctype, debit: net > 0 ? net : 0, credit: net < 0 ? r2(-net) : 0 });
+  }
+  for (const g of Object.values(groups)) {
+    g.lines = g.lines.filter((x) => x.debit || x.credit);
+    g.total_debit = r2(g.lines.reduce((s, x) => s + x.debit, 0));
+    g.total_credit = r2(g.lines.reduce((s, x) => s + x.credit, 0));
   }
   return Object.values(groups).sort((a, b) => b.period.localeCompare(a.period));
 }
