@@ -171,24 +171,50 @@ function generalLedgerFull({ from, to, building_id } = {}, lang = 'en') {
 // entry, without touching the real journals.
 function groupedJournals(from, to, lang = 'en', group = 'day') {
   // period expression: whole selected range, per month, or per day
-  const per = group === 'range' ? "'ALL'" : group === 'month' ? "substr(j.jdate,1,7)" : 'j.jdate';
+  const per = group === 'range' ? "'ALL'" : (group === 'month' || group === 'month-all') ? "substr(j.jdate,1,7)" : 'j.jdate';
+  // 'month-all' combines ALL journal types of the month into ONE entry
+  const jtypeExpr = group === 'month-all' ? "'ALL'" : 'j.jtype';
   const rows = db.prepare(
-    `SELECT ${per} period, j.jtype, l.account_code, ${nameCol(lang)} account_name,
+    `SELECT ${per} period, ${jtypeExpr} jtype, l.account_code, ${nameCol(lang)} account_name, a.type acctype,
             COALESCE(SUM(l.debit),0) debit, COALESCE(SUM(l.credit),0) credit
      FROM journal_lines l JOIN journals j ON j.id=l.journal_id JOIN accounts a ON a.code=l.account_code
      WHERE 1=1 ${from ? 'AND j.jdate>=?' : ''} ${to ? 'AND j.jdate<=?' : ''}
-     GROUP BY period, j.jtype, l.account_code
+     GROUP BY period, jtype, l.account_code
      HAVING ABS(debit)>0.005 OR ABS(credit)>0.005
-     ORDER BY period DESC, j.jtype, l.account_code`).all(...[...(from ? [from] : []), ...(to ? [to] : [])]);
+     ORDER BY period DESC, jtype, l.account_code`).all(...[...(from ? [from] : []), ...(to ? [to] : [])]);
   const groups = {};
   for (const l of rows) {
     const k = l.period + '|' + l.jtype;
     if (!groups[k]) groups[k] = { jdate: l.period === 'ALL' ? ((from || '') + ' → ' + (to || '')) : l.period, jtype: l.jtype, lines: [], total_debit: 0, total_credit: 0 };
-    groups[k].lines.push({ account_code: l.account_code, account_name: l.account_name, debit: r2(l.debit), credit: r2(l.credit) });
+    groups[k].lines.push({ account_code: l.account_code, account_name: l.account_name, acctype: l.acctype, debit: r2(l.debit), credit: r2(l.credit) });
     groups[k].total_debit = r2(groups[k].total_debit + l.debit);
     groups[k].total_credit = r2(groups[k].total_credit + l.credit);
   }
   return Object.values(groups);
+}
+
+// ---- Legacy-system journals: ONE combined revenue entry + ONE expense entry
+// per month, built from the system's own auto entries — sized for pasting into
+// Peachtree/Sage (side = all | revenue | expense).
+function legacyJournals(from, to, lang = 'en', side = 'all') {
+  const filt = side === 'revenue' ? "AND j.jtype IN ('invoice','recognition','receipt','adjustment')"
+    : side === 'expense' ? "AND j.jtype IN ('expense','payment')" : '';
+  const rows = db.prepare(
+    `SELECT substr(j.jdate,1,7) period, l.account_code, ${nameCol(lang)} account_name, a.type acctype,
+            COALESCE(SUM(l.debit),0) debit, COALESCE(SUM(l.credit),0) credit
+     FROM journal_lines l JOIN journals j ON j.id=l.journal_id JOIN accounts a ON a.code=l.account_code
+     WHERE 1=1 ${from ? 'AND j.jdate>=?' : ''} ${to ? 'AND j.jdate<=?' : ''} ${filt}
+     GROUP BY period, l.account_code
+     HAVING ABS(debit)>0.005 OR ABS(credit)>0.005
+     ORDER BY period, l.account_code`).all(...[...(from ? [from] : []), ...(to ? [to] : [])]);
+  const groups = {};
+  for (const l of rows) {
+    if (!groups[l.period]) groups[l.period] = { period: l.period, lines: [], total_debit: 0, total_credit: 0 };
+    groups[l.period].lines.push({ account_code: l.account_code, account_name: l.account_name, acctype: l.acctype, debit: r2(l.debit), credit: r2(l.credit) });
+    groups[l.period].total_debit = r2(groups[l.period].total_debit + l.debit);
+    groups[l.period].total_credit = r2(groups[l.period].total_credit + l.credit);
+  }
+  return Object.values(groups).sort((a, b) => b.period.localeCompare(a.period));
 }
 
 // ---- Liquidity report (current assets vs current liabilities) -------------
@@ -335,7 +361,7 @@ function customersSummary() {
   const rows = db.prepare(
     `SELECT t.id, t.name tenant, t.phone,
         COALESCE(SUM(CASE WHEN l.account_code IN ('11000','11100') THEN l.debit-l.credit ELSE 0 END),0) receivable,
-        COALESCE(SUM(CASE WHEN l.account_code='21500' THEN l.credit-l.debit ELSE 0 END),0) advance
+        COALESCE(SUM(CASE WHEN l.account_code IN ('21500','23100') THEN l.credit-l.debit ELSE 0 END),0) advance
      FROM tenants t LEFT JOIN journal_lines l ON l.tenant_id=t.id
      GROUP BY t.id ORDER BY receivable DESC`).all();
   return rows.map((r) => ({ ...r, receivable: r2(r.receivable), advance: r2(r.advance), net: r2(r.receivable - r.advance) }))
@@ -547,7 +573,7 @@ function buildingComparison(from, to) {
 }
 
 module.exports = {
-  trialBalance, incomeStatement, incomeStatementConsolidated, accountLedger, generalLedgerFull, groupedJournals,
+  trialBalance, incomeStatement, incomeStatementConsolidated, accountLedger, generalLedgerFull, groupedJournals, legacyJournals,
   liquidityReport, financialRatios, balanceSheet, receivablesAging, payablesAging,
   flatStatement, occupancy, propertyPL, roi, cashFlowForecast, vatReport,
   bankReport, chequesReport, chequesDashboard, dashboard, contractExpiry, buildingComparison,

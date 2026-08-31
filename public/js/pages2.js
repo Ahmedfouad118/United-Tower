@@ -206,8 +206,8 @@ Object.assign(Pages, (() => {
         { key: 'party', label: t('tenant') + '/' + t('vendor'), render: (x) => esc(x.tenant || x.vendor || '') },
         { key: 'debit', label: t('debit'), num: true, render: (x) => x.debit ? money(x.debit) : '' },
         { key: 'credit', label: t('credit'), num: true, render: (x) => x.credit ? money(x.credit) : '' }], j.lines);
-    modal({ title: `قيد #${j.id}`, wide: true, bodyHTML: html, footerHTML: `<button class="btn" id="pj">🖨 ${t('print')}</button>`,
-      onMount: (bg) => bg.querySelector('#pj').onclick = () => printReport('Journal #' + j.id, html) });
+    modal({ title: `قيد #${j.id}`, wide: true, bodyHTML: html, footerHTML: `<button class="btn" id="xj">📊 Excel</button><button class="btn" id="pj">🖨 ${t('print')}</button>`,
+      onMount: (bg) => { bg.querySelector('#pj').onclick = () => printReport('Journal #' + j.id, html); bg.querySelector('#xj').onclick = () => UI.exportTableToExcel('قيد ' + j.id, html); } });
   }
   Pages.viewJournal = viewJournal;
   const drillA = (label, attrs) => `<a href="#" class="drill" ${attrs}>${label}</a>`;
@@ -743,6 +743,35 @@ Object.assign(Pages, (() => {
     bindPrint(c, t('m_gjournals'));
   }
 
+  // ---- Legacy-system journals (one combined monthly entry, Peachtree-ready) --
+  async function legacyJournals(c) {
+    const from = c._from || (new Date().getFullYear() + '-01-01'), to = c._to || today();
+    const side = c._side || 'all';
+    const sOpt = (v, lbl) => `<option value="${v}" ${side === v ? 'selected' : ''}>${lbl}</option>`;
+    reportShell(c, 'm_legacy', `<div class="field" style="margin:0"><label>${t('from')}</label><input type="date" id="f" value="${from}"></div>
+      <div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="t2" value="${to}"></div>
+      <div class="field" style="margin:0"><label>النوع</label><select id="side">${sOpt('all', 'الكل')}${sOpt('revenue', 'الإيرادات')}${sOpt('expense', 'المصروفات')}</select></div>`, null);
+    const r = await API.get(`/reports/legacy-journals?from=${from}&to=${to}&side=${side}`);
+    const monthName = (p) => { const [y, m] = p.split('-'); return ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'][(+m) - 1] + ' ' + y; };
+    const accLink = (x) => `<a href="#" class="drill" data-acc="${esc(x.account_code)}" data-p="${''}">${esc(x.account_code)}</a>`;
+    c.querySelector('#rbody').innerHTML = r.map((g) => {
+      const rowsH = g.lines.map((x) => `<tr><td>${accLink(x)}</td><td>${esc(x.account_name)}</td><td class="num">${x.debit ? money(x.debit) : ''}</td><td class="num">${x.credit ? money(x.credit) : ''}</td></tr>`).join('');
+      return `<div style="margin-bottom:18px" data-per="${g.period}"><h3 style="margin:0 0 4px">قيد ${monthName(g.period)} — ${side === 'revenue' ? 'إيرادات' : side === 'expense' ? 'مصروفات' : 'مجمّع'}</h3>
+        <div class="table-wrap"><table><thead><tr><th>${t('code')}</th><th>${t('account')}</th><th class="num">${t('debit')}</th><th class="num">${t('credit')}</th></tr></thead>
+        <tbody>${rowsH}</tbody><tfoot><tr><td></td><td>${t('total')}</td><td class="num">${money(g.total_debit)}</td><td class="num">${money(g.total_credit)}</td></tr></tfoot></table></div></div>`;
+    }).join('') || `<div class="empty">${t('no_data')}</div>`;
+    c.querySelector('#rbody').onclick = (e) => {
+      const a = e.target.closest('.drill[data-acc]'); if (!a) return; e.preventDefault();
+      const per = a.closest('[data-per]') ? a.closest('[data-per]').dataset.per : null;
+      const f = per ? per + '-01' : from, tt = per ? per + '-31' : to;
+      accountDrill({ title: a.dataset.acc, account: a.dataset.acc, from: f, to: tt });
+    };
+    c.querySelector('#f').onchange = (e) => { c._from = e.target.value; legacyJournals(c); };
+    c.querySelector('#t2').onchange = (e) => { c._to = e.target.value; legacyJournals(c); };
+    c.querySelector('#side').onchange = (e) => { c._side = e.target.value; legacyJournals(c); };
+    bindPrint(c, t('m_legacy'));
+  }
+
   // ---- Users & permissions ----
   // per-screen permissions grouped by category (each screen keyed by its nav path)
   const PGROUPS = [
@@ -750,7 +779,7 @@ Object.assign(Pages, (() => {
     ['الأملاك', [['buildings', 'البنايات'], ['units', 'الوحدات'], ['calendar', 'كالندر الإشغال']]],
     ['العملاء (ذمم مدينة)', [['customers', 'العملاء'], ['contracts', 'العقود'], ['invoices', 'الفواتير الشهرية'], ['receipts', 'سندات القبض'], ['cust_summary', 'ملخص حسابات العملاء'], ['statement', 'كشف حساب'], ['ar_aging', 'أعمار الذمم المدينة']]],
     ['الموردون (ذمم دائنة)', [['vendors', 'الموردون'], ['bills', 'فواتير الموردين'], ['vpayments', 'سندات الصرف'], ['ap_aging', 'أعمار الذمم الدائنة']]],
-    ['المالية', [['coa', 'شجرة الحسابات'], ['journals', 'القيود اليومية'], ['gjournals', 'القيود المجمعة'], ['tb', 'ميزان المراجعة'], ['is', 'قائمة الدخل'], ['is_consolidated', 'قائمة الدخل المجمعة'], ['gl', 'دفتر الأستاذ'], ['bs', 'المركز المالي'], ['liquidity', 'تقرير السيولة'], ['cashflow', 'التدفق النقدي'], ['ppl', 'أرباح العقارات'], ['roi', 'العائد ROI'], ['comparison', 'مقارنة أداء البنايات']]],
+    ['المالية', [['coa', 'شجرة الحسابات'], ['journals', 'القيود اليومية'], ['gjournals', 'القيود المجمعة'], ['legacy', 'قيود النظام القديم'], ['tb', 'ميزان المراجعة'], ['is', 'قائمة الدخل'], ['is_consolidated', 'قائمة الدخل المجمعة'], ['gl', 'دفتر الأستاذ'], ['bs', 'المركز المالي'], ['liquidity', 'تقرير السيولة'], ['cashflow', 'التدفق النقدي'], ['ppl', 'أرباح العقارات'], ['roi', 'العائد ROI'], ['comparison', 'مقارنة أداء البنايات']]],
     ['الخزينة والبنوك', [['banks', 'الحسابات البنكية'], ['cheques', 'الشيكات'], ['cheques_dash', 'متابعة الشيكات'], ['reconciliation', 'التسوية البنكية']]],
     ['الأصول', [['assets', 'الأصول الثابتة'], ['depreciation', 'جدول الإهلاك']]],
     ['الضرائب', [['vat', 'تقرير ض.ق.م']]],
@@ -847,5 +876,5 @@ Object.assign(Pages, (() => {
 
   return { customers, vendors, buildings, units, categories, paymethods, banks, employees, coa,
     vendorBills, vendorPayments, trialBalance, incomeStatement, incomeStatementConsolidated, generalLedger, balanceSheet, arAging, apAging,
-    statement, propertyPL, roi, cashflow, comparison, vat, cheques, chequesDashboard, journals, groupedJournals, users, company, assets, depreciation, customersSummary, reconciliation, liquidity };
+    statement, propertyPL, roi, cashflow, comparison, vat, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, assets, depreciation, customersSummary, reconciliation, liquidity };
 })());

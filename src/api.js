@@ -625,6 +625,7 @@ router.get('/reports/account-ledger', (req, res) => {
 router.get('/reports/balance-sheet', (req, res) => res.json(R.balanceSheet(req.query.upto, lang(req))));
 router.get('/reports/general-ledger-full', (req, res) => res.json(R.generalLedgerFull({ from: req.query.from || null, to: req.query.to || null, building_id: req.query.building_id ? Number(req.query.building_id) : null }, lang(req))));
 router.get('/reports/grouped-journals', (req, res) => res.json(R.groupedJournals(req.query.from, req.query.to, lang(req), req.query.group || 'day')));
+router.get('/reports/legacy-journals', (req, res) => res.json(R.legacyJournals(req.query.from, req.query.to, lang(req), req.query.side || 'all')));
 router.get('/reports/liquidity', (req, res) => res.json(R.liquidityReport(req.query.upto, lang(req))));
 router.get('/reports/financial-ratios', (req, res) => res.json(R.financialRatios(req.query.from, req.query.to, effBuilding(req) && effBuilding(req) > 0 ? effBuilding(req) : null)));
 router.get('/reports/aging', (req, res) => res.json(R.receivablesAging(req.query.asOf, effBuilding(req))));

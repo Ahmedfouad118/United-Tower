@@ -43,6 +43,7 @@
       { path: 'coa', label: 'm_coa', page: 'coa', mod: 'finance' },
       { path: 'journals', label: 'm_journals', page: 'journals', mod: 'finance' },
       { path: 'gjournals', label: 'm_gjournals', page: 'groupedJournals', mod: 'finance' },
+      { path: 'legacy', label: 'm_legacy', page: 'legacyJournals', mod: 'finance' },
       { path: 'tb', label: 'm_tb', page: 'trialBalance', mod: 'finance' },
       { path: 'is', label: 'm_is', page: 'incomeStatement', mod: 'finance' },
       { path: 'is_consolidated', label: 'm_is_consolidated', page: 'incomeStatementConsolidated', mod: 'finance' },
