@@ -207,16 +207,29 @@ function legacyJournals(from, to, lang = 'en', side = 'all') {
      GROUP BY period, l.account_code
      HAVING ABS(debit)>0.005 OR ABS(credit)>0.005
      ORDER BY period, l.account_code`).all(...[...(from ? [from] : []), ...(to ? [to] : [])]);
+  // wash per period = current-month invoices already settled — removed from BOTH
+  // sides of the receivable so 11100 shows only "new unpaid" (Dr) & "old collected" (Cr)
+  const washRows = db.prepare('SELECT period, COALESCE(SUM(paid_amount),0) w FROM invoices GROUP BY period').all();
+  const wash = {}; for (const w of washRows) wash[w.period] = r2(w.w);
   const groups = {};
   for (const l of rows) {
     if (!groups[l.period]) groups[l.period] = { period: l.period, lines: [], total_debit: 0, total_credit: 0 };
-    // NET each account to a single figure (the month's movement) — like a manual
-    // summary JE, not the gross cumulative that looks noisy on big accounts.
-    const net = r2(l.debit - l.credit);
-    groups[l.period].lines.push({ account_code: l.account_code, account_name: l.account_name, acctype: l.acctype, debit: net > 0 ? net : 0, credit: net < 0 ? r2(-net) : 0 });
+    let debit = r2(l.debit), credit = r2(l.credit);
+    if (l.account_code === '11100' && (side === 'all' || side === 'revenue')) {
+      const w = Math.min(wash[l.period] || 0, debit, credit);
+      debit = r2(debit - w); credit = r2(credit - w);
+    }
+    const g = groups[l.period];
+    const meta = { account_code: l.account_code, account_name: l.account_name, acctype: l.acctype };
+    // an account with BOTH sides becomes TWO rows (same code): one Dr, one Cr
+    if (debit > 0.005 && credit > 0.005) {
+      g.lines.push({ ...meta, debit, credit: 0 });
+      g.lines.push({ ...meta, debit: 0, credit });
+    } else if (debit > 0.005 || credit > 0.005) {
+      g.lines.push({ ...meta, debit: debit > 0.005 ? debit : 0, credit: credit > 0.005 ? credit : 0 });
+    }
   }
   for (const g of Object.values(groups)) {
-    g.lines = g.lines.filter((x) => x.debit || x.credit);
     g.total_debit = r2(g.lines.reduce((s, x) => s + x.debit, 0));
     g.total_credit = r2(g.lines.reduce((s, x) => s + x.credit, 0));
   }
