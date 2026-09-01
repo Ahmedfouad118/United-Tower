@@ -236,6 +236,43 @@ function legacyJournals(from, to, lang = 'en', side = 'all') {
   return Object.values(groups).sort((a, b) => b.period.localeCompare(a.period));
 }
 
+// ---- Legacy report drill: WHO makes up each amount (per tenant/vendor) -----
+// side = 'debit' | 'credit'. 11100 has special meaning (new-unpaid / old-collected).
+function legacyDrill(account, period, side, lang = 'en') {
+  // 11100 debit = current-month invoices still unpaid (who did NOT pay this month)
+  if (account === '11100' && side === 'debit') {
+    const rows = db.prepare(
+      `SELECT t.name party, f.code flat, i.invoice_no ref, i.total, i.paid_amount
+       FROM invoices i JOIN tenants t ON t.id=i.tenant_id LEFT JOIN flats f ON f.id=i.flat_id
+       WHERE i.period=? AND (i.total - i.paid_amount) > 0.005 ORDER BY (i.total - i.paid_amount) DESC`).all(period);
+    const out = rows.map((x) => ({ party: x.party, flat: x.flat, ref: x.ref, amount: r2(x.total - x.paid_amount) }));
+    return { account, period, side, kind: 'unpaid', rows: out, total: r2(out.reduce((s, x) => s + x.amount, 0)) };
+  }
+  // 11100 credit = collections that reduced OLD dues = tenant's month credit − settled on current invoices
+  if (account === '11100' && side === 'credit') {
+    const credits = db.prepare(
+      `SELECT l.tenant_id tid, t.name party, COALESCE(SUM(l.credit),0) c
+       FROM journal_lines l JOIN journals j ON j.id=l.journal_id LEFT JOIN tenants t ON t.id=l.tenant_id
+       WHERE l.account_code='11100' AND substr(j.jdate,1,7)=? GROUP BY l.tenant_id`).all(period);
+    const cur = db.prepare("SELECT tenant_id tid, COALESCE(SUM(paid_amount),0) p FROM invoices WHERE period=? GROUP BY tenant_id").all(period);
+    const curMap = {}; for (const r of cur) curMap[r.tid] = r.p;
+    const out = credits.map((r) => ({ party: r.party || '—', amount: r2(r.c - (curMap[r.tid] || 0)) }))
+      .filter((x) => Math.abs(x.amount) > 0.005).sort((a, b) => b.amount - a.amount);
+    return { account, period, side, kind: 'old', rows: out, total: r2(out.reduce((s, x) => s + x.amount, 0)) };
+  }
+  // general: break the amount down per tenant/vendor for that account+side+month
+  const rows = db.prepare(
+    `SELECT COALESCE(t.name, v.name, '—') party, f.code flat,
+            COALESCE(SUM(l.debit),0) d, COALESCE(SUM(l.credit),0) c
+     FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+     LEFT JOIN tenants t ON t.id=l.tenant_id LEFT JOIN vendors v ON v.id=l.vendor_id LEFT JOIN flats f ON f.id=l.flat_id
+     WHERE l.account_code=? AND substr(j.jdate,1,7)=?
+     GROUP BY party, f.code`).all(account, period);
+  const out = rows.map((r) => ({ party: r.party, flat: r.flat, amount: side === 'debit' ? r2(r.d) : r2(r.c) }))
+    .filter((x) => Math.abs(x.amount) > 0.005).sort((a, b) => b.amount - a.amount);
+  return { account, period, side, kind: 'general', rows: out, total: r2(out.reduce((s, x) => s + x.amount, 0)) };
+}
+
 // ---- Liquidity report (current assets vs current liabilities) -------------
 // Fixed assets (buildings/land + their accumulated depreciation) are excluded
 // from current assets; everything else asset = current/liquid within a year.
@@ -592,7 +629,7 @@ function buildingComparison(from, to) {
 }
 
 module.exports = {
-  trialBalance, incomeStatement, incomeStatementConsolidated, accountLedger, generalLedgerFull, groupedJournals, legacyJournals,
+  trialBalance, incomeStatement, incomeStatementConsolidated, accountLedger, generalLedgerFull, groupedJournals, legacyJournals, legacyDrill,
   liquidityReport, financialRatios, balanceSheet, receivablesAging, payablesAging,
   flatStatement, occupancy, propertyPL, roi, cashFlowForecast, vatReport,
   bankReport, chequesReport, chequesDashboard, dashboard, contractExpiry, buildingComparison,

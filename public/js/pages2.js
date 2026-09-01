@@ -753,18 +753,25 @@ Object.assign(Pages, (() => {
       <div class="field" style="margin:0"><label>النوع</label><select id="side">${sOpt('all', 'الكل')}${sOpt('revenue', 'الإيرادات')}${sOpt('expense', 'المصروفات')}</select></div>`, null);
     const r = await API.get(`/reports/legacy-journals?from=${from}&to=${to}&side=${side}`);
     const monthName = (p) => { const [y, m] = p.split('-'); return ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'][(+m) - 1] + ' ' + y; };
-    const accLink = (x) => `<a href="#" class="drill" data-acc="${esc(x.account_code)}" data-p="${''}">${esc(x.account_code)}</a>`;
+    const amtLink = (x, per, sideVal) => { const v = sideVal === 'debit' ? x.debit : x.credit; return v ? `<a href="#" class="drill" data-acc="${esc(x.account_code)}" data-name="${esc(x.account_name)}" data-per="${per}" data-side="${sideVal}">${money(v)}</a>` : ''; };
     c.querySelector('#rbody').innerHTML = r.map((g) => {
-      const rowsH = g.lines.map((x) => `<tr><td>${accLink(x)}</td><td>${esc(x.account_name)}</td><td class="num">${x.debit ? money(x.debit) : ''}</td><td class="num">${x.credit ? money(x.credit) : ''}</td></tr>`).join('');
-      return `<div style="margin-bottom:18px" data-per="${g.period}"><h3 style="margin:0 0 4px">قيد ${monthName(g.period)} — ${side === 'revenue' ? 'إيرادات' : side === 'expense' ? 'مصروفات' : 'مجمّع'}</h3>
+      const rowsH = g.lines.map((x) => `<tr><td>${esc(x.account_code)}</td><td>${esc(x.account_name)}</td><td class="num">${amtLink(x, g.period, 'debit')}</td><td class="num">${amtLink(x, g.period, 'credit')}</td></tr>`).join('');
+      return `<div style="margin-bottom:18px"><h3 style="margin:0 0 4px">قيد ${monthName(g.period)} — ${side === 'revenue' ? 'إيرادات' : side === 'expense' ? 'مصروفات' : 'مجمّع'}</h3>
         <div class="table-wrap"><table><thead><tr><th>${t('code')}</th><th>${t('account')}</th><th class="num">${t('debit')}</th><th class="num">${t('credit')}</th></tr></thead>
         <tbody>${rowsH}</tbody><tfoot><tr><td></td><td>${t('total')}</td><td class="num">${money(g.total_debit)}</td><td class="num">${money(g.total_credit)}</td></tr></tfoot></table></div></div>`;
     }).join('') || `<div class="empty">${t('no_data')}</div>`;
-    c.querySelector('#rbody').onclick = (e) => {
+    c.querySelector('#rbody').onclick = async (e) => {
       const a = e.target.closest('.drill[data-acc]'); if (!a) return; e.preventDefault();
-      const per = a.closest('[data-per]') ? a.closest('[data-per]').dataset.per : null;
-      const f = per ? per + '-01' : from, tt = per ? per + '-31' : to;
-      accountDrill({ title: a.dataset.acc, account: a.dataset.acc, from: f, to: tt });
+      let dr; try { dr = await API.get(`/reports/legacy-drill?account=${a.dataset.acc}&period=${a.dataset.per}&side=${a.dataset.side}`); } catch (er) { return toast(er.message, 'err'); }
+      const sideAr = a.dataset.side === 'debit' ? 'مدين' : 'دائن';
+      const kindLbl = dr.kind === 'unpaid' ? 'مين ما دفعش استحقاق الشهر' : dr.kind === 'old' ? 'مين دفع من القديم' : sideAr;
+      const title = `${a.dataset.acc} ${a.dataset.name} — ${kindLbl} (${a.dataset.per})`;
+      const body = table([{ key: 'party', label: t('tenant') + '/' + t('vendor'), render: (x) => esc(x.party) },
+        { key: 'flat', label: t('unit'), render: (x) => esc(x.flat || '') },
+        { key: 'amount', label: t('amount'), num: true, render: (x) => money(x.amount) }], dr.rows,
+        { foot: [{ v: t('total') }, { v: '' }, { v: money(dr.total), num: true }] });
+      modal({ title, wide: true, bodyHTML: body, footerHTML: `<button class="btn" id="dx">📊 Excel</button><button class="btn" id="dp">🖨 ${t('print')}</button>`,
+        onMount: (bg) => { bg.querySelector('#dp').onclick = () => printReport(title, body); bg.querySelector('#dx').onclick = () => UI.exportTableToExcel(title, body); } });
     };
     c.querySelector('#f').onchange = (e) => { c._from = e.target.value; legacyJournals(c); };
     c.querySelector('#t2').onchange = (e) => { c._to = e.target.value; legacyJournals(c); };
