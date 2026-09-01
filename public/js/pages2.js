@@ -755,12 +755,15 @@ Object.assign(Pages, (() => {
     const monthName = (p) => { const [y, m] = p.split('-'); return ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'][(+m) - 1] + ' ' + y; };
     const amtLink = (x, per, sideVal) => { const v = sideVal === 'debit' ? x.debit : x.credit; return v ? `<a href="#" class="drill" data-acc="${esc(x.account_code)}" data-name="${esc(x.account_name)}" data-per="${per}" data-side="${sideVal}">${money(v)}</a>` : ''; };
     c.querySelector('#rbody').innerHTML = r.map((g) => {
-      const rowsH = g.lines.map((x) => `<tr><td>${esc(x.account_code)}</td><td>${esc(x.account_name)}</td><td class="num">${amtLink(x, g.period, 'debit')}</td><td class="num">${amtLink(x, g.period, 'credit')}</td></tr>`).join('');
+      const rowsH = g.lines.map((x) => `<tr><td><a href="#" class="drill" data-gl="${esc(x.account_code)}" data-per="${g.period}" data-name="${esc(x.account_name)}">${esc(x.account_code)}</a></td><td>${esc(x.account_name)}</td><td class="num">${amtLink(x, g.period, 'debit')}</td><td class="num">${amtLink(x, g.period, 'credit')}</td></tr>`).join('');
       return `<div style="margin-bottom:18px"><h3 style="margin:0 0 4px">قيد ${monthName(g.period)} — ${side === 'revenue' ? 'إيرادات' : side === 'expense' ? 'مصروفات' : 'مجمّع'}</h3>
         <div class="table-wrap"><table><thead><tr><th>${t('code')}</th><th>${t('account')}</th><th class="num">${t('debit')}</th><th class="num">${t('credit')}</th></tr></thead>
         <tbody>${rowsH}</tbody><tfoot><tr><td></td><td>${t('total')}</td><td class="num">${money(g.total_debit)}</td><td class="num">${money(g.total_credit)}</td></tr></tfoot></table></div></div>`;
     }).join('') || `<div class="empty">${t('no_data')}</div>`;
     c.querySelector('#rbody').onclick = async (e) => {
+      // click the account CODE -> full journal movements for that account+month
+      const gl = e.target.closest('.drill[data-gl]');
+      if (gl) { e.preventDefault(); return accountDrill({ title: gl.dataset.gl + ' ' + gl.dataset.name, account: gl.dataset.gl, from: gl.dataset.per + '-01', to: gl.dataset.per + '-31' }); }
       const a = e.target.closest('.drill[data-acc]'); if (!a) return; e.preventDefault();
       let dr; try { dr = await API.get(`/reports/legacy-drill?account=${a.dataset.acc}&period=${a.dataset.per}&side=${a.dataset.side}`); } catch (er) { return toast(er.message, 'err'); }
       const sideAr = a.dataset.side === 'debit' ? 'مدين' : 'دائن';
