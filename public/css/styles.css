@@ -216,3 +216,27 @@ tr.tot td{border-top:2px solid #c9d6ea;background:#f7f9fc;font-weight:700}
 ::-webkit-scrollbar-thumb{background:var(--green);border-radius:8px;border:3px solid #e9eef5}
 ::-webkit-scrollbar-thumb:hover{background:var(--amber)}
 .table-wrap::-webkit-scrollbar-thumb{background:var(--green)}
+
+/* ---- Hamburger + responsive layout (mobile / tablet) ------------------- */
+.nav-toggle{display:none;border:none;background:transparent;font-size:22px;cursor:pointer;padding:4px 10px;color:var(--ink)}
+@media (max-width:900px){
+  .nav-toggle{display:inline-block}
+  .layout{position:relative}
+  .sidebar{position:fixed;inset-inline-start:0;top:0;bottom:0;z-index:200;transform:translateX(-105%);transition:transform .22s ease;box-shadow:0 0 40px rgba(0,0,0,.35)}
+  html[dir="rtl"] .sidebar{inset-inline-start:auto;inset-inline-end:0;transform:translateX(105%)}
+  .layout.nav-open .sidebar{transform:translateX(0)}
+  .layout.nav-open::after{content:"";position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:150}
+  .main{width:100%}
+  .topbar{flex-wrap:wrap;height:auto;gap:8px;padding:8px 12px}
+  .topbar .user{flex-wrap:wrap;gap:8px}
+  .grid.g-4{grid-template-columns:repeat(2,1fr)}
+  .grid.g-2,.grid.g-3{grid-template-columns:1fr}
+  .toolbar{flex-wrap:wrap;gap:8px}
+  .bld-filter{max-width:140px}
+  .modal.lg,.modal{width:96vw;max-width:96vw}
+}
+@media (max-width:560px){
+  .grid.g-4{grid-template-columns:1fr}
+  .kpi .val{font-size:22px}
+  th,td{padding:7px 8px;font-size:12px}
+}

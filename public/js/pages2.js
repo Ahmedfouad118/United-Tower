@@ -413,11 +413,14 @@ Object.assign(Pages, (() => {
       const f = c.querySelector('#sf').value, tt = c.querySelector('#st').value, fr = c.querySelector('#sfrom').value, to = c.querySelector('#sto').value;
       if (f) qp.set('flat_id', f); if (tt) qp.set('tenant_id', tt); if (fr) qp.set('from', fr); if (to) qp.set('to', to);
       const r = await API.get('/reports/flat-statement?' + qp);
+      const openRow = Math.abs(r.opening || 0) > 0.005
+        ? `<tr><td></td><td></td><td></td><td></td><td><i>${t('opening')}</i></td><td></td><td></td><td class="num"><b>${money(r.opening)}</b></td></tr>` : '';
       c.querySelector('#rbody').innerHTML = table([{ key: 'jdate', label: t('date'), render: (x) => dateStr(x.jdate) },
         { key: 'flat', label: t('unit') }, { key: 'tenant', label: t('tenant') }, { key: 'account_name', label: t('account') }, { key: 'memo', label: t('description') },
         { key: 'debit', label: t('debit'), num: true, render: (x) => x.debit ? money(x.debit) : '' }, { key: 'credit', label: t('credit'), num: true, render: (x) => x.credit ? money(x.credit) : '' },
         { key: 'balance', label: t('balance'), num: true, render: (x) => money(x.balance) }], r.lines,
-        { foot: [{ v: '' }, { v: '' }, { v: '' }, { v: '' }, { v: t('total') }, { v: money(r.total_debit), num: true }, { v: money(r.total_credit), num: true }, { v: money(r.balance), num: true }] });
+        { foot: [{ v: '' }, { v: '' }, { v: '' }, { v: '' }, { v: t('total') }, { v: money(r.total_debit), num: true }, { v: money(r.total_credit), num: true }, { v: money(r.balance), num: true }] })
+        .replace('<tbody>', '<tbody>' + openRow);
     };
     // when a unit is picked, show only the tenants who rented THAT unit
     const stSel = c.querySelector('#st');
@@ -548,17 +551,24 @@ Object.assign(Pages, (() => {
       <table>
         <tr><td>ض.ق.م مستحقة (على الفواتير الصادرة)</td><td class="num"><b>${money(r.vat_due)}</b></td></tr>
         <tr><td>ض.ق.م محصّلة فعلاً</td><td class="num pos">${money(r.vat_collected)}</td></tr>
-        <tr><td>ض.ق.م غير محصّلة (ضمن ذمم العملاء)</td><td class="num neg">${money(r.vat_outstanding)}</td></tr></table>
+        <tr><td>ض.ق.م غير محصّلة (ضمن ذمم العملاء)</td><td class="num neg">${drillA(money(r.vat_outstanding), 'data-owes="1"')}</td></tr></table>
+      <p class="muted" style="font-size:11px">اضغط على «غير محصّلة» لعرض العملاء اللي لسه عليهم مستحقات (الضريبة ضمنها).</p>
       <div class="section-title" style="margin-top:14px">التسوية مع الضرائب</div>
       <table>
         <tr><td>ض.ق.م المخرجات (Output) — حساب 23200</td><td class="num">${drillA(money(r.output_vat), 'data-acc="23200"')}</td></tr>
         <tr><td>ض.ق.م المدخلات (Input) — حساب 11600</td><td class="num">${drillA(money(r.input_vat), 'data-acc="11600"')}</td></tr>
         <tfoot><tr><td>صافي المستحق للضرائب</td><td class="num"><b>${drillA(money(r.net_payable), 'data-accs="23200,11600"')}</b></td></tr></tfoot></table>
       <p class="muted" style="font-size:11px;margin-top:8px">اضغط على أي رقم في «التسوية مع الضرائب» لعرض الحركات والقيود اللي كوّنته.</p></div>`;
-    c.querySelector('#rbody').onclick = (e) => {
+    c.querySelector('#rbody').onclick = async (e) => {
       const a = e.target.closest('.drill'); if (!a) return; e.preventDefault();
-      if (a.dataset.acc) accountDrill({ title: 'ض.ق.م ' + a.dataset.acc, account: a.dataset.acc, from, to });
-      else if (a.dataset.accs) accountDrill({ title: 'صافي ض.ق.م', accounts: a.dataset.accs.split(','), from, to });
+      if (a.dataset.acc) return accountDrill({ title: 'ض.ق.م ' + a.dataset.acc, account: a.dataset.acc, from, to });
+      if (a.dataset.accs) return accountDrill({ title: 'صافي ض.ق.م', accounts: a.dataset.accs.split(','), from, to });
+      if (a.dataset.owes) { // who still owes (VAT is within their outstanding)
+        const ag = await API.get('/reports/aging?asOf=' + to);
+        const body = table([{ key: 'tenant', label: t('tenant') }, { key: 'total', label: 'المستحق عليه', num: true, render: (x) => money(x.total) }], ag.rows,
+          { foot: [{ v: t('total') }, { v: money(ag.grand_total), num: true }] });
+        modal({ title: 'العملاء اللي لسه عليهم مستحقات (والضريبة ضمنها)', wide: true, bodyHTML: body, footerHTML: `<button class="btn" id="dx">📊 Excel</button><button class="btn" id="dp">🖨 ${t('print')}</button>`, onMount: (bg) => { bg.querySelector('#dp').onclick = () => printReport('مستحقات العملاء', body); bg.querySelector('#dx').onclick = () => UI.exportTableToExcel('مستحقات العملاء', body); } });
+      }
     };
     c.querySelector('#f').onchange = (e) => { c._from = e.target.value; vat(c); };
     c.querySelector('#t2').onchange = (e) => { c._to = e.target.value; vat(c); };
@@ -782,13 +792,53 @@ Object.assign(Pages, (() => {
     bindPrint(c, t('m_legacy'));
   }
 
+  // ---- Vendor statement (opening + movements + balance) --------------------
+  async function vendorStatement(c) {
+    const vn = await ref('vendors');
+    const vid = c._vendor || '';
+    reportShell(c, 'm_vstatement', `<div class="field" style="margin:0"><label>${t('vendor')}</label><select id="vv"><option value="">${t('vendor')}</option>${Pages._h.opt(vn, 'id', 'name', vid)}</select></div>
+      <div class="field" style="margin:0"><label>${t('from')}</label><input type="date" id="vf" value="${c._from || ''}"></div>
+      <div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="vt2" value="${c._to || today()}"></div>
+      <button class="btn primary" id="vgo">${t('run')}</button>`, null);
+    const run = async () => {
+      const v = c.querySelector('#vv').value; if (!v) { c.querySelector('#rbody').innerHTML = `<div class="empty">اختر مورد</div>`; return; }
+      const f = c.querySelector('#vf').value, tt = c.querySelector('#vt2').value;
+      const r = await API.get(`/reports/vendor-statement?vendor_id=${v}&from=${f}&to=${tt}`);
+      const openRow = Math.abs(r.opening || 0) > 0.005 ? `<tr><td></td><td></td><td><i>${t('opening')}</i></td><td></td><td></td><td class="num"><b>${money(r.opening)}</b></td></tr>` : '';
+      c.querySelector('#rbody').innerHTML = table([
+        { key: 'jdate', label: t('date'), render: (x) => dateStr(x.jdate) },
+        { key: 'reference', label: t('reference'), render: (x) => x.journal_id ? `<a href="#" class="drill" data-jid="${x.journal_id}">${esc(x.reference || ('#' + x.journal_id))}</a>` : esc(x.reference || '') },
+        { key: 'memo', label: t('description'), render: (x) => esc(x.memo || '') },
+        { key: 'debit', label: t('debit'), num: true, render: (x) => x.debit ? money(x.debit) : '' },
+        { key: 'credit', label: t('credit'), num: true, render: (x) => x.credit ? money(x.credit) : '' },
+        { key: 'balance', label: t('balance'), num: true, render: (x) => money(x.balance) },
+      ], r.lines, { foot: [{ v: '' }, { v: '' }, { v: t('total') }, { v: money(r.total_debit), num: true }, { v: money(r.total_credit), num: true }, { v: money(r.balance), num: true }] }).replace('<tbody>', '<tbody>' + openRow);
+    };
+    c.querySelector('#vgo').onclick = () => { c._vendor = c.querySelector('#vv').value; c._from = c.querySelector('#vf').value; c._to = c.querySelector('#vt2').value; run(); };
+    c.querySelector('#rbody').addEventListener('click', (e) => { const a = e.target.closest('.drill[data-jid]'); if (a) { e.preventDefault(); viewJournal(a.dataset.jid); } });
+    bindPrint(c, t('m_vstatement'));
+    if (vid) run(); else c.querySelector('#rbody').innerHTML = `<div class="empty">اختر مورد ثم ${t('run')}</div>`;
+  }
+
+  // ---- Advances / credit customers (الذمم الدائنة - مقدم) -------------------
+  async function advances(c) {
+    reportShell(c, 'm_advances', '', null);
+    const r = await API.get('/reports/advances');
+    c.querySelector('#rbody').innerHTML = table([
+      { key: 'tenant', label: t('tenant'), render: (x) => `<a href="#/statement?tenant=${x.id}">${esc(x.tenant)}</a>` },
+      { key: 'phone', label: t('phone') },
+      { key: 'advance', label: 'مقدم (دائن)', num: true, render: (x) => money(x.advance) }],
+      r, { foot: [{ v: t('total') }, { v: '' }, { v: money(r.reduce((s, x) => s + x.advance, 0)), num: true }] });
+    bindPrint(c, t('m_advances'));
+  }
+
   // ---- Users & permissions ----
   // per-screen permissions grouped by category (each screen keyed by its nav path)
   const PGROUPS = [
     ['الرئيسية', [['dashboard', 'لوحة التحكم']]],
     ['الأملاك', [['buildings', 'البنايات'], ['units', 'الوحدات'], ['calendar', 'كالندر الإشغال']]],
-    ['العملاء (ذمم مدينة)', [['customers', 'العملاء'], ['contracts', 'العقود'], ['invoices', 'الفواتير الشهرية'], ['receipts', 'سندات القبض'], ['cust_summary', 'ملخص حسابات العملاء'], ['statement', 'كشف حساب'], ['ar_aging', 'أعمار الذمم المدينة']]],
-    ['الموردون (ذمم دائنة)', [['vendors', 'الموردون'], ['bills', 'فواتير الموردين'], ['vpayments', 'سندات الصرف'], ['ap_aging', 'أعمار الذمم الدائنة']]],
+    ['العملاء (ذمم مدينة)', [['customers', 'العملاء'], ['contracts', 'العقود'], ['invoices', 'الفواتير الشهرية'], ['receipts', 'سندات القبض'], ['cust_summary', 'ملخص حسابات العملاء'], ['statement', 'كشف حساب'], ['ar_aging', 'أعمار الذمم المدينة'], ['advances', 'الذمم الدائنة (مقدم)']]],
+    ['الموردون (ذمم دائنة)', [['vendors', 'الموردون'], ['bills', 'فواتير الموردين'], ['vpayments', 'سندات الصرف'], ['ap_aging', 'أعمار الذمم الدائنة'], ['vstatement', 'كشف حساب مورد']]],
     ['المالية', [['coa', 'شجرة الحسابات'], ['journals', 'القيود اليومية'], ['gjournals', 'القيود المجمعة'], ['legacy', 'قيود النظام القديم'], ['tb', 'ميزان المراجعة'], ['is', 'قائمة الدخل'], ['is_consolidated', 'قائمة الدخل المجمعة'], ['gl', 'دفتر الأستاذ'], ['bs', 'المركز المالي'], ['liquidity', 'تقرير السيولة'], ['cashflow', 'التدفق النقدي'], ['ppl', 'أرباح العقارات'], ['roi', 'العائد ROI'], ['comparison', 'مقارنة أداء البنايات']]],
     ['الخزينة والبنوك', [['banks', 'الحسابات البنكية'], ['cheques', 'الشيكات'], ['cheques_dash', 'متابعة الشيكات'], ['reconciliation', 'التسوية البنكية']]],
     ['الأصول', [['assets', 'الأصول الثابتة'], ['depreciation', 'جدول الإهلاك']]],
@@ -886,5 +936,5 @@ Object.assign(Pages, (() => {
 
   return { customers, vendors, buildings, units, categories, paymethods, banks, employees, coa,
     vendorBills, vendorPayments, trialBalance, incomeStatement, incomeStatementConsolidated, generalLedger, balanceSheet, arAging, apAging,
-    statement, propertyPL, roi, cashflow, comparison, vat, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, assets, depreciation, customersSummary, reconciliation, liquidity };
+    statement, vendorStatement, advances, propertyPL, roi, cashflow, comparison, vat, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, assets, depreciation, customersSummary, reconciliation, liquidity };
 })());

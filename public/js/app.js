@@ -32,12 +32,14 @@
       { path: 'cust_summary', label: 'm_cust_summary', page: 'customersSummary', mod: 'customers' },
       { path: 'statement', label: 'm_statement', page: 'statement', mod: 'customers' },
       { path: 'ar_aging', label: 'm_ar_aging', page: 'arAging', mod: 'customers' },
+      { path: 'advances', label: 'm_advances', page: 'advances', mod: 'customers' },
     ] },
     { id: 'payable', icon: '🚚', label: 'm_payable', items: [
       { path: 'vendors', label: 'm_vendors', page: 'vendors', mod: 'vendors' },
       { path: 'bills', label: 'm_bills', page: 'vendorBills', mod: 'vendors' },
       { path: 'vpayments', label: 'm_vpayments', page: 'vendorPayments', mod: 'vendors' },
       { path: 'ap_aging', label: 'm_ap_aging', page: 'apAging', mod: 'vendors' },
+      { path: 'vstatement', label: 'm_vstatement', page: 'vendorStatement', mod: 'vendors' },
     ] },
     { id: 'finance', icon: '🏦', label: 'm_finance', items: [
       { path: 'coa', label: 'm_coa', page: 'coa', mod: 'finance' },
@@ -132,7 +134,7 @@
           <nav class="nav">${navHTML()}</nav>
         </aside>
         <div class="main">
-          <div class="topbar"><div class="page-title" id="ptitle"></div>
+          <div class="topbar"><button class="nav-toggle" id="navToggle" aria-label="menu">☰</button><div class="page-title" id="ptitle"></div>
             <div class="user"><select id="bldFilter" class="bld-filter" title="البناية"></select>${langSwitch()}
               <div style="text-align:start"><div style="font-weight:600">${esc(u.full_name || '')}</div>
                 <div class="muted" style="font-size:11px">${esc(t(u.role) || '')}</div></div>
@@ -143,6 +145,10 @@
         </div>
       </div>`;
     document.getElementById('logout').onclick = () => { API.logout(); if (typeof AIWidget !== 'undefined') AIWidget.unmount(); location.hash = '#/login'; loginView(); };
+    const navTgl = document.getElementById('navToggle');
+    if (navTgl) navTgl.onclick = () => document.querySelector('.layout').classList.toggle('nav-open');
+    // close the mobile drawer after picking a page
+    document.querySelector('.nav').addEventListener('click', (e) => { if (e.target.closest('.nav-link')) document.querySelector('.layout').classList.remove('nav-open'); });
     // collapsible groups
     document.querySelectorAll('.nav-head').forEach((h) => h.onclick = () => h.parentElement.classList.toggle('open'));
     wireLang();

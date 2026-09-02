@@ -393,23 +393,71 @@ function payablesAging(asOf) {
 // ---- Per-unit / per-tenant statement (customer sub-ledger) ---------------
 const CUSTOMER_ACCOUNTS = ['11000', '11100', '21500', '23100'];
 function flatStatement({ flat_id, tenant_id, building_id, from, to }, lang = 'en') {
-  const p = []; let where = '1=1';
-  if (flat_id) { where += ' AND l.flat_id=?'; p.push(flat_id); }
-  if (tenant_id) { where += ' AND l.tenant_id=?'; p.push(tenant_id); }
-  if (building_id) { where += ' AND l.building_id=?'; p.push(building_id); }
+  const bp = []; let base = '1=1';
+  if (flat_id) { base += ' AND l.flat_id=?'; bp.push(flat_id); }
+  if (tenant_id) { base += ' AND l.tenant_id=?'; bp.push(tenant_id); }
+  if (building_id) { base += ' AND l.building_id=?'; bp.push(building_id); }
+  const list = CUSTOMER_ACCOUNTS.map(() => '?').join(',');
+  // opening balance = net of the customer accounts strictly before `from`
+  let opening = 0;
+  if (from) {
+    const orow = db.prepare(
+      `SELECT COALESCE(SUM(l.debit),0)-COALESCE(SUM(l.credit),0) bal
+       FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+       WHERE ${base} AND l.account_code IN (${list}) AND j.jdate < ?`).get(...bp, ...CUSTOMER_ACCOUNTS, from);
+    opening = r2(orow.bal);
+  }
+  const p = [...bp]; let where = base;
   if (from) { where += ' AND j.jdate>=?'; p.push(from); }
   if (to) { where += ' AND j.jdate<=?'; p.push(to); }
-  const list = CUSTOMER_ACCOUNTS.map(() => '?').join(',');
   const lines = db.prepare(
     `SELECT j.jdate, j.jtype, j.reference, j.memo, l.account_code, ${nameCol(lang)} account_name,
             l.debit, l.credit, l.tenant_id, t.name tenant, l.flat_id, f.code flat
      FROM journal_lines l JOIN journals j ON j.id=l.journal_id JOIN accounts a ON a.code=l.account_code
      LEFT JOIN tenants t ON t.id=l.tenant_id LEFT JOIN flats f ON f.id=l.flat_id
      WHERE ${where} AND l.account_code IN (${list}) ORDER BY j.jdate, j.id, l.id`).all(...p, ...CUSTOMER_ACCOUNTS);
-  let running = 0;
+  let running = opening;
   const withBal = lines.map((ln) => { running = r2(running + ln.debit - ln.credit); return { ...ln, balance: running }; });
   const td = r2(lines.reduce((s, x) => s + x.debit, 0)), tc = r2(lines.reduce((s, x) => s + x.credit, 0));
-  return { lines: withBal, total_debit: td, total_credit: tc, balance: r2(td - tc) };
+  return { opening: r2(opening), lines: withBal, total_debit: td, total_credit: tc, balance: r2(opening + td - tc) };
+}
+
+// ---- Vendor statement (opening + movements + running balance) -------------
+const VENDOR_ACCOUNTS = ['20000', '23000'];
+function vendorStatement({ vendor_id, from, to }, lang = 'en') {
+  const list = VENDOR_ACCOUNTS.map(() => '?').join(',');
+  let opening = 0;
+  if (from && vendor_id) {
+    const orow = db.prepare(
+      `SELECT COALESCE(SUM(l.credit),0)-COALESCE(SUM(l.debit),0) bal
+       FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+       WHERE l.vendor_id=? AND l.account_code IN (${list}) AND j.jdate < ?`).get(vendor_id, ...VENDOR_ACCOUNTS, from);
+    opening = r2(orow.bal);
+  }
+  const p = [vendor_id]; let where = 'l.vendor_id=?';
+  if (from) { where += ' AND j.jdate>=?'; p.push(from); }
+  if (to) { where += ' AND j.jdate<=?'; p.push(to); }
+  const lines = db.prepare(
+    `SELECT j.id journal_id, j.jdate, j.jtype, j.reference, j.memo, l.account_code, ${nameCol(lang)} account_name,
+            l.debit, l.credit, v.name vendor
+     FROM journal_lines l JOIN journals j ON j.id=l.journal_id JOIN accounts a ON a.code=l.account_code
+     LEFT JOIN vendors v ON v.id=l.vendor_id
+     WHERE ${where} AND l.account_code IN (${list}) ORDER BY j.jdate, j.id, l.id`).all(...p, ...VENDOR_ACCOUNTS);
+  // vendor payable is a credit balance -> running as credit-debit
+  let running = opening;
+  const withBal = lines.map((ln) => { running = r2(running + ln.credit - ln.debit); return { journal_id: ln.journal_id, jdate: ln.jdate, reference: ln.reference, account_name: ln.account_name, memo: ln.memo, vendor: ln.vendor, debit: r2(ln.debit), credit: r2(ln.credit), balance: running }; });
+  const td = r2(lines.reduce((s, x) => s + x.debit, 0)), tc = r2(lines.reduce((s, x) => s + x.credit, 0));
+  return { opening: r2(opening), lines: withBal, total_debit: td, total_credit: tc, balance: r2(opening + tc - td) };
+}
+
+// ---- Advances / credit customers ("الذمم الدائنة (مقدم)") ------------------
+function advancesReport() {
+  const rows = db.prepare(
+    `SELECT t.id, t.name tenant, t.phone,
+        COALESCE(SUM(CASE WHEN l.account_code IN ('21500','23100') THEN l.credit-l.debit ELSE 0 END),0) advance
+     FROM tenants t JOIN journal_lines l ON l.tenant_id=t.id
+     GROUP BY t.id HAVING advance > 0.005 ORDER BY advance DESC`).all();
+  return rows.map((r) => ({ ...r, advance: r2(r.advance) }));
 }
 
 // ---- Customers summary (all customers, balances) -------------------------
@@ -631,7 +679,7 @@ function buildingComparison(from, to) {
 module.exports = {
   trialBalance, incomeStatement, incomeStatementConsolidated, accountLedger, generalLedgerFull, groupedJournals, legacyJournals, legacyDrill,
   liquidityReport, financialRatios, balanceSheet, receivablesAging, payablesAging,
-  flatStatement, occupancy, propertyPL, roi, cashFlowForecast, vatReport,
+  flatStatement, vendorStatement, advancesReport, occupancy, propertyPL, roi, cashFlowForecast, vatReport,
   bankReport, chequesReport, chequesDashboard, dashboard, contractExpiry, buildingComparison,
   depreciationReport, customersSummary,
 };
