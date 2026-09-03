@@ -80,6 +80,12 @@ router.put('/settings', requireRole('admin'), (req, res) => {
   res.json({ ok: true });
 });
 
+// ---- Configuration: GL-account mapping + module-name (label) overrides -----
+const CFG = require('./config');
+router.get('/config', (req, res) => res.json({ accounts: CFG.allAccts(), labels: CFG.labels() }));
+router.put('/config/accounts', requireRole('admin'), (req, res) => { CFG.setAccts(req.body || {}); res.json({ ok: true }); });
+router.put('/config/labels', requireRole('admin'), (req, res) => { CFG.setLabels(req.body || {}); res.json({ ok: true }); });
+
 // ---- Users & permissions --------------------------------------------------
 router.get('/users', requireRole('admin'), (req, res) =>
   res.json(db.prepare('SELECT id,username,full_name,role,lang,active,created_at FROM users ORDER BY id').all()));
@@ -517,10 +523,14 @@ router.delete('/reconciliation/line/:id', writers, (req, res) => {
 
 // ---- Journals -------------------------------------------------------------
 router.get('/journals', (req, res) => {
-  const { from, to, type } = req.query; let where = '1=1', p = [];
+  const { from, to, type, q, amount } = req.query; let where = '1=1', p = [];
   if (from) { where += ' AND jdate>=?'; p.push(from); }
   if (to) { where += ' AND jdate<=?'; p.push(to); }
   if (type) { where += ' AND jtype=?'; p.push(type); }
+  // free-text search: journal number (id), reference or memo
+  if (q) { const s = '%' + q + '%'; where += ' AND (CAST(j.id AS TEXT)=? OR j.reference LIKE ? OR j.memo LIKE ? OR j.memo_ar LIKE ?)'; p.push(String(q), s, s, s); }
+  // search by amount: any journal whose debit total (or any line) matches
+  if (amount) { where += ' AND j.id IN (SELECT journal_id FROM journal_lines WHERE ABS(debit-?)<0.005 OR ABS(credit-?)<0.005)'; p.push(Number(amount), Number(amount)); }
   res.json(db.prepare(
     `SELECT j.*, (SELECT COALESCE(SUM(debit),0) FROM journal_lines WHERE journal_id=j.id) total
      FROM journals j WHERE ${where} ORDER BY jdate DESC, id DESC LIMIT 500`).all(...p));
@@ -639,7 +649,7 @@ router.get('/reports/flat-statement', (req, res) => res.json(R.flatStatement({
   building_id: req.query.building_id ? Number(req.query.building_id) : null,
   from: req.query.from, to: req.query.to }, lang(req))));
 router.get('/reports/vendor-statement', (req, res) => res.json(R.vendorStatement({ vendor_id: req.query.vendor_id ? Number(req.query.vendor_id) : null, from: req.query.from, to: req.query.to }, lang(req))));
-router.get('/reports/advances', (req, res) => res.json(R.advancesReport()));
+router.get('/reports/advances', (req, res) => res.json(R.advancesReport(req.query.asOf)));
 router.get('/reports/occupancy', (req, res) => res.json(R.occupancy(req.query.onDate, effBuilding(req))));
 router.get('/reports/property-pl', (req, res) => res.json(scopeRows(req, R.propertyPL(req.query.from, req.query.to))));
 router.get('/reports/roi', (req, res) => res.json(R.roi(req.query.from, req.query.to)));

@@ -22,7 +22,7 @@ const I18N = (() => {
       m_treasury: 'الخزينة والبنوك', m_banks: 'الحسابات البنكية', m_cheques: 'الشيكات', m_recon: 'التسوية البنكية',
       m_tax: 'الضرائب', m_vat: 'تقرير ض.ق.م', m_hr: 'الموارد البشرية', m_employees: 'الموظفون', m_payroll: 'الرواتب',
       m_assets_mod: 'الأصول', m_assets: 'الأصول الثابتة', m_depreciation: 'جدول الإهلاك',
-      m_admin: 'الإعدادات', m_company: 'بيانات البناية', m_categories: 'التصنيفات', m_paymethods: 'طرق الدفع',
+      m_admin: 'الإعدادات', m_company: 'بيانات البناية', m_config: 'الإعدادات المتقدمة (الحسابات والأسماء)', m_categories: 'التصنيفات', m_paymethods: 'طرق الدفع',
       m_users: 'المستخدمون', m_permissions: 'الصلاحيات', m_import: 'استيراد البيانات', m_reports: 'التقارير',
       // fields
       name: 'الاسم', phone: 'الهاتف', code: 'الكود', email: 'البريد', civil_id: 'الرقم المدني',
@@ -61,7 +61,7 @@ const I18N = (() => {
       m_treasury: 'Treasury & Banks', m_banks: 'Bank Accounts', m_cheques: 'Cheques', m_recon: 'Bank Reconciliation',
       m_tax: 'Tax', m_vat: 'VAT Report', m_hr: 'HR', m_employees: 'Employees', m_payroll: 'Payroll',
       m_assets_mod: 'Assets', m_assets: 'Fixed Assets', m_depreciation: 'Depreciation Schedule',
-      m_admin: 'Settings', m_company: 'Company Info', m_categories: 'Categories', m_paymethods: 'Payment Methods',
+      m_admin: 'Settings', m_company: 'Company Info', m_config: 'Advanced Config (accounts & names)', m_categories: 'Categories', m_paymethods: 'Payment Methods',
       m_users: 'Users', m_permissions: 'Permissions', m_import: 'Data Import', m_reports: 'Reports',
       name: 'Name', phone: 'Phone', code: 'Code', email: 'Email', civil_id: 'Civil ID',
       building: 'Building', unit: 'Unit', tenant: 'Customer', vendor: 'Vendor', rent: 'Rent',
@@ -115,12 +115,16 @@ const I18N = (() => {
     },
   };
   let lang = localStorage.getItem('ut_lang') || 'ar';
-  const t = (k) => (DICT[lang] && DICT[lang][k]) || (DICT.en[k]) || k;
+  // admin-defined label overrides: { lang: { key: text } } — applied over DICT
+  let OVERRIDES = {};
+  const applyOverrides = (obj) => { OVERRIDES = obj || {}; };
+  const t = (k) => (OVERRIDES[lang] && OVERRIDES[lang][k]) || (DICT[lang] && DICT[lang][k]) || (DICT.en[k]) || k;
+  const baseT = (l, k) => (DICT[l] && DICT[l][k]) || (DICT.en[k]) || k;
   if (lang === 'ur') lang = 'hi'; // migrate old pref
   const setLang = (l) => { lang = l; localStorage.setItem('ut_lang', l); document.documentElement.lang = l; document.documentElement.dir = (l === 'ar') ? 'rtl' : 'ltr'; };
   const getLang = () => lang;
   const dir = () => (lang === 'ar') ? 'rtl' : 'ltr';
   setLang(lang);
-  return { t, setLang, getLang, dir, langs: [['ar', 'عربي'], ['en', 'EN'], ['hi', 'हिंदी']] };
+  return { t, baseT, applyOverrides, setLang, getLang, dir, langs: [['ar', 'عربي'], ['en', 'EN'], ['hi', 'हिंदी']] };
 })();
 const t = I18N.t;

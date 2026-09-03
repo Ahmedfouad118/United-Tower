@@ -79,7 +79,7 @@ const Pages = (() => {
         <div class="field" style="margin:0"><label>${t('from')}</label><input type="date" id="dfrom" value="${from}"></div>
         <div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="dto" value="${to}"></div>
         ${from || to ? '<button class="btn sm" id="dclear">↺</button>' : ''}
-        <div class="spacer"></div><button class="btn" id="dashprint">🖨 ${t('print')}</button></div>
+        <div class="spacer"></div><button class="btn" id="dashxls">📊 Excel</button><button class="btn" id="dashprint">🖨 ${t('print')}</button></div>
       <div class="grid g-4">
         ${kpi(t('occupancy_rate'), d.occupancy_rate + '%', `${d.occupied} ${t('occupied')} · ${d.vacant} ${t('vacant')}`, '🏢', 'k-blue')}
         ${kpi(t('collected_month'), money(d.collected_this_month), 'OMR', '💰', 'k-green')}
@@ -114,7 +114,35 @@ const Pages = (() => {
           { key: 'days_left', label: 'باقي (يوم)', num: true, render: (r) => `<span class="${r.days_left <= 15 ? 'neg' : ''}"><b>${r.days_left}</b></span>` },
           { key: 'monthly_rent', label: t('rent'), num: true, render: (r) => money(r.monthly_rent) },
         ], exp, { empty: 'لا يوجد عقود قرب انتهائها' })}</div></div>`;
-    c.querySelector('#dashprint').onclick = () => printReport(t('m_dashboard'), c.innerHTML.replace(/<div class="toolbar">[\s\S]*?<\/div><\/div>/, ''));
+    // KPI list (label, value, sub) — used for the print grid + Excel so the
+    // printout keeps the same card shape instead of one value per line.
+    const kdata = [
+      [t('occupancy_rate'), d.occupancy_rate + '%', `${d.occupied} ${t('occupied')} · ${d.vacant} ${t('vacant')}`],
+      [t('collected_month'), money(d.collected_this_month) + ' OMR', ''],
+      [t('outstanding'), money(d.outstanding_receivables), ''],
+      [t('advance_held'), money(d.advance_held), t('deposits_held') + ': ' + money(d.deposits_held)],
+      ...(fr ? [
+        ['هامش صافي الربح', fr.net_margin + '%', 'صافي الربح ÷ الإيرادات'],
+        ['العائد على الأصول ROA', fr.roa + '%', 'صافي الربح ÷ الأصول'],
+        ['العائد على حقوق الملكية ROE', fr.roe + '%', 'صافي الربح ÷ حقوق الملكية'],
+        ['نسبة التداول', fr.current_ratio, 'أصول متداولة ÷ التزامات'],
+        ['السيولة السريعة', fr.quick_ratio, 'Quick Ratio'],
+        ['نسبة النقدية', fr.cash_ratio, 'النقدية ÷ الالتزامات'],
+        ['رأس المال العامل', money(fr.working_capital), 'أصول متداولة − التزامات'],
+        ['معدل دوران الأصول', fr.asset_turnover + '%', 'الإيرادات ÷ الأصول'],
+      ] : []),
+    ];
+    const dashPrintHTML = () => `<div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:18px">${kdata.map(([l, v, s]) =>
+      `<div style="flex:1 1 200px;min-width:180px;border:1px solid #dbe3f0;border-radius:10px;padding:12px 14px">
+        <div style="font-size:12px;color:#6b7a90">${esc(l)}</div>
+        <div style="font-size:22px;font-weight:800;color:#1f2a44;margin:3px 0">${esc(String(v))}</div>
+        <div style="font-size:11px;color:#8ea6cf">${esc(s || '')}</div></div>`).join('')}</div>` +
+      `<h3>${t('top_debtors')}</h3>` + table([{ key: 'tenant', label: t('tenant') }, { key: 'total', label: t('total'), num: true, render: (r) => money(r.total) }], d.top_debtors) +
+      `<h3>${t('aging')}</h3>` + table([{ key: 'b', label: t('aging') }, { key: 'v', label: t('amount'), num: true, render: (r) => money(r.v) }],
+        [['حالي', ag.current], ['1-30', ag.d30], ['31-60', ag.d60], ['61-90', ag.d90], ['91-180', ag.d180], ['+180', ag.d180p]].map(([b, v]) => ({ b, v })));
+    c.querySelector('#dashprint').onclick = () => printReport(t('m_dashboard'), dashPrintHTML());
+    c.querySelector('#dashxls').onclick = () => UI.exportTableToExcel(t('m_dashboard'),
+      table([{ key: 'l', label: t('m_dashboard') }, { key: 'v', label: t('amount') }, { key: 's', label: '' }], kdata.map(([l, v, s]) => ({ l, v, s }))));
     c.querySelector('#dfrom').onchange = (e) => { c._dfrom = e.target.value; dashboard(c); };
     c.querySelector('#dto').onchange = (e) => { c._dto = e.target.value; dashboard(c); };
     const dc = c.querySelector('#dclear'); if (dc) dc.onclick = () => { c._dfrom = ''; c._dto = ''; dashboard(c); };
@@ -242,7 +270,7 @@ const Pages = (() => {
     loading(c);
     const period = c._period || curMonth();
     const rows = await API.get('/invoices?period=' + period + (window.UT ? UT.bq() : ''));
-    const tbCfg = { search: true, searchFn: (rs, q) => rs.filter((r) => [r.tenant, r.flat, r.invoice_no].join(' ').toLowerCase().includes(q)),
+    const tbCfg = { search: true, searchFn: (rs, q) => rs.filter((r) => [r.tenant, r.flat, r.invoice_no, r.period, r.total, r.status].join(' ').toLowerCase().includes(q)),
       exportType: 'invoices', templateType: 'invoices', onImport: () => importModal('invoices', '', () => invoices(c)),
       extra: `<div class="field" style="margin:0"><label>${t('period')}</label><input type="month" id="iper" value="${period}"></div>`,
       onNew: canWrite() ? () => genInvoices(period, () => invoices(c)) : null, newLabel: t('generate_invoices') };
@@ -334,7 +362,7 @@ const Pages = (() => {
   async function receipts(c) {
     loading(c);
     const [rows, tn, fl, pm] = [await API.get('/payments'), await ref('tenants'), await ref('flats'), await ref('payment_methods', '/payment-methods')];
-    const tbCfg = { search: true, searchFn: (rs, q) => rs.filter((r) => [r.tenant, r.voucher_no].join(' ').toLowerCase().includes(q)),
+    const tbCfg = { search: true, searchFn: (rs, q) => rs.filter((r) => [r.tenant, r.voucher_no, r.amount, r.pdate, r.method].join(' ').toLowerCase().includes(q)),
       exportType: 'payments', onImport: () => importModal('payments', '', () => receipts(c)), templateType: 'payments',
       onNew: canWrite() ? () => receiptForm(tn, fl, pm, () => receipts(c)) : null, newLabel: 'سند قبض' };
     const canDel = canDo('delete');

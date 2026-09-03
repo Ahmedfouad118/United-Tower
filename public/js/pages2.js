@@ -673,21 +673,40 @@ Object.assign(Pages, (() => {
   const JL = { invoice: 'فاتورة', recognition: 'تحقق إيراد', receipt: 'قبض', payment: 'صرف', expense: 'مصروف', deposit: 'تأمين', opening: 'افتتاحي', manual: 'يدوي', adjustment: 'تسوية' };
   async function journals(c) {
     loading(c);
-    const rows = await API.get('/journals');
-    const tbCfg = { search: true, searchFn: (rs, q) => rs.filter((r) => [r.reference, r.memo, r.jtype].join(' ').toLowerCase().includes(q)),
+    // server-side search axis: journal number / reference / memo, type, date range, amount
+    const flt = c._jflt || {};
+    const qsFor = (f) => { const q = new URLSearchParams(); ['q', 'type', 'from', 'to', 'amount'].forEach((k) => { if (f[k]) q.set(k, f[k]); }); const s = q.toString(); return s ? '?' + s : ''; };
+    const rows = await API.get('/journals' + qsFor(flt));
+    const tbCfg = { search: false,
       exportType: 'journals', templateType: 'journals', onImport: () => importModal('journals', '', () => journals(c)),
       onNew: canWrite() ? () => manualJournal(null, () => journals(c)) : null, newLabel: 'قيد يدوي' };
     const canDel = canDo('delete');
-    c.innerHTML = toolbar(tbCfg) + `<div class="card"><div class="hd"><h3>${t('m_journals')}</h3><div style="display:flex;gap:6px">${canDel ? UI.bulkDelHTML() : ''}<button class="btn sm btn-print">🖨</button></div></div><div id="jt"></div></div>`;
+    const typeOpts = ['', 'invoice', 'receipt', 'payment', 'expense', 'recognition', 'deposit', 'opening', 'adjustment', 'manual']
+      .map((v) => `<option value="${v}" ${flt.type === v ? 'selected' : ''}>${v ? (JL[v] || v) : 'كل الأنواع'}</option>`).join('');
+    const filterBar = `<div class="toolbar" style="flex-wrap:wrap;gap:8px">
+      <input id="jq" placeholder="رقم القيد / المرجع / البيان" value="${esc(flt.q || '')}" style="min-width:200px">
+      <select id="jty">${typeOpts}</select>
+      <div class="field" style="margin:0"><label style="font-size:11px">${t('from')}</label><input type="date" id="jf" value="${flt.from || ''}"></div>
+      <div class="field" style="margin:0"><label style="font-size:11px">${t('to')}</label><input type="date" id="jt2" value="${flt.to || ''}"></div>
+      <input id="jam" type="number" step="0.001" placeholder="بحث بالمبلغ" value="${flt.amount || ''}" style="width:130px">
+      <button class="btn primary" id="jgo">🔍 ${t('search')}</button><button class="btn" id="jclr">مسح</button></div>`;
+    c.innerHTML = toolbar(tbCfg) + filterBar + `<div class="card"><div class="hd"><h3>${t('m_journals')} <span class="muted" style="font-size:12px">(${rows.length})</span></h3><div style="display:flex;gap:6px">${canDel ? UI.bulkDelHTML() : ''}<button class="btn sm btn-print">🖨</button></div></div><div id="jt"></div></div>`;
     const cols = [...(canDel ? [{ key: '_s', label: '<input type="checkbox" class="sel-all">', render: (r) => `<input type="checkbox" class="row-sel" data-id="${r.id}">` }] : []),
+      { key: 'id', label: 'رقم القيد', render: (r) => `<a href="#" class="drill" data-jid="${r.id}"><b>#${r.id}</b></a>` },
       { key: 'jdate', label: t('date'), render: (r) => dateStr(r.jdate) }, { key: 'jtype', label: 'النوع', render: (r) => JL[r.jtype] || r.jtype },
-      { key: 'reference', label: 'المرجع' }, { key: 'memo', label: t('description') },
+      { key: 'reference', label: 'المرجع' }, { key: 'memo', label: t('description'), render: (r) => esc(r.memo_ar || r.memo || '') },
       { key: 'total', label: 'الإجمالي', num: true, render: (r) => `<b>${money(r.total)}</b>` },
       { key: '_a', label: t('actions'), render: (r) => actions(r.id, canDo('edit') ? ['view', 'edit', 'print', 'delete'] : ['view', 'print']) }];
     const draw = (rs) => { c.querySelector('#jt').innerHTML = table(cols, rs); UI.makeSortable(c); UI.wireBulk(c, (id) => API.del('/journals/' + id), () => journals(c)); };
     draw(rows); wireToolbar(c, tbCfg, draw, rows);
+    const apply = () => { c._jflt = { q: c.querySelector('#jq').value.trim(), type: c.querySelector('#jty').value, from: c.querySelector('#jf').value, to: c.querySelector('#jt2').value, amount: c.querySelector('#jam').value }; journals(c); };
+    c.querySelector('#jgo').onclick = apply;
+    c.querySelector('#jq').onkeydown = (e) => { if (e.key === 'Enter') apply(); };
+    c.querySelector('#jam').onkeydown = (e) => { if (e.key === 'Enter') apply(); };
+    c.querySelector('#jclr').onclick = () => { c._jflt = {}; journals(c); };
     c.querySelector('.btn-print').onclick = () => printTable(t('m_journals'), cols.filter((x) => x.key !== '_s' && x.key !== '_a'), rows);
     c.querySelector('#jt').onclick = async (e) => {
+      const drill = e.target.closest('.drill[data-jid]'); if (drill) { e.preventDefault(); return viewJournal(drill.dataset.jid); }
       const b = e.target.closest('[data-act]'); if (!b) return;
       const id = b.dataset.id, r = rows.find((x) => String(x.id) === String(id));
       const sysWarn = r && r.jtype !== 'manual' ? '\n\n⚠️ ده قيد نظامي (ناتج عن فاتورة/سند/إهلاك). التعديل عليه بيفصله عن مستنده الأصلي.' : '';
@@ -822,13 +841,18 @@ Object.assign(Pages, (() => {
 
   // ---- Advances / credit customers (الذمم الدائنة - مقدم) -------------------
   async function advances(c) {
-    reportShell(c, 'm_advances', '', null);
-    const r = await API.get('/reports/advances');
+    const asOf = c._asOf || today();
+    reportShell(c, 'm_advances', `<div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="aof" value="${asOf}"></div>`, null);
+    c._qs = '?asOf=' + asOf;
+    const r = await API.get('/reports/advances?asOf=' + asOf);
     c.querySelector('#rbody').innerHTML = table([
       { key: 'tenant', label: t('tenant'), render: (x) => `<a href="#/statement?tenant=${x.id}">${esc(x.tenant)}</a>` },
       { key: 'phone', label: t('phone') },
-      { key: 'advance', label: 'مقدم (دائن)', num: true, render: (x) => money(x.advance) }],
-      r, { foot: [{ v: t('total') }, { v: '' }, { v: money(r.reduce((s, x) => s + x.advance, 0)), num: true }] });
+      { key: 'deferred', label: 'دفعات مقدمة (23100)', num: true, render: (x) => x.deferred ? money(x.deferred) : '' },
+      { key: 'legacy', label: 'دفعات قديمة (21500)', num: true, render: (x) => x.legacy ? money(x.legacy) : '' },
+      { key: 'advance', label: 'إجمالي المقدم (دائن)', num: true, render: (x) => `<b>${money(x.advance)}</b>` }],
+      r.rows, { foot: [{ v: t('total') }, { v: '' }, { v: '' }, { v: '' }, { v: money(r.grand_total), num: true }] });
+    c.querySelector('#aof').onchange = (e) => { c._asOf = e.target.value; advances(c); };
     bindPrint(c, t('m_advances'));
   }
 
@@ -934,7 +958,53 @@ Object.assign(Pages, (() => {
     };
   }
 
+  // ---- CONFIGURATION: GL-account mapping + module (menu) renaming -----------
+  const LBL_GROUPS = [
+    ['الرئيسية', ['m_dashboard']],
+    [t('m_properties'), ['m_properties', 'm_buildings', 'm_units', 'm_calendar']],
+    [t('m_receivable'), ['m_receivable', 'm_customers', 'm_contracts', 'm_invoices', 'm_receipts', 'm_cust_summary', 'm_statement', 'm_ar_aging', 'm_advances']],
+    [t('m_payable'), ['m_payable', 'm_vendors', 'm_bills', 'm_vpayments', 'm_ap_aging', 'm_vstatement']],
+    [t('m_finance'), ['m_finance', 'm_coa', 'm_journals', 'm_gjournals', 'm_legacy', 'm_tb', 'm_is', 'm_is_consolidated', 'm_gl', 'm_bs', 'm_liquidity', 'm_cashflow', 'm_ppl', 'm_roi', 'm_comparison']],
+    [t('m_treasury'), ['m_treasury', 'm_banks', 'm_cheques', 'm_cheques_dash', 'm_recon']],
+    [t('m_assets_mod'), ['m_assets_mod', 'm_assets', 'm_depreciation']],
+    [t('m_tax'), ['m_tax', 'm_vat']],
+    [t('m_hr'), ['m_hr', 'm_employees']],
+    [t('m_admin'), ['m_admin', 'm_company', 'm_categories', 'm_paymethods', 'm_config', 'm_users']],
+  ];
+  async function configuration(c) {
+    loading(c);
+    const [cfg, ac] = [await API.get('/config'), await ref('accounts')];
+    const lang = I18N.getLang();
+    const postable = ac.filter((a) => !a.is_group);
+    const acctSel = (key, cur) => `<select data-acc="${key}">${postable.map((a) => `<option value="${a.code}" ${a.code === cur ? 'selected' : ''}>${esc(a.code + ' - ' + (a.name_ar || a.name))}</option>`).join('')}</select>`;
+    const acctRows = Object.entries(cfg.accounts).map(([key, v]) =>
+      `<tr><td>${esc(v.label)}</td><td>${acctSel(key, v.code)}</td><td class="muted" style="font-size:11px">افتراضي: ${v.default}</td></tr>`).join('');
+    const lblRows = LBL_GROUPS.map(([g, keys]) => `<tr class="sec"><td colspan="2"><b>${esc(g)}</b></td></tr>` +
+      keys.map((k) => `<tr><td class="muted" style="font-size:11px">${k}</td><td><input data-lbl="${k}" value="${esc(t(k))}" style="width:100%"></td></tr>`).join('')).join('');
+    c.innerHTML = `
+      <div class="card" style="max-width:820px;margin-bottom:16px"><div class="hd"><h3>⚙️ حسابات القيود (اختر الحساب من شجرة الحسابات)</h3><button class="btn primary" id="saveAcc">${t('save')}</button></div>
+        <div class="bd"><p class="muted" style="margin-top:0">هنا بتحدد كل نوع مستند بيتسجل على أي حساب. التغيير بيأثر على <b>القيود الجديدة</b> فقط.</p>
+        <div class="table-wrap"><table><thead><tr><th>نوع المستند / البند</th><th>${t('account')}</th><th></th></tr></thead><tbody>${acctRows}</tbody></table></div></div></div>
+      <div class="card" style="max-width:820px"><div class="hd"><h3>📝 أسماء القوائم (${lang === 'ar' ? 'عربي' : lang === 'en' ? 'English' : 'हिंदी'})</h3><button class="btn primary" id="saveLbl">${t('save')}</button></div>
+        <div class="bd"><p class="muted" style="margin-top:0">عدّل أي اسم قائمة رئيسية أو فرعية. الأسماء بتتغير للغة الحالية. سجّل خروج ودخول أو بدّل اللغة عشان تشوف التغيير كامل.</p>
+        <div class="table-wrap"><table><thead><tr><th>المفتاح</th><th>الاسم</th></tr></thead><tbody>${lblRows}</tbody></table></div></div></div>`;
+    c.querySelector('#saveAcc').onclick = async () => {
+      const map = {}; c.querySelectorAll('[data-acc]').forEach((s) => map[s.dataset.acc] = s.value);
+      try { await API.put('/config/accounts', map); toast(t('saved')); } catch (e) { toast(e.message, 'err'); }
+    };
+    c.querySelector('#saveLbl').onclick = async () => {
+      const all = (cfg.labels && typeof cfg.labels === 'object') ? cfg.labels : {};
+      all[lang] = all[lang] || {};
+      c.querySelectorAll('[data-lbl]').forEach((inp) => {
+        const k = inp.dataset.lbl, v = inp.value.trim();
+        if (v && v !== I18N.baseT(lang, k)) all[lang][k] = v; else delete all[lang][k];
+      });
+      try { await API.put('/config/labels', all); I18N.applyOverrides(all); if (UT.loadConfig) await UT.loadConfig(); toast(t('saved') + ' — حدّث الصفحة'); location.reload(); }
+      catch (e) { toast(e.message, 'err'); }
+    };
+  }
+
   return { customers, vendors, buildings, units, categories, paymethods, banks, employees, coa,
     vendorBills, vendorPayments, trialBalance, incomeStatement, incomeStatementConsolidated, generalLedger, balanceSheet, arAging, apAging,
-    statement, vendorStatement, advances, propertyPL, roi, cashflow, comparison, vat, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, assets, depreciation, customersSummary, reconciliation, liquidity };
+    statement, vendorStatement, advances, propertyPL, roi, cashflow, comparison, vat, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, configuration, assets, depreciation, customersSummary, reconciliation, liquidity };
 })());

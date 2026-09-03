@@ -343,29 +343,52 @@ function balanceSheet(upto, lang = 'en') {
   };
 }
 
-// ---- Receivables aging (from invoices) ------------------------------------
+// ---- Receivables aging (GL-based: ties to the trial balance) ---------------
+// Built from the customer receivable accounts (11000/11100) so it INCLUDES the
+// opening balances (posted as journals, not invoices). Each debit "charge"
+// (invoice / opening / manual) is aged by its date; total credits (collections)
+// are consumed oldest-first. The grand total therefore equals the net receivable
+// in the trial balance for these accounts.
 function receivablesAging(asOf, building_id) {
   const ref = asOf || new Date().toISOString().slice(0, 10);
-  const rows = db.prepare(
-    `SELECT i.tenant_id, t.name tenant, i.due_date, i.total - i.paid_amount outstanding
-     FROM invoices i JOIN tenants t ON t.id=i.tenant_id
-     WHERE i.status IN ('issued','partial') AND (i.total - i.paid_amount) > 0.005
-     ${building_id ? 'AND i.building_id=' + Number(building_id) : ''}`).all();
+  const RECV = ['11000', '11100'];
+  const list = RECV.map(() => '?').join(',');
+  const bF = building_id ? ' AND l.building_id=' + Number(building_id) : '';
+  // charges = debit entries (dated), credits = collections (netted oldest-first)
+  const charges = db.prepare(
+    `SELECT l.tenant_id, COALESCE(t.name,'(بدون عميل)') tenant, j.jdate, l.debit amt
+     FROM journal_lines l JOIN journals j ON j.id=l.journal_id LEFT JOIN tenants t ON t.id=l.tenant_id
+     WHERE l.account_code IN (${list}) AND l.debit>0.005 AND j.jdate<=? ${bF}
+     ORDER BY j.jdate ASC, j.id ASC`).all(...RECV, ref);
+  const credits = db.prepare(
+    `SELECT l.tenant_id, COALESCE(SUM(l.credit),0) c
+     FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+     WHERE l.account_code IN (${list}) AND l.credit>0.005 AND j.jdate<=? ${bF}
+     GROUP BY l.tenant_id`).all(...RECV, ref);
+  const credByT = {}; for (const c of credits) credByT[c.tenant_id || 0] = r2(c.c);
+
   const days = (a, b) => Math.floor((Date.parse(b) - Date.parse(a)) / 86400000);
+  const chargesByT = {};
+  for (const ch of charges) { const k = ch.tenant_id || 0; (chargesByT[k] = chargesByT[k] || { tenant: ch.tenant, items: [] }).items.push(ch); }
+
   const byT = {}; const totals = { current: 0, d30: 0, d60: 0, d90: 0, d180: 0, d180p: 0 };
-  for (const r of rows) {
-    const age = days(r.due_date, ref);
-    let b = 'current';
-    if (age > 180) b = 'd180p'; else if (age > 90) b = 'd180'; else if (age > 60) b = 'd90';
-    else if (age > 30) b = 'd60'; else if (age > 0) b = 'd30';
-    const amt = r2(r.outstanding);
-    if (!byT[r.tenant_id]) byT[r.tenant_id] = { tenant_id: r.tenant_id, tenant: r.tenant, current: 0, d30: 0, d60: 0, d90: 0, d180: 0, d180p: 0, total: 0 };
-    byT[r.tenant_id][b] = r2(byT[r.tenant_id][b] + amt);
-    byT[r.tenant_id].total = r2(byT[r.tenant_id].total + amt);
-    totals[b] = r2(totals[b] + amt);
+  for (const [k, g] of Object.entries(chargesByT)) {
+    let credit = credByT[k] || 0;               // consume collections oldest-first
+    const row = { tenant_id: k === '0' ? null : Number(k), tenant: g.tenant, current: 0, d30: 0, d60: 0, d90: 0, d180: 0, d180p: 0, total: 0 };
+    for (const ch of g.items) {
+      let rem = r2(ch.amt);
+      if (credit > 0) { const used = r2(Math.min(credit, rem)); rem = r2(rem - used); credit = r2(credit - used); }
+      if (rem <= 0.005) continue;
+      const age = days(ch.jdate, ref);
+      let b = 'current';
+      if (age > 180) b = 'd180p'; else if (age > 90) b = 'd180'; else if (age > 60) b = 'd90';
+      else if (age > 30) b = 'd60'; else if (age > 0) b = 'd30';
+      row[b] = r2(row[b] + rem); row.total = r2(row.total + rem); totals[b] = r2(totals[b] + rem);
+    }
+    if (row.total > 0.005) byT[k] = row;
   }
-  const list = Object.values(byT).sort((a, b) => b.total - a.total);
-  return { asOf: ref, rows: list, totals, grand_total: r2(list.reduce((s, x) => s + x.total, 0)) };
+  const listRows = Object.values(byT).sort((a, b) => b.total - a.total);
+  return { asOf: ref, rows: listRows, totals, grand_total: r2(listRows.reduce((s, x) => s + x.total, 0)) };
 }
 
 // ---- Payables aging (vendor bills) ---------------------------------------
@@ -451,13 +474,21 @@ function vendorStatement({ vendor_id, from, to }, lang = 'en') {
 }
 
 // ---- Advances / credit customers ("الذمم الدائنة (مقدم)") ------------------
-function advancesReport() {
+// Full customer-advance balance (21500 + 23100), as of an optional date, so it
+// mirrors the receivables report and ties to the trial balance for those codes.
+function advancesReport(asOf) {
+  const ref = asOf || new Date().toISOString().slice(0, 10);
   const rows = db.prepare(
     `SELECT t.id, t.name tenant, t.phone,
+        COALESCE(SUM(CASE WHEN l.account_code='23100' THEN l.credit-l.debit ELSE 0 END),0) deferred,
+        COALESCE(SUM(CASE WHEN l.account_code='21500' THEN l.credit-l.debit ELSE 0 END),0) legacy,
         COALESCE(SUM(CASE WHEN l.account_code IN ('21500','23100') THEN l.credit-l.debit ELSE 0 END),0) advance
      FROM tenants t JOIN journal_lines l ON l.tenant_id=t.id
-     GROUP BY t.id HAVING advance > 0.005 ORDER BY advance DESC`).all();
-  return rows.map((r) => ({ ...r, advance: r2(r.advance) }));
+     JOIN journals j ON j.id=l.journal_id
+     WHERE j.jdate<=?
+     GROUP BY t.id HAVING advance > 0.005 ORDER BY advance DESC`).all(ref);
+  return { asOf: ref, rows: rows.map((r) => ({ ...r, deferred: r2(r.deferred), legacy: r2(r.legacy), advance: r2(r.advance) })),
+    grand_total: r2(rows.reduce((s, r) => s + r.advance, 0)) };
 }
 
 // ---- Customers summary (all customers, balances) -------------------------

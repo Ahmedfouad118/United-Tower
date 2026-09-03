@@ -75,6 +75,7 @@
     ] },
     { id: 'admin', icon: '⚙️', label: 'm_admin', items: [
       { path: 'company', label: 'm_company', page: 'company', mod: 'settings' },
+      { path: 'config', label: 'm_config', page: 'configuration', admin: true, mod: 'settings' },
       { path: 'categories', label: 'm_categories', page: 'categories', mod: 'settings' },
       { path: 'paymethods', label: 'm_paymethods', page: 'paymethods', mod: 'settings' },
       { path: 'users', label: 'm_users', page: 'users', admin: true, mod: 'users' },
@@ -106,7 +107,7 @@
       </form></div>`;
     document.getElementById('lf').onsubmit = async (e) => {
       e.preventDefault();
-      try { await API.login(document.getElementById('u').value, document.getElementById('p').value); location.hash = '#/dashboard'; layout(); route(); }
+      try { await API.login(document.getElementById('u').value, document.getElementById('p').value); await loadConfig(); location.hash = '#/dashboard'; layout(); route(); }
       catch (err) { toast(err.message, 'err'); }
     };
     wireLang();
@@ -130,7 +131,7 @@
     document.getElementById('app').innerHTML = `
       <div class="layout">
         <aside class="sidebar">
-          <div class="brand"><div class="logo">UT</div><div><h1>${esc(t('app_name'))}</h1><span>GHALA 299/1</span></div></div>
+          <div class="brand"><div class="logo">${(UT.company && UT.company.logo) ? `<img src="${UT.company.logo}" alt="logo">` : 'UT'}</div><div><h1>${esc((UT.company && UT.company.name) || t('app_name'))}</h1><span>${esc((UT.company && UT.company.sub) || 'GHALA 299/1')}</span></div></div>
           <nav class="nav">${navHTML()}</nav>
         </aside>
         <div class="main">
@@ -205,6 +206,19 @@
     try { await fn(view, params); UI.makeSortable(view); } catch (e) { view.innerHTML = `<div class="empty">خطأ: ${esc(e.message)}</div>`; console.error(e); }
   }
 
+  // Load admin config (label overrides) + company info once after auth, so the
+  // menu names and print/report headers reflect the settings.
+  async function loadConfig() {
+    if (!API.isAuthed()) return;
+    try {
+      const [cfg, st] = await Promise.all([API.get('/config'), API.get('/settings')]);
+      I18N.applyOverrides(cfg.labels || {});
+      UT.settings = st || {};
+      UT.company = { name: st.company_name || t('app_name'), sub: st.company_sub || 'GHALA 299/1', logo: st.company_logo || '' };
+    } catch {}
+  }
+  window.UT.loadConfig = loadConfig;
+
   window.addEventListener('hashchange', route);
-  route();
+  (async () => { await loadConfig(); if (API.isAuthed()) { layout(); } route(); })();
 })();

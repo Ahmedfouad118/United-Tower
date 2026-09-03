@@ -9,6 +9,7 @@
 // ==========================================================================
 const { db } = require('./db');
 const { postJournal, deleteJournal, r2, ACC } = require('./ledger');
+const CFG = require('./config');
 
 const CUSTOMER_ADVANCE = '21500';   // legacy customer advances (kept as-is)
 const DEFERRED_ADVANCE = '23100';   // NEW prepaid rent / advances land here
@@ -71,13 +72,18 @@ function issueInvoiceForContract(contract, period, created_by) {
   const invNo = nextInvoiceNo();
   const due = firstOfMonth(period);
 
+  // Narration: "إيجار {الشهر} - وحدة {رقم} - {اسم العميل}"
+  const tName = (db.prepare('SELECT name FROM tenants WHERE id=?').get(contract.tenant_id) || {}).name || '';
+  const fCode = contract.flat_id ? ((db.prepare('SELECT code FROM flats WHERE id=?').get(contract.flat_id) || {}).code || '') : '';
+  const narr = `إيجار ${period}${fCode ? ' - وحدة ' + fCode : ''}${tName ? ' - ' + tName : ''}`;
+
   // Simple accrual: the invoice IS the accrual entry (Dr Receivable / Cr Rental
   // Income + VAT). No separate deferred/recognition step. Collection settles it.
   const jid = postJournal(
     { jdate: due, jtype: 'invoice', reference: invNo, memo: `Rent accrual ${period}`,
-      memo_ar: `استحقاق إيجار ${period}`, source_table: 'invoices', created_by },
+      memo_ar: narr, source_table: 'invoices', created_by },
     [
-      { account_code: ACC.TENANT_RECV, debit: total, building_id: contract.building_id, flat_id: contract.flat_id, tenant_id: contract.tenant_id, memo: `Rent ${period}` },
+      { account_code: ACC.TENANT_RECV, debit: total, building_id: contract.building_id, flat_id: contract.flat_id, tenant_id: contract.tenant_id, memo: narr },
       { account_code: ACC.RENT_INCOME, credit: rent, building_id: contract.building_id, flat_id: contract.flat_id, tenant_id: contract.tenant_id },
       ...(vat > 0 ? [{ account_code: ACC.VAT_PAYABLE, credit: vat, tenant_id: contract.tenant_id, memo: 'VAT 5%' }] : []),
     ]
@@ -101,10 +107,13 @@ function issueAdHocInvoice({ tenant_id, flat_id, building_id, period, rent, vat_
   const r = r2(rent), vat = r2((r * (vat_percent || 0)) / 100), total = r2(r + vat);
   const invNo = nextInvoiceNo();
   const due = firstOfMonth(period || currentMonth());
+  const tName = (db.prepare('SELECT name FROM tenants WHERE id=?').get(tenant_id) || {}).name || '';
+  const fCode = flat_id ? ((db.prepare('SELECT code FROM flats WHERE id=?').get(flat_id) || {}).code || '') : '';
+  const narr = `إيجار ${period}${fCode ? ' - وحدة ' + fCode : ''}${tName ? ' - ' + tName : ''}`;
   const jid = postJournal(
-    { jdate: due, jtype: 'invoice', reference: invNo, memo: `Rent accrual ${period}`, memo_ar: `استحقاق إيجار ${period}`, source_table: 'invoices', created_by },
+    { jdate: due, jtype: 'invoice', reference: invNo, memo: `Rent accrual ${period}`, memo_ar: narr, source_table: 'invoices', created_by },
     [
-      { account_code: ACC.TENANT_RECV, debit: total, building_id, flat_id, tenant_id, memo: `Rent ${period}` },
+      { account_code: ACC.TENANT_RECV, debit: total, building_id, flat_id, tenant_id, memo: narr },
       { account_code: ACC.RENT_INCOME, credit: r, building_id, flat_id, tenant_id },
       ...(vat > 0 ? [{ account_code: ACC.VAT_PAYABLE, credit: vat, tenant_id, memo: 'VAT' }] : []),
     ]);
@@ -145,9 +154,10 @@ function setVendorOpening(vendor_id, amount, created_by) {
   if (ex) deleteJournal(ex.id);
   if (Math.abs(amount) < 0.005) return;
   const date = (db.prepare("SELECT value FROM settings WHERE key='opening_date'").get() || {}).value || '2025-12-31';
+  const vpAcc = CFG.acct('vendor_payable');   // 23000 by config (كان 20000)
   const lines = amount > 0
-    ? [{ account_code: '39999', debit: amount }, { account_code: ACC.AP, credit: amount, vendor_id, memo: 'رصيد افتتاحي مورد' }]
-    : [{ account_code: ACC.AP, debit: -amount, vendor_id, memo: 'رصيد افتتاحي مورد مدين' }, { account_code: '39999', credit: -amount }];
+    ? [{ account_code: '39999', debit: amount }, { account_code: vpAcc, credit: amount, vendor_id, memo: 'رصيد افتتاحي مورد' }]
+    : [{ account_code: vpAcc, debit: -amount, vendor_id, memo: 'رصيد افتتاحي مورد مدين' }, { account_code: '39999', credit: -amount }];
   postJournal({ jdate: date, jtype: 'opening', reference: ref, memo: 'Vendor opening balance', memo_ar: 'رصيد افتتاحي للمورد', source_table: 'vendors', source_id: vendor_id, created_by }, lines);
 }
 
@@ -343,7 +353,7 @@ function recordVendorBill(input, created_by) {
     .run(billNo, bdate, vendor_id || null, building_id || null, flat_id || null, expense_code, description || null,
       amt, vat, total, paid ? total : 0, paid ? 'paid' : 'unpaid', attachment || null, created_by || null);
   const bid = Number(res.lastInsertRowid);
-  const credit = paid ? (pay_account || '10400') : ACC.AP;
+  const credit = paid ? (pay_account || CFG.acct('bank')) : CFG.acct('vendor_payable');
   const jid = postJournal(
     { jdate: bdate, jtype: 'expense', reference: billNo, memo: description || 'Vendor bill',
       memo_ar: 'فاتورة مورد', source_table: 'vendor_bills', source_id: bid, created_by },
@@ -387,7 +397,7 @@ function recordVendorPayment(input, created_by) {
     { jdate: pdate, jtype: 'payment', reference: vno, memo: memo || 'Payment voucher',
       memo_ar: 'سند صرف', source_table: 'vendor_payments', source_id: payId, created_by },
     [
-      { account_code: ACC.AP, debit: total, vendor_id, memo: 'Settle payable' },
+      { account_code: CFG.acct('vendor_payable'), debit: total, vendor_id, memo: 'Settle payable' },
       { account_code: cash_account, credit: total, vendor_id, memo: method === 'cheque' ? `Cheque ${cheque_no || ''}` : 'Payment' },
     ]);
   db.prepare('UPDATE vendor_payments SET journal_id=? WHERE id=?').run(jid, payId);

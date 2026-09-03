@@ -170,12 +170,14 @@ const UI = (() => {
   function printReport(title, contentHTML) {
     const w = window.open('', '_blank', 'width=900,height=700');
     const dir = I18N.dir();
+    const co = (window.UT && UT.company) || { name: t('app_name'), sub: 'GHALA 299/1', logo: '' };
+    const logoImg = co.logo ? `<img src="${co.logo}" style="height:52px;max-width:160px;object-fit:contain">` : '';
     w.document.write(`<!doctype html><html dir="${dir}" lang="${I18N.getLang()}"><head><meta charset="utf-8"><title>${esc(title)}</title>
       <style>
         *{box-sizing:border-box} body{font-family:"Segoe UI",Tahoma,sans-serif;color:#1f2a44;margin:0;padding:28px}
         .ph{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #1f6feb;padding-bottom:12px;margin-bottom:18px}
         .ph h1{font-size:20px;margin:0} .ph .co{font-size:15px;font-weight:700;color:#1f6feb}
-        .ph .dt{font-size:12px;color:#6b7a90}
+        .ph .dt{font-size:12px;color:#6b7a90} .ph .brand{display:flex;align-items:center;gap:12px}
         table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px}
         th,td{padding:7px 10px;border-bottom:1px solid #e3e9f2;text-align:${dir === 'rtl' ? 'right' : 'left'}}
         th{background:#f4f7fb;color:#41506b;font-weight:600}
@@ -185,7 +187,7 @@ const UI = (() => {
         h3{margin:16px 0 6px;font-size:14px}
         @media print{body{padding:6mm}}
       </style></head><body>
-      <div class="ph"><div><div class="co">${esc(t('app_name'))}</div><div class="dt">GHALA 299/1</div></div>
+      <div class="ph"><div class="brand">${logoImg}<div><div class="co">${esc(co.name)}</div><div class="dt">${esc(co.sub || '')}</div></div></div>
         <div style="text-align:${dir === 'rtl' ? 'left' : 'right'}"><h1>${esc(title)}</h1><div class="dt">${new Date().toLocaleDateString('en-GB')}</div></div></div>
       ${contentHTML}
       <script>window.onload=function(){setTimeout(function(){window.print()},250)}<\/script>
