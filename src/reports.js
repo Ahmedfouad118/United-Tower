@@ -193,6 +193,24 @@ function groupedJournals(from, to, lang = 'en', group = 'day') {
   return Object.values(groups);
 }
 
+// Same-month settlement of a month's OWN invoices, computed from the LEDGER so
+// it never depends on the mutable invoices.paid_amount. For each invoice:
+//   settled = min(total, receipts dated in the invoice's month allocated to it
+//                        + advance-applications booked against it)
+// Both are credits to 11100 that settle THIS month's invoice (not old debt).
+const LEGACY_SETTLED_PER_INV_SQL = `
+  SELECT i.id inv_id, i.period period, i.tenant_id tid, i.total total,
+    MIN(i.total,
+        COALESCE((SELECT SUM(pa.amount) FROM payment_allocations pa
+                    JOIN payments p ON p.id=pa.payment_id
+                   WHERE pa.invoice_id=i.id AND substr(p.pdate,1,7)=i.period),0)
+      + COALESCE((SELECT SUM(l.credit) FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+                   WHERE l.account_code='11100' AND j.jtype='adjustment'
+                     AND j.source_table='invoices' AND j.source_id=i.id),0)
+    ) settled
+  FROM invoices i`;
+const LEGACY_SETTLED_SQL = `SELECT period, COALESCE(SUM(settled),0) w FROM (${LEGACY_SETTLED_PER_INV_SQL})`;
+
 // ---- Legacy-system journals: ONE combined revenue entry + ONE expense entry
 // per month, built from the system's own auto entries — sized for pasting into
 // Peachtree/Sage (side = all | revenue | expense).
@@ -207,17 +225,13 @@ function legacyJournals(from, to, lang = 'en', side = 'all') {
      GROUP BY period, l.account_code
      HAVING ABS(debit)>0.005 OR ABS(credit)>0.005
      ORDER BY period, l.account_code`).all(...[...(from ? [from] : []), ...(to ? [to] : [])]);
-  // wash per period = current-month invoices already settled — removed from BOTH
-  // sides of the receivable so 11100 shows only "new unpaid" (Dr) & "old collected" (Cr)
-  // same-month settlement only, keyed on the PAYMENT date (not the mutable
-  // invoices.paid_amount) so a later month's collection can never rewrite an
-  // earlier month's legacy figures — the report is now period-stable.
-  const washRows = db.prepare(
-    `SELECT i.period period, COALESCE(SUM(pa.amount),0) w
-       FROM payment_allocations pa JOIN payments p ON p.id=pa.payment_id
-       JOIN invoices i ON i.id=pa.invoice_id
-      WHERE substr(p.pdate,1,7)=i.period
-      GROUP BY i.period`).all();
+  // wash per period = this-month's invoices already settled IN the same month —
+  // removed from BOTH sides of the receivable so 11100 shows only "new unpaid"
+  // (Dr) & "old collected" (Cr). Computed straight from the LEDGER (not the
+  // mutable invoices.paid_amount): same-month receipt settlements (by payment
+  // date) + advance-applications to that month's invoices. This makes an earlier
+  // month's figures immune to anything entered later — fully period-stable.
+  const washRows = db.prepare(`${LEGACY_SETTLED_SQL} GROUP BY period`).all();
   const wash = {}; for (const w of washRows) wash[w.period] = r2(w.w);
   const groups = {};
   for (const l of rows) {
@@ -247,46 +261,44 @@ function legacyJournals(from, to, lang = 'en', side = 'all') {
 // ---- Legacy report drill: WHO makes up each amount (per tenant/vendor) -----
 // side = 'debit' | 'credit'. 11100 has special meaning (new-unpaid / old-collected).
 function legacyDrill(account, period, side, lang = 'en') {
-  // 11100 debit = current-month invoices still unpaid (who did NOT pay this month)
+  // per-invoice same-month settlement (ledger-based) for THIS period, keyed by
+  // tenant — the single source both 11100 drills net against, so they always
+  // tie to the report line and never drift with later months.
+  const settledByTenant = () => {
+    const rows = db.prepare(`${LEGACY_SETTLED_PER_INV_SQL} ${period ? 'WHERE i.period=?' : ''}`).all(...(period ? [period] : []));
+    const m = {}; for (const r of rows) m[r.tid] = r2((m[r.tid] || 0) + r.settled); return m;
+  };
+  // 11100 debit = who got newly charged this month and is still unpaid as of it
   if (account === '11100' && side === 'debit') {
-    // (a) current-month invoices still unpaid AS OF THAT MONTH = invoice total −
-    // what was collected within the same month (payment date in the invoice's
-    // period); later payments are ignored so the figure never drifts.
-    const inv = db.prepare(
-      `SELECT t.name party, f.code flat, i.invoice_no ref, i.total,
-              COALESCE((SELECT SUM(pa.amount) FROM payment_allocations pa
-                          JOIN payments p ON p.id=pa.payment_id
-                         WHERE pa.invoice_id=i.id AND substr(p.pdate,1,7)=i.period),0) paid_same
-       FROM invoices i JOIN tenants t ON t.id=i.tenant_id LEFT JOIN flats f ON f.id=i.flat_id
-       WHERE i.period=?`).all(period);
-    const out = inv.map((x) => ({ party: x.party, flat: x.flat, ref: x.ref, amount: r2(x.total - x.paid_same) }))
+    const settled = settledByTenant();
+    // this month's invoice charges, per tenant, with a representative unit
+    const charges = db.prepare(
+      `SELECT i.tenant_id tid, t.name party, MAX(f.code) flat, COALESCE(SUM(i.total),0) charged
+         FROM invoices i JOIN tenants t ON t.id=i.tenant_id LEFT JOIN flats f ON f.id=i.flat_id
+        WHERE i.period=? GROUP BY i.tenant_id`).all(period);
+    const out = charges.map((x) => ({ party: x.party, flat: x.flat, ref: 'استحقاق ' + period, amount: r2(x.charged - (settled[x.tid] || 0)) }))
       .filter((x) => x.amount > 0.005);
-    // (b) non-invoice debits on 11100 (opening receivable / adjustments) so the
-    // drill always ties to the report line, with the customer's name shown.
+    // non-invoice debits on 11100 (opening receivable / adjustments) so the drill
+    // always ties to the report line, with the customer's name shown.
     const other = db.prepare(
       `SELECT COALESCE(t.name,'—') party, f.code flat, COALESCE(SUM(l.debit),0) d
          FROM journal_lines l JOIN journals j ON j.id=l.journal_id
          LEFT JOIN tenants t ON t.id=l.tenant_id LEFT JOIN flats f ON f.id=l.flat_id
         WHERE l.account_code='11100' AND substr(j.jdate,1,7)=?
-          AND j.jtype NOT IN ('invoice','recognition')
+          AND j.jtype NOT IN ('invoice','recognition','adjustment')
         GROUP BY t.name, f.code`).all(period);
     for (const o of other) if (o.d > 0.005) out.push({ party: o.party, flat: o.flat, ref: 'رصيد افتتاحي', amount: r2(o.d) });
     out.sort((a, b) => b.amount - a.amount);
     return { account, period, side, kind: 'unpaid', rows: out, total: r2(out.reduce((s, x) => s + x.amount, 0)) };
   }
-  // 11100 credit = collections that reduced OLD dues = tenant's month credit − settled on current invoices
+  // 11100 credit = who paid down OLD dues = this month's credits − same-month settlement of this month's own invoices
   if (account === '11100' && side === 'credit') {
+    const settled = settledByTenant();
     const credits = db.prepare(
       `SELECT l.tenant_id tid, t.name party, COALESCE(SUM(l.credit),0) c
        FROM journal_lines l JOIN journals j ON j.id=l.journal_id LEFT JOIN tenants t ON t.id=l.tenant_id
        WHERE l.account_code='11100' AND substr(j.jdate,1,7)=? GROUP BY l.tenant_id`).all(period);
-    const cur = db.prepare(
-      `SELECT i.tenant_id tid, COALESCE(SUM(pa.amount),0) p
-         FROM payment_allocations pa JOIN payments p2 ON p2.id=pa.payment_id
-         JOIN invoices i ON i.id=pa.invoice_id
-        WHERE i.period=? AND substr(p2.pdate,1,7)=i.period GROUP BY i.tenant_id`).all(period);
-    const curMap = {}; for (const r of cur) curMap[r.tid] = r.p;
-    const out = credits.map((r) => ({ party: r.party || '—', amount: r2(r.c - (curMap[r.tid] || 0)) }))
+    const out = credits.map((r) => ({ party: r.party || '—', amount: r2(r.c - (settled[r.tid] || 0)) }))
       .filter((x) => Math.abs(x.amount) > 0.005).sort((a, b) => b.amount - a.amount);
     return { account, period, side, kind: 'old', rows: out, total: r2(out.reduce((s, x) => s + x.amount, 0)) };
   }
