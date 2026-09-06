@@ -135,13 +135,15 @@ function setTenantOpening(tenant_id, amount, created_by) {
   if (ex) deleteJournal(ex.id);
   if (Math.abs(amount) < 0.005) return;
   const date = (db.prepare("SELECT value FROM settings WHERE key='opening_date'").get() || {}).value || '2025-12-31';
+  const tName = (db.prepare('SELECT name FROM tenants WHERE id=?').get(tenant_id) || {}).name || '';
+  const narr = `رصيد افتتاحي${tName ? ' - ' + tName : ''}`;
   // Positive = customer owes us -> Receivable (11100). Negative = customer holds
   // a credit with us -> a prepaid/advance in 23100 on its own (NOT a negative
   // receivable), so it never nets against other debit balances.
   const lines = amount > 0
-    ? [{ account_code: ACC.TENANT_RECV, debit: amount, tenant_id, memo: 'رصيد افتتاحي' }, { account_code: '39999', credit: amount }]
-    : [{ account_code: '39999', debit: -amount }, { account_code: DEFERRED_ADVANCE, credit: -amount, tenant_id, memo: 'رصيد افتتاحي دائن (دفعة مقدمة)' }];
-  postJournal({ jdate: date, jtype: 'opening', reference: ref, memo: 'Customer opening balance', memo_ar: 'رصيد افتتاحي للعميل', source_table: 'tenants', source_id: tenant_id, created_by }, lines);
+    ? [{ account_code: ACC.TENANT_RECV, debit: amount, tenant_id, memo: narr }, { account_code: '39999', credit: amount, memo: narr }]
+    : [{ account_code: '39999', debit: -amount, memo: narr }, { account_code: DEFERRED_ADVANCE, credit: -amount, tenant_id, memo: `رصيد افتتاحي دائن (دفعة مقدمة)${tName ? ' - ' + tName : ''}` }];
+  postJournal({ jdate: date, jtype: 'opening', reference: ref, memo: 'Customer opening balance', memo_ar: narr, source_table: 'tenants', source_id: tenant_id, created_by }, lines);
 }
 
 // Vendor opening balance -> a vendor-tagged payable (Cr AP / Dr Opening Equity)
@@ -155,10 +157,12 @@ function setVendorOpening(vendor_id, amount, created_by) {
   if (Math.abs(amount) < 0.005) return;
   const date = (db.prepare("SELECT value FROM settings WHERE key='opening_date'").get() || {}).value || '2025-12-31';
   const vpAcc = CFG.acct('vendor_payable');   // 23000 by config (كان 20000)
+  const vName = (db.prepare('SELECT name FROM vendors WHERE id=?').get(vendor_id) || {}).name || '';
+  const narr = `رصيد افتتاحي مورد${vName ? ' - ' + vName : ''}`;
   const lines = amount > 0
-    ? [{ account_code: '39999', debit: amount }, { account_code: vpAcc, credit: amount, vendor_id, memo: 'رصيد افتتاحي مورد' }]
-    : [{ account_code: vpAcc, debit: -amount, vendor_id, memo: 'رصيد افتتاحي مورد مدين' }, { account_code: '39999', credit: -amount }];
-  postJournal({ jdate: date, jtype: 'opening', reference: ref, memo: 'Vendor opening balance', memo_ar: 'رصيد افتتاحي للمورد', source_table: 'vendors', source_id: vendor_id, created_by }, lines);
+    ? [{ account_code: '39999', debit: amount, memo: narr }, { account_code: vpAcc, credit: amount, vendor_id, memo: narr }]
+    : [{ account_code: vpAcc, debit: -amount, vendor_id, memo: `رصيد افتتاحي مورد مدين${vName ? ' - ' + vName : ''}` }, { account_code: '39999', credit: -amount, memo: narr }];
+  postJournal({ jdate: date, jtype: 'opening', reference: ref, memo: 'Vendor opening balance', memo_ar: narr, source_table: 'vendors', source_id: vendor_id, created_by }, lines);
 }
 
 function issueInvoicesForPeriod(period, created_by) {
