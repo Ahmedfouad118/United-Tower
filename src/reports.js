@@ -638,11 +638,18 @@ function vatReport(from, to) {
      FROM vendor_bills WHERE status!='cancelled' ${from ? 'AND bdate>=?' : ''} ${to ? 'AND bdate<=?' : ''}`)
     .get(...[...(from ? [from] : []), ...(to ? [to] : [])]);
   const vat_input_due = r2(bill.due), vat_input_outstanding = r2(bill.outstanding), vat_input_paid = r2(vat_input_due - vat_input_outstanding);
+  // Net payable for the period comes from ACCRUAL (invoices out − bills in) so it
+  // is period-correct on the invoice/bill dates. The provision GL balance below is
+  // the all-time running total still owed.
+  const net_payable = r2(vat_due - vat_input_due);
+  const provAll = (OUT === IN)
+    ? db.prepare("SELECT COALESCE(SUM(credit-debit),0) b FROM journal_lines WHERE account_code=?").get(OUT).b
+    : output_vat - input_vat;
   return {
     from, to,
     vat_due, vat_collected, vat_outstanding,
     vat_input_due, vat_input_paid, vat_input_outstanding,
-    output_vat, input_vat, net_payable: r2(output_vat - input_vat), provision_account: OUT === IN ? OUT : null,
+    output_vat, input_vat, net_payable, provision_balance: r2(provAll), provision_account: OUT === IN ? OUT : null,
   };
 }
 

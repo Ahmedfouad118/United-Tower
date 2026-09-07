@@ -505,9 +505,11 @@ function settleVAT(input, created_by) {
        FROM journal_lines l JOIN journals j ON j.id=l.journal_id
       WHERE l.account_code=? ${from ? 'AND j.jdate>=?' : ''} ${to ? 'AND j.jdate<=?' : ''}`)
     .get(...[code, ...(from ? [from] : []), ...(to ? [to] : [])]);
-  let output_vat, input_vat, net;
-  if (OUT === IN) { const b = bal(OUT); output_vat = r2(b.c); input_vat = r2(b.d); net = r2(b.c - b.d); }
-  else { const o = bal(OUT), i = bal(IN); output_vat = r2(o.c - o.d); input_vat = r2(i.d - i.c); net = r2(output_vat - input_vat); }
+  // Net for the period from ACCRUAL (invoices out − bills in) — period-correct on
+  // invoice/bill dates, independent of any legacy movements in the provision GL.
+  const outAcc = db.prepare(`SELECT COALESCE(SUM(vat_amount),0) v FROM invoices WHERE status!='cancelled' ${from ? 'AND due_date>=?' : ''} ${to ? 'AND due_date<=?' : ''}`).get(...[...(from ? [from] : []), ...(to ? [to] : [])]).v;
+  const inAcc = db.prepare(`SELECT COALESCE(SUM(vat_amount),0) v FROM vendor_bills WHERE status!='cancelled' ${from ? 'AND bdate>=?' : ''} ${to ? 'AND bdate<=?' : ''}`).get(...[...(from ? [from] : []), ...(to ? [to] : [])]).v;
+  const output_vat = r2(outAcc), input_vat = r2(inAcc), net = r2(output_vat - input_vat);
   if (Math.abs(net) < 0.005 && Math.abs(output_vat) < 0.005) throw new Error('لا توجد ضريبة للتسوية في هذه الفترة');
   const ref = `VAT-${from || '~'}_${to || '~'}`;
   if (db.prepare('SELECT id FROM journals WHERE reference=?').get(ref)) throw new Error('تم عمل تسوية لهذه الفترة من قبل: ' + ref);
