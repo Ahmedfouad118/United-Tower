@@ -193,23 +193,44 @@ function groupedJournals(from, to, lang = 'en', group = 'day') {
   return Object.values(groups);
 }
 
-// Same-month settlement of a month's OWN invoices, computed from the LEDGER so
-// it never depends on the mutable invoices.paid_amount. For each invoice:
-//   settled = min(total, receipts dated in the invoice's month allocated to it
-//                        + advance-applications booked against it)
-// Both are credits to 11100 that settle THIS month's invoice (not old debt).
-const LEGACY_SETTLED_PER_INV_SQL = `
-  SELECT i.id inv_id, i.period period, i.tenant_id tid, i.total total,
-    MIN(i.total,
-        COALESCE((SELECT SUM(pa.amount) FROM payment_allocations pa
-                    JOIN payments p ON p.id=pa.payment_id
-                   WHERE pa.invoice_id=i.id AND substr(p.pdate,1,7)=i.period),0)
-      + COALESCE((SELECT SUM(l.credit) FROM journal_lines l JOIN journals j ON j.id=l.journal_id
-                   WHERE l.account_code='11100' AND j.jtype='adjustment'
-                     AND j.source_table='invoices' AND j.source_id=i.id),0)
-    ) settled
-  FROM invoices i`;
-const LEGACY_SETTLED_SQL = `SELECT period, COALESCE(SUM(settled),0) w FROM (${LEGACY_SETTLED_PER_INV_SQL})`;
+// Same-month settlement of a month's OWN invoices, per (period, tenant), from
+// the LEDGER (never the mutable invoices.paid_amount). A month's payment settles
+// THIS month's invoices first; it is NOT diverted to the tenant's OPENING balance
+// (openings live in the old system and must stay put), so "who owes this month"
+// is the true month shortfall — not inflated by an old opening. Definition:
+//   settled(t,M) = min( M's invoice total for t,
+//                       (M-dated receipts credited to 11100 for t − those applied
+//                        to PRIOR-period invoices) + advance-applications to M's invoices )
+// The leftover of a month's receipt beyond current invoices (e.g. paying an old
+// INVOICE) still shows as "old collected"; only OPENING paydown is kept out.
+function legacySettlement() {
+  const key = (p, t) => p + '|' + (t == null ? '0' : t);
+  const add = (m, k, v) => { m[k] = r2((m[k] || 0) + v); };
+  const monthInv = {}, samePay = {}, priorAlloc = {}, advApp = {};
+  for (const r of db.prepare('SELECT period, tenant_id tid, COALESCE(SUM(total),0) v FROM invoices GROUP BY period, tenant_id').all())
+    add(monthInv, key(r.period, r.tid), r.v);
+  for (const r of db.prepare(`SELECT substr(p.pdate,1,7) period, p.tenant_id tid, COALESCE(SUM(l.credit),0) v
+      FROM payments p JOIN journal_lines l ON l.journal_id=p.journal_id AND l.account_code='11100'
+      GROUP BY period, p.tenant_id`).all())
+    add(samePay, key(r.period, r.tid), r.v);
+  for (const r of db.prepare(`SELECT substr(p.pdate,1,7) period, p.tenant_id tid, COALESCE(SUM(pa.amount),0) v
+      FROM payment_allocations pa JOIN payments p ON p.id=pa.payment_id JOIN invoices i ON i.id=pa.invoice_id
+      WHERE i.period < substr(p.pdate,1,7) GROUP BY period, p.tenant_id`).all())
+    add(priorAlloc, key(r.period, r.tid), r.v);
+  for (const r of db.prepare(`SELECT i.period period, i.tenant_id tid, COALESCE(SUM(l.credit),0) v
+      FROM journal_lines l JOIN journals j ON j.id=l.journal_id JOIN invoices i ON i.id=j.source_id
+      WHERE l.account_code='11100' AND j.jtype='adjustment' AND j.source_table='invoices'
+      GROUP BY i.period, i.tenant_id`).all())
+    add(advApp, key(r.period, r.tid), r.v);
+  const settled = {}; // period -> { tid -> settled }
+  for (const k of Object.keys(monthInv)) {
+    const [p, t] = k.split('|');
+    const toCurrent = r2(Math.max(0, (samePay[k] || 0) - (priorAlloc[k] || 0)) + (advApp[k] || 0));
+    const s = r2(Math.min(monthInv[k], toCurrent));
+    if (s > 0.005) { (settled[p] = settled[p] || {})[t] = s; }
+  }
+  return settled;
+}
 
 // ---- Legacy-system journals: ONE combined revenue entry + ONE expense entry
 // per month, built from the system's own auto entries — sized for pasting into
@@ -231,8 +252,8 @@ function legacyJournals(from, to, lang = 'en', side = 'all') {
   // mutable invoices.paid_amount): same-month receipt settlements (by payment
   // date) + advance-applications to that month's invoices. This makes an earlier
   // month's figures immune to anything entered later — fully period-stable.
-  const washRows = db.prepare(`${LEGACY_SETTLED_SQL} GROUP BY period`).all();
-  const wash = {}; for (const w of washRows) wash[w.period] = r2(w.w);
+  const settledMap = legacySettlement();
+  const wash = {}; for (const p of Object.keys(settledMap)) wash[p] = r2(Object.values(settledMap[p]).reduce((s, x) => s + x, 0));
   const groups = {};
   for (const l of rows) {
     if (!groups[l.period]) groups[l.period] = { period: l.period, lines: [], total_debit: 0, total_credit: 0 };
@@ -261,13 +282,10 @@ function legacyJournals(from, to, lang = 'en', side = 'all') {
 // ---- Legacy report drill: WHO makes up each amount (per tenant/vendor) -----
 // side = 'debit' | 'credit'. 11100 has special meaning (new-unpaid / old-collected).
 function legacyDrill(account, period, side, lang = 'en') {
-  // per-invoice same-month settlement (ledger-based) for THIS period, keyed by
-  // tenant — the single source both 11100 drills net against, so they always
-  // tie to the report line and never drift with later months.
-  const settledByTenant = () => {
-    const rows = db.prepare(`${LEGACY_SETTLED_PER_INV_SQL} ${period ? 'WHERE i.period=?' : ''}`).all(...(period ? [period] : []));
-    const m = {}; for (const r of rows) m[r.tid] = r2((m[r.tid] || 0) + r.settled); return m;
-  };
+  // same-month settlement (ledger-based) for THIS period, keyed by tenant — the
+  // single source both 11100 drills net against, so they always tie to the report
+  // line, never drift with later months, and never absorb the tenant's opening.
+  const settledByTenant = () => legacySettlement()[period] || {};
   // 11100 debit = who got newly charged this month and is still unpaid as of it
   if (account === '11100' && side === 'debit') {
     const settled = settledByTenant();
@@ -295,10 +313,14 @@ function legacyDrill(account, period, side, lang = 'en') {
   if (account === '11100' && side === 'credit') {
     const settled = settledByTenant();
     const credits = db.prepare(
-      `SELECT l.tenant_id tid, t.name party, COALESCE(SUM(l.credit),0) c
+      `SELECT l.tenant_id tid, t.name party,
+              COALESCE(MAX(f.code), (SELECT fl.code FROM contracts cc JOIN flats fl ON fl.id=cc.flat_id
+                                      WHERE cc.tenant_id=l.tenant_id ORDER BY (cc.status='active') DESC LIMIT 1)) flat,
+              COALESCE(SUM(l.credit),0) c
        FROM journal_lines l JOIN journals j ON j.id=l.journal_id LEFT JOIN tenants t ON t.id=l.tenant_id
+       LEFT JOIN flats f ON f.id=l.flat_id
        WHERE l.account_code='11100' AND substr(j.jdate,1,7)=? GROUP BY l.tenant_id`).all(period);
-    const out = credits.map((r) => ({ party: r.party || '—', amount: r2(r.c - (settled[r.tid] || 0)) }))
+    const out = credits.map((r) => ({ party: r.party || '—', flat: r.flat, amount: r2(r.c - (settled[r.tid] || 0)) }))
       .filter((x) => Math.abs(x.amount) > 0.005).sort((a, b) => b.amount - a.amount);
     return { account, period, side, kind: 'old', rows: out, total: r2(out.reduce((s, x) => s + x.amount, 0)) };
   }
