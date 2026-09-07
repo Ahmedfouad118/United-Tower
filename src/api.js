@@ -85,6 +85,11 @@ const CFG = require('./config');
 router.get('/config', (req, res) => res.json({ accounts: CFG.allAccts(), labels: CFG.labels() }));
 router.put('/config/accounts', requireRole('admin'), (req, res) => { CFG.setAccts(req.body || {}); res.json({ ok: true }); });
 router.put('/config/labels', requireRole('admin'), (req, res) => { CFG.setLabels(req.body || {}); res.json({ ok: true }); });
+// One-time: repurpose 20000 as the single VAT provision (moves legacy AP to 23000,
+// reclasses existing 23200/11600 VAT lines into 20000 in place). Idempotent.
+router.post('/admin/vat-provision-migrate', requireRole('admin'), (req, res) => {
+  try { res.json(svc.migrateVatTo20000(req.user.id)); } catch (e) { res.status(400).json({ error: e.message }); }
+});
 
 // ---- Users & permissions --------------------------------------------------
 router.get('/users', requireRole('admin'), (req, res) =>

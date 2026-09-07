@@ -563,3 +563,4 @@ module.exports = {
   tenantAdvanceBalance, addMonths, periodOf, firstOfMonth, currentMonth, today,
   CUSTOMER_ADVANCE,
 };
+module.exports.migrateVatTo20000 = migrateVatTo20000;
