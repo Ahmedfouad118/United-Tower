@@ -473,11 +473,44 @@ function terminateContract(contractId, date, settledAmount, created_by) {
   return { terminated: contractId, cancelled: future.length };
 }
 
+// ---- VAT settlement (quarterly filing) ------------------------------------
+// Closes output VAT (23200) against input VAT (11600) for the period and pays
+// the net from the chosen account. Positive net = we pay the authority; negative
+// = a refund due. Does NOT touch 20000 (vendors) — VAT stays in its own account.
+function settleVAT(input, created_by) {
+  const { from, to } = input;
+  const pay_account = input.pay_account || CFG.acct('bank');
+  const date = input.pdate || to || today();
+  const OUT = CFG.acct('output_vat'), IN = CFG.acct('input_vat');
+  const bal = (code) => db.prepare(
+    `SELECT COALESCE(SUM(l.debit),0) d, COALESCE(SUM(l.credit),0) c
+       FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+      WHERE l.account_code=? ${from ? 'AND j.jdate>=?' : ''} ${to ? 'AND j.jdate<=?' : ''}`)
+    .get(...[code, ...(from ? [from] : []), ...(to ? [to] : [])]);
+  const o = bal(OUT), i = bal(IN);
+  const output_vat = r2(o.c - o.d), input_vat = r2(i.d - i.c);
+  const net = r2(output_vat - input_vat);
+  if (Math.abs(output_vat) < 0.005 && Math.abs(input_vat) < 0.005) throw new Error('لا توجد ضريبة للتسوية في هذه الفترة');
+  const ref = `VAT-${from || '~'}_${to || '~'}`;
+  if (db.prepare('SELECT id FROM journals WHERE reference=?').get(ref)) throw new Error('تم عمل تسوية لهذه الفترة من قبل: ' + ref);
+  const lines = [];
+  if (Math.abs(output_vat) > 0.005) lines.push({ account_code: OUT, debit: output_vat, memo: 'تقفيل ضريبة المخرجات' });
+  if (Math.abs(input_vat) > 0.005) lines.push({ account_code: IN, credit: input_vat, memo: 'تقفيل ضريبة المدخلات' });
+  if (net > 0.005) lines.push({ account_code: pay_account, credit: net, memo: 'سداد صافي الضريبة للجهاز' });
+  else if (net < -0.005) lines.push({ account_code: pay_account, debit: -net, memo: 'استرداد ضريبة' });
+  const jid = postJournal(
+    { jdate: date, jtype: 'vat_settlement', reference: ref,
+      memo: `VAT settlement ${from || ''}..${to || ''}`, memo_ar: `تسوية ضريبة ${from || ''} → ${to || ''}`, created_by },
+    lines);
+  return { journal_id: jid, reference: ref, output_vat, input_vat, net_payable: net, pay_account, date };
+}
+
 module.exports = {
   issueInvoiceForContract, issueInvoicesForPeriod, backfillInvoices, issueAdHocInvoice,
   recognizeInvoice, recognizeRevenueForPeriod,
   recordPayment, deletePayment, recordDeposit,
   recordVendorBill, recordVendorPayment, runPayroll, terminateContract, runDepreciation, setTenantOpening, setVendorOpening,
+  settleVAT,
   tenantAdvanceBalance, addMonths, periodOf, firstOfMonth, currentMonth, today,
   CUSTOMER_ADVANCE,
 };

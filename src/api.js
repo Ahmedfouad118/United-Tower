@@ -655,6 +655,10 @@ router.get('/reports/property-pl', (req, res) => res.json(scopeRows(req, R.prope
 router.get('/reports/roi', (req, res) => res.json(R.roi(req.query.from, req.query.to)));
 router.get('/reports/cash-flow', (req, res) => res.json(R.cashFlowForecast(Number(req.query.months) || 6)));
 router.get('/reports/vat', (req, res) => res.json(R.vatReport(req.query.from, req.query.to)));
+router.get('/reports/vat-uncollected', (req, res) => res.json(R.vatUncollectedByCustomer(req.query.from, req.query.to)));
+router.post('/vat/settle', writers, (req, res) => {
+  try { res.json(svc.settleVAT(req.body, req.user.id)); } catch (e) { res.status(400).json({ error: e.message }); }
+});
 router.get('/reports/depreciation', (req, res) => res.json(R.depreciationReport(req.query.building_id ? Number(req.query.building_id) : null)));
 router.get('/reports/customers-summary', (req, res) => res.json(R.customersSummary()));
 router.get('/reports/bank', (req, res) => res.json(R.bankReport(Number(req.query.bank_id) || 1, req.query.from, req.query.to)));

@@ -633,6 +633,20 @@ function vatReport(from, to) {
   };
 }
 
+// ---- Uncollected VAT per customer (the VAT portion still inside 11100) -----
+function vatUncollectedByCustomer(from, to) {
+  const rows = db.prepare(
+    `SELECT t.name tenant, MAX(f.code) flat,
+            COALESCE(SUM(i.vat_amount),0) vat_due,
+            COALESCE(SUM(CASE WHEN i.total>0 THEN i.vat_amount*(i.paid_amount/i.total) ELSE 0 END),0) vat_paid
+       FROM invoices i JOIN tenants t ON t.id=i.tenant_id LEFT JOIN flats f ON f.id=i.flat_id
+      WHERE i.status!='cancelled' ${from ? 'AND i.due_date>=?' : ''} ${to ? 'AND i.due_date<=?' : ''}
+      GROUP BY i.tenant_id`).all(...[...(from ? [from] : []), ...(to ? [to] : [])]);
+  const out = rows.map((r) => ({ tenant: r.tenant, flat: r.flat, vat_due: r2(r.vat_due), vat_paid: r2(r.vat_paid), vat_outstanding: r2(r.vat_due - r.vat_paid) }))
+    .filter((x) => x.vat_outstanding > 0.005).sort((a, b) => b.vat_outstanding - a.vat_outstanding);
+  return { from, to, rows: out, grand_total: r2(out.reduce((s, x) => s + x.vat_outstanding, 0)) };
+}
+
 // ---- Depreciation schedule ------------------------------------------------
 function depreciationReport(building_id) {
   const assets = db.prepare(`SELECT a.*, b.name building FROM assets a LEFT JOIN buildings b ON b.id=a.building_id
@@ -758,7 +772,7 @@ function buildingComparison(from, to) {
 module.exports = {
   trialBalance, incomeStatement, incomeStatementConsolidated, accountLedger, generalLedgerFull, groupedJournals, legacyJournals, legacyDrill,
   liquidityReport, financialRatios, balanceSheet, receivablesAging, payablesAging,
-  flatStatement, vendorStatement, advancesReport, occupancy, propertyPL, roi, cashFlowForecast, vatReport,
+  flatStatement, vendorStatement, advancesReport, occupancy, propertyPL, roi, cashFlowForecast, vatReport, vatUncollectedByCustomer,
   bankReport, chequesReport, chequesDashboard, dashboard, contractExpiry, buildingComparison,
   depreciationReport, customersSummary,
 };
