@@ -535,7 +535,8 @@ function settleVAT(input, created_by) {
 function migrateVatTo20000(created_by) {
   const done = db.prepare("SELECT value v FROM settings WHERE key='vat_provision_20000'").get();
   if (done && done.v === '1') return { skipped: true };
-  const run = db.transaction(() => {
+  db.exec('BEGIN');
+  try {
     // 1) move legacy AP balance out of 20000 -> 23000, keeping vendor tags
     const bals = db.prepare("SELECT vendor_id vid, COALESCE(SUM(credit-debit),0) net FROM journal_lines WHERE account_code='20000' GROUP BY vendor_id").all();
     const lines = []; let moved = 0;
@@ -546,12 +547,12 @@ function migrateVatTo20000(created_by) {
       moved = r2(moved + Math.abs(net));
     }
     if (lines.length) postJournal({ jdate: today(), jtype: 'adjustment', reference: 'REPURPOSE-20000-VAT', memo: 'Move legacy AP 20000 -> 23000; 20000 becomes VAT provision', memo_ar: 'نقل أرصدة الموردين من 20000 إلى 23000 (20000 أصبح مخصص ضريبة)', created_by }, lines);
-    // 2) reclass existing output/input VAT into 20000
+    // 2) reclass existing output/input VAT into 20000 IN PLACE (keeps original dates)
     const u = db.prepare("UPDATE journal_lines SET account_code='20000' WHERE account_code IN ('23200','11600')").run();
     db.prepare("INSERT INTO settings (key,value) VALUES ('vat_provision_20000','1') ON CONFLICT(key) DO UPDATE SET value=excluded.value").run();
+    db.exec('COMMIT');
     return { moved, reclassed: u.changes };
-  });
-  return run();
+  } catch (e) { try { db.exec('ROLLBACK'); } catch (e2) {} throw e; }
 }
 
 module.exports = {
