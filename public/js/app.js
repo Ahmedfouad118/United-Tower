@@ -147,7 +147,14 @@
       </div>`;
     document.getElementById('logout').onclick = () => { API.logout(); if (typeof AIWidget !== 'undefined') AIWidget.unmount(); location.hash = '#/login'; loginView(); };
     const navTgl = document.getElementById('navToggle');
-    if (navTgl) navTgl.onclick = () => document.querySelector('.layout').classList.toggle('nav-open');
+    const layoutEl = document.querySelector('.layout');
+    try { if (localStorage.getItem('ut_sb') === '1') layoutEl.classList.add('sidebar-collapsed'); } catch (e) {}
+    if (navTgl) navTgl.onclick = () => {
+      if (window.innerWidth > 900) { // desktop: collapse the sidebar to widen the screen
+        layoutEl.classList.toggle('sidebar-collapsed');
+        try { localStorage.setItem('ut_sb', layoutEl.classList.contains('sidebar-collapsed') ? '1' : '0'); } catch (e) {}
+      } else { layoutEl.classList.toggle('nav-open'); } // mobile: slide-in drawer
+    };
     // close the mobile drawer after picking a page
     document.querySelector('.nav').addEventListener('click', (e) => { if (e.target.closest('.nav-link')) document.querySelector('.layout').classList.remove('nav-open'); });
     // collapsible groups

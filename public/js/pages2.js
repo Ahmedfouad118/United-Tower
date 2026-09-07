@@ -710,7 +710,7 @@ Object.assign(Pages, (() => {
       <div class="field" style="margin:0"><label style="font-size:11px">${t('to')}</label><input type="date" id="jt2" value="${flt.to || ''}"></div>
       <input id="jam" type="number" step="0.001" placeholder="بحث بالمبلغ" value="${flt.amount || ''}" style="width:130px">
       <button class="btn primary" id="jgo">🔍 ${t('search')}</button><button class="btn" id="jclr">مسح</button></div>`;
-    c.innerHTML = toolbar(tbCfg) + filterBar + `<div class="card"><div class="hd"><h3>${t('m_journals')} <span class="muted" style="font-size:12px">(${rows.length})</span></h3><div style="display:flex;gap:6px">${canDel ? UI.bulkDelHTML() : ''}<button class="btn sm btn-print">🖨</button></div></div><div id="jt"></div></div>`;
+    c.innerHTML = toolbar(tbCfg) + filterBar + `<div class="card"><div class="hd"><h3>${t('m_journals')} <span class="muted" style="font-size:12px">(${rows.length})</span></h3><div style="display:flex;gap:6px">${canWrite() ? '<button class="btn sm" id="jcopy">📄 نسخ المحدد</button>' : ''}${canDel ? UI.bulkDelHTML() : ''}<button class="btn sm btn-print">🖨</button></div></div><div id="jt"></div></div>`;
     const cols = [...(canDel ? [{ key: '_s', label: '<input type="checkbox" class="sel-all">', render: (r) => `<input type="checkbox" class="row-sel" data-id="${r.id}">` }] : []),
       { key: 'id', label: 'رقم القيد', render: (r) => `<a href="#" class="drill" data-jid="${r.id}"><b>#${r.id}</b></a>` },
       { key: 'jdate', label: t('date'), render: (r) => dateStr(r.jdate) }, { key: 'jtype', label: 'النوع', render: (r) => JL[r.jtype] || r.jtype },
@@ -724,6 +724,13 @@ Object.assign(Pages, (() => {
     c.querySelector('#jq').onkeydown = (e) => { if (e.key === 'Enter') apply(); };
     c.querySelector('#jam').onkeydown = (e) => { if (e.key === 'Enter') apply(); };
     c.querySelector('#jclr').onclick = () => { c._jflt = {}; journals(c); };
+    const jcopy = c.querySelector('#jcopy');
+    if (jcopy) jcopy.onclick = async () => {
+      const sel = [...c.querySelectorAll('#jt .row-sel:checked')].map((x) => x.dataset.id);
+      if (sel.length !== 1) return toast('اختر قيد واحد بالظبط عشان تنسخه', 'err');
+      const j = await API.get('/journals/' + sel[0]);
+      manualJournal({ _copy: true, jdate: today(), reference: j.reference, memo: j.memo_ar || j.memo, lines: j.lines }, () => journals(c));
+    };
     c.querySelector('.btn-print').onclick = () => printTable(t('m_journals'), cols.filter((x) => x.key !== '_s' && x.key !== '_a'), rows);
     c.querySelector('#jt').onclick = async (e) => {
       const drill = e.target.closest('.drill[data-jid]'); if (drill) { e.preventDefault(); return viewJournal(drill.dataset.jid); }
@@ -743,7 +750,8 @@ Object.assign(Pages, (() => {
   async function manualJournal(existing, done) {
     const [ac, bl] = [await ref('accounts'), await ref('buildings')];
     let lines = existing ? existing.lines.map((l) => ({ account_code: l.account_code, debit: l.debit, credit: l.credit, building_id: l.building_id })) : [{}, {}];
-    modal({ title: existing ? 'تعديل قيد #' + existing.id : 'قيد يومية يدوي', wide: true,
+    const isCopy = !!(existing && existing._copy);
+    modal({ title: existing ? (isCopy ? '📄 نسخ قيد → قيد جديد' : 'تعديل قيد #' + existing.id) : 'قيد يومية يدوي', wide: true,
       bodyHTML: `<div class="form-grid"><div class="field"><label>${t('date')}</label><input id="jd" type="date" value="${existing ? dateStr(existing.jdate) : today()}"></div>
         <div class="field"><label>المرجع</label><input id="jr" value="${existing ? esc(existing.reference || '') : ''}"></div>
         <div class="field"><label>${t('building')}</label><select id="jb"><option value="">— كل —</option>${bl.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></div>
@@ -766,7 +774,7 @@ Object.assign(Pages, (() => {
         bg.querySelector('#addr').onclick = () => { sync(); lines.push({}); render(); };
         bg.querySelector('#js').onclick = async () => { sync(); const b = jbId();
           const payload = { jdate: bg.querySelector('#jd').value, reference: bg.querySelector('#jr').value, memo: bg.querySelector('#jm').value, lines: lines.filter((l) => l.account_code && (l.debit || l.credit)).map((l) => ({ ...l, building_id: b })) };
-          try { if (existing) await API.put('/journals/' + existing.id, payload); else await API.post('/journals', payload); toast(t('saved')); close(); done(); } catch (e) { toast(e.message, 'err'); } };
+          try { if (existing && !isCopy) await API.put('/journals/' + existing.id, payload); else await API.post('/journals', payload); toast(t('saved')); close(); done(); } catch (e) { toast(e.message, 'err'); } };
       } });
   }
 

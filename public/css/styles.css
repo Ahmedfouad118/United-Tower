@@ -231,7 +231,10 @@ tr.tot td{border-top:2px solid #c9d6ea;background:#f7f9fc;font-weight:700}
 .table-wrap::-webkit-scrollbar-thumb{background:var(--green)}
 
 /* ---- Hamburger + responsive layout (mobile / tablet) ------------------- */
-.nav-toggle{display:none;border:none;background:transparent;font-size:22px;cursor:pointer;padding:4px 10px;color:var(--ink)}
+.nav-toggle{display:inline-flex;border:none;background:transparent;font-size:22px;cursor:pointer;padding:4px 10px;color:var(--ink);border-radius:8px}
+.nav-toggle:hover{background:#eef2f7}
+.sidebar{transition:width .2s ease}
+.layout.sidebar-collapsed .sidebar{width:0;min-width:0;padding:0;overflow:hidden}
 @media (max-width:900px){
   .nav-toggle{display:inline-block}
   .layout{position:relative}
