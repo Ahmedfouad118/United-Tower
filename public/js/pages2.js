@@ -576,10 +576,8 @@ Object.assign(Pages, (() => {
       <p class="muted" style="font-size:11px">اضغط على «غير مدفوعة» لعرض المورّدين اللي لسه مدفعناش ضريبتهم.</p>
       <div class="section-title" style="margin-top:14px">التسوية مع الضرائب — حساب المخصص ${esc(prov)}</div>
       <table>
-        <tr><td>ض.ق.م المخرجات (دائن ${esc(prov)})</td><td class="num">${drillA(money(r.output_vat), 'data-acc="' + prov + '"')}</td></tr>
-        <tr><td>ض.ق.م المدخلات (مدين ${esc(prov)})</td><td class="num">${drillA(money(r.input_vat), 'data-acc="' + prov + '"')}</td></tr>
-        <tfoot><tr><td>الرصيد الباقي = المستحق للضرائب</td><td class="num"><b>${drillA(money(r.net_payable), 'data-acc="' + prov + '"')}</b></td></tr></tfoot></table>
-      <p class="muted" style="font-size:11px;margin-top:8px">رصيد حساب ${esc(prov)} = المبلغ اللي هتدفعه للضرائب.</p>
+        <tfoot><tr><td>الرصيد الباقي في حساب ${esc(prov)} = المستحق للضرائب</td><td class="num"><b>${drillA(money(r.net_payable), 'data-acc="' + prov + '"')}</b></td></tr></tfoot></table>
+      <p class="muted" style="font-size:11px;margin-top:8px">رصيد حساب المخصص ${esc(prov)} = المبلغ اللي هتدفعه للضرائب (اضغط عليه لعرض كل الحركات).</p>
       <div class="section-title" style="margin-top:14px">سداد الضريبة (توليد قيد التسوية)</div>
       <div class="toolbar" style="margin:0;align-items:flex-end">
         <div class="field" style="margin:0"><label>من حساب الدفع</label><select id="vpay">${payOpts}</select></div>
