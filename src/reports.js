@@ -304,12 +304,14 @@ function legacyDrill(account, period, side, lang = 'en') {
   }
   // general: break the amount down per tenant/vendor for that account+side+month
   const rows = db.prepare(
-    `SELECT COALESCE(t.name, v.name, '—') party, f.code flat,
+    `SELECT COALESCE(t.name, v.name, '—') party,
+            COALESCE(f.code, (SELECT fl.code FROM contracts cc JOIN flats fl ON fl.id=cc.flat_id
+                               WHERE cc.tenant_id=l.tenant_id ORDER BY (cc.status='active') DESC LIMIT 1)) flat,
             COALESCE(SUM(l.debit),0) d, COALESCE(SUM(l.credit),0) c
      FROM journal_lines l JOIN journals j ON j.id=l.journal_id
      LEFT JOIN tenants t ON t.id=l.tenant_id LEFT JOIN vendors v ON v.id=l.vendor_id LEFT JOIN flats f ON f.id=l.flat_id
      WHERE l.account_code=? AND substr(j.jdate,1,7)=?
-     GROUP BY party, f.code`).all(account, period);
+     GROUP BY party, flat`).all(account, period);
   const out = rows.map((r) => ({ party: r.party, flat: r.flat, amount: side === 'debit' ? r2(r.d) : r2(r.c) }))
     .filter((x) => Math.abs(x.amount) > 0.005).sort((a, b) => b.amount - a.amount);
   return { account, period, side, kind: 'general', rows: out, total: r2(out.reduce((s, x) => s + x.amount, 0)) };

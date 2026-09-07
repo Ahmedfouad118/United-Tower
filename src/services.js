@@ -223,8 +223,8 @@ function applyAdvanceToInvoice(invId, created_by) {
   const from23 = r2(Math.min(advanceBalanceIn(DEFERRED_ADVANCE, inv.tenant_id), apply));
   const from21 = r2(apply - from23);
   const advLines = [];
-  if (from23 > 0) advLines.push({ account_code: DEFERRED_ADVANCE, debit: from23, tenant_id: inv.tenant_id });
-  if (from21 > 0) advLines.push({ account_code: CUSTOMER_ADVANCE, debit: from21, tenant_id: inv.tenant_id });
+  if (from23 > 0) advLines.push({ account_code: DEFERRED_ADVANCE, debit: from23, tenant_id: inv.tenant_id, flat_id: inv.flat_id || null });
+  if (from21 > 0) advLines.push({ account_code: CUSTOMER_ADVANCE, debit: from21, tenant_id: inv.tenant_id, flat_id: inv.flat_id || null });
   const jid = postJournal(
     { jdate: inv.due_date, jtype: 'adjustment', reference: `ADV-${inv.invoice_no}`,
       memo: `Apply advance to ${inv.period}`, memo_ar: `استخدام دفعة مقدمة ${inv.period}`,
@@ -300,7 +300,7 @@ function recordPayment(input, created_by) {
   const lines = [{ account_code: cash_account, debit: total, tenant_id, building_id: building_id || null, flat_id: flat_id || null,
     memo: (method === 'cheque' ? `شيك ${cheque_no || ''} — ` : '') + narr }];
   if (applied > 0) lines.push({ account_code: ACC.TENANT_RECV, credit: applied, tenant_id, building_id: building_id || null, flat_id: flat_id || null, memo: `سداد ${tName}${fCode ? ' - وحدة ' + fCode : ''}${periods ? ' - ' + periods : ''}` });
-  if (advance > 0) lines.push({ account_code: DEFERRED_ADVANCE, credit: advance, tenant_id, memo: `دفعة مقدمة ${tName}${fCode ? ' - وحدة ' + fCode : ''}` });
+  if (advance > 0) lines.push({ account_code: DEFERRED_ADVANCE, credit: advance, tenant_id, flat_id: flat_id || null, memo: `دفعة مقدمة ${tName}${fCode ? ' - وحدة ' + fCode : ''}` });
 
   const jid = postJournal(
     { jdate: pdate, jtype: 'receipt', reference: vno, memo: memo || narr,
