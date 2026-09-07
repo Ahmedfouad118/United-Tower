@@ -619,16 +619,18 @@ function vatReport(from, to) {
     .get(...[code, ...(from ? [from] : []), ...(to ? [to] : [])]);
   const out = bal('23200'), inp = bal('11600');
   const output_vat = r2(out.c - out.d), input_vat = r2(inp.d - inp.c);
-  // Accrual view from invoices: VAT due, collected (pro-rata of paid), outstanding
+  // Accrual view from invoices — VAT is collected LAST: a payment covers the rent
+  // first, so an invoice's VAT stays uncollected until the invoice is fully paid.
+  // outstanding VAT = min(invoice VAT, invoice unpaid balance).
   const inv = db.prepare(
     `SELECT COALESCE(SUM(vat_amount),0) due,
-            COALESCE(SUM(CASE WHEN total>0 THEN vat_amount*(paid_amount/total) ELSE 0 END),0) collected
+            COALESCE(SUM(MIN(vat_amount, MAX(0, total - paid_amount))),0) outstanding
      FROM invoices WHERE status!='cancelled' ${from ? 'AND due_date>=?' : ''} ${to ? 'AND due_date<=?' : ''}`)
     .get(...[...(from ? [from] : []), ...(to ? [to] : [])]);
-  const vat_due = r2(inv.due), vat_collected = r2(inv.collected);
+  const vat_due = r2(inv.due), vat_outstanding = r2(inv.outstanding), vat_collected = r2(vat_due - vat_outstanding);
   return {
     from, to,
-    vat_due, vat_collected, vat_outstanding: r2(vat_due - vat_collected),
+    vat_due, vat_collected, vat_outstanding,
     output_vat, input_vat, net_payable: r2(output_vat - input_vat),
   };
 }
@@ -638,11 +640,11 @@ function vatUncollectedByCustomer(from, to) {
   const rows = db.prepare(
     `SELECT t.name tenant, MAX(f.code) flat,
             COALESCE(SUM(i.vat_amount),0) vat_due,
-            COALESCE(SUM(CASE WHEN i.total>0 THEN i.vat_amount*(i.paid_amount/i.total) ELSE 0 END),0) vat_paid
+            COALESCE(SUM(MIN(i.vat_amount, MAX(0, i.total - i.paid_amount))),0) vat_outstanding
        FROM invoices i JOIN tenants t ON t.id=i.tenant_id LEFT JOIN flats f ON f.id=i.flat_id
       WHERE i.status!='cancelled' ${from ? 'AND i.due_date>=?' : ''} ${to ? 'AND i.due_date<=?' : ''}
       GROUP BY i.tenant_id`).all(...[...(from ? [from] : []), ...(to ? [to] : [])]);
-  const out = rows.map((r) => ({ tenant: r.tenant, flat: r.flat, vat_due: r2(r.vat_due), vat_paid: r2(r.vat_paid), vat_outstanding: r2(r.vat_due - r.vat_paid) }))
+  const out = rows.map((r) => ({ tenant: r.tenant, flat: r.flat, vat_due: r2(r.vat_due), vat_paid: r2(r.vat_due - r.vat_outstanding), vat_outstanding: r2(r.vat_outstanding) }))
     .filter((x) => x.vat_outstanding > 0.005).sort((a, b) => b.vat_outstanding - a.vat_outstanding);
   return { from, to, rows: out, grand_total: r2(out.reduce((s, x) => s + x.vat_outstanding, 0)) };
 }
