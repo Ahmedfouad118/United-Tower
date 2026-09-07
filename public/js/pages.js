@@ -90,11 +90,11 @@ const Pages = (() => {
         ${kpi('هامش صافي الربح', fr.net_margin + '%', 'صافي الربح ÷ الإيرادات', '💹', fr.net_margin >= 0 ? 'k-green' : 'k-red')}
         ${kpi('العائد على الأصول ROA', fr.roa + '%', 'صافي الربح ÷ الأصول', '📊', 'k-blue')}
         ${kpi('العائد على حقوق الملكية ROE', fr.roe + '%', 'صافي الربح ÷ حقوق الملكية', '🏦', 'k-teal')}
-        ${kpi('نسبة التداول', fr.current_ratio, 'أصول متداولة ÷ التزامات (>1)', '💧', fr.current_ratio >= 1 ? 'k-green' : 'k-amber')}
+        ${kpi('نسبة التداول', (Math.round((fr.current_ratio || 0) * 1000) / 10) + '%', 'أصول متداولة ÷ التزامات (>100%)', '💧', fr.current_ratio >= 1 ? 'k-green' : 'k-amber')}
       </div>
       <div class="grid g-4" style="margin-top:12px">
-        ${kpi('السيولة السريعة', fr.quick_ratio, 'Quick Ratio', '⚡', fr.quick_ratio >= 1 ? 'k-green' : 'k-amber')}
-        ${kpi('نسبة النقدية', fr.cash_ratio, 'النقدية ÷ الالتزامات', '💵', 'k-blue')}
+        ${kpi('السيولة السريعة', (Math.round((fr.quick_ratio || 0) * 1000) / 10) + '%', 'Quick Ratio', '⚡', fr.quick_ratio >= 1 ? 'k-green' : 'k-amber')}
+        ${kpi('نسبة النقدية', (Math.round((fr.cash_ratio || 0) * 1000) / 10) + '%', 'النقدية ÷ الالتزامات', '💵', 'k-blue')}
         ${kpi('رأس المال العامل', money(fr.working_capital), 'أصول متداولة − التزامات', '🧮', fr.working_capital >= 0 ? 'k-green' : 'k-red')}
         ${kpi('معدل دوران الأصول', fr.asset_turnover + '%', 'الإيرادات ÷ الأصول', '🔄', 'k-teal')}
       </div>` : ''}

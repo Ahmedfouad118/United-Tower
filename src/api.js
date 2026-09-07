@@ -404,6 +404,12 @@ router.get('/vendor-bills', (req, res) => res.json(db.prepare(
 router.post('/vendor-bills', writers, (req, res) => {
   try { res.json(svc.recordVendorBill(req.body, req.user.id)); } catch (e) { res.status(400).json({ error: e.message }); }
 });
+router.put('/vendor-bills/:id', writers, (req, res) => {
+  try { res.json(svc.updateVendorBill(Number(req.params.id), req.body, req.user.id)); } catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.delete('/vendor-bills/:id', writers, (req, res) => {
+  try { svc.deleteVendorBill(Number(req.params.id)); res.json({ ok: true }); } catch (e) { res.status(400).json({ error: e.message }); }
+});
 router.get('/vendor-payments', (req, res) => res.json(db.prepare(
   `SELECT p.*, v.name vendor FROM vendor_payments p LEFT JOIN vendors v ON v.id=p.vendor_id ORDER BY p.pdate DESC LIMIT 500`).all()));
 router.post('/vendor-payments', writers, (req, res) => {

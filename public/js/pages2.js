@@ -99,16 +99,27 @@ Object.assign(Pages, (() => {
     const tbCfg = { search: true, searchFn: (rs, q) => rs.filter((r) => [r.vendor, r.description, r.bill_no].join(' ').toLowerCase().includes(q)),
       exportType: 'vendor-bills', templateType: 'vendor-bills', onImport: () => importModal('vendor-bills', '', () => vendorBills(c)),
       onNew: canWrite() ? () => billForm(vn, exAcc, bl, () => vendorBills(c)) : null, newLabel: t('m_bills') };
+    const canEd = canDo('edit'), canDel = canDo('delete');
     c.innerHTML = toolbar(tbCfg) + `<div class="card"><div class="hd"><h3>${t('m_bills')}</h3><button class="btn sm btn-print">🖨</button></div><div id="bt"></div></div>`;
     const cols = [{ key: 'bill_no', label: 'رقم' }, { key: 'bdate', label: t('date'), render: (r) => dateStr(r.bdate) }, { key: 'vendor', label: t('vendor') },
       { key: 'account_name', label: t('account'), render: (r) => esc(r.account_name) }, { key: 'description', label: t('description') },
-      { key: 'total', label: t('total'), num: true, render: (r) => money(r.total) }, { key: 'status', label: t('status'), render: (r) => statusBadge(r.status) }];
+      { key: 'total', label: t('total'), num: true, render: (r) => money(r.total) }, { key: 'status', label: t('status'), render: (r) => statusBadge(r.status) },
+      ...((canEd || canDel) ? [{ key: '_a', label: t('actions'), render: (r) => actions(r.id, [...(canEd ? ['edit'] : []), ...(canDel ? ['delete'] : [])]) }] : [])];
     const draw = (rs) => c.querySelector('#bt').innerHTML = table(cols, rs);
     draw(rows); wireToolbar(c, tbCfg, draw, rows);
-    c.querySelector('.btn-print').onclick = () => printTable(t('m_bills'), cols, rows);
+    c.querySelector('.btn-print').onclick = () => printTable(t('m_bills'), cols.filter((x) => x.key !== '_a'), rows);
+    c.querySelector('#bt').onclick = async (e) => {
+      const b = e.target.closest('[data-act]'); if (!b) return;
+      const id = b.dataset.id, r = rows.find((x) => String(x.id) === String(id));
+      if (b.dataset.act === 'delete') { if (confirm(t('confirm_delete'))) { try { await API.del('/vendor-bills/' + id); toast(t('deleted')); vendorBills(c); } catch (er) { toast(er.message, 'err'); } } return; }
+      if (b.dataset.act === 'edit') billForm(vn, exAcc, bl, () => vendorBills(c), r);
+    };
   }
-  function billForm(vn, exAcc, bl, done) {
-    formModal({ title: t('m_bills'), wide: true, fields: [
+  function billForm(vn, exAcc, bl, done, existing) {
+    const vals = existing ? { vendor_id: existing.vendor_id || '', expense_code: existing.expense_code, building_id: existing.building_id || '',
+      amount: existing.amount, vat_percent: existing.amount ? Math.round((existing.vat_amount / existing.amount) * 1000) / 10 : 5,
+      bdate: (existing.bdate || '').slice(0, 10), description: existing.description || '', paid: existing.status === 'paid' ? 1 : 0 } : {};
+    formModal({ title: existing ? 'تعديل فاتورة مورد #' + existing.bill_no : t('m_bills'), wide: true, values: vals, fields: [
       { key: 'vendor_id', label: t('vendor'), type: 'select', options: [{ value: '', label: '—' }].concat(vn.map((v) => ({ value: v.id, label: v.name }))) },
       { key: 'expense_code', label: 'البند', type: 'select', options: exAcc.map((a) => ({ value: a.code, label: a.code + ' - ' + (a.name_ar || a.name) })) },
       { key: 'building_id', label: t('building'), type: 'select', options: [{ value: '', label: '—' }].concat(bl.map((b) => ({ value: b.id, label: b.name }))) },
@@ -118,7 +129,7 @@ Object.assign(Pages, (() => {
       { key: 'paid', label: 'مدفوع فوراً', type: 'checkbox' },
       { key: 'attachment', label: '📎 صورة الفاتورة', type: 'file', accept: 'image/*,.pdf', full: true },
       { key: 'description', label: t('description'), full: true },
-    ], onSave: async (d, close) => { d.vat_amount = Math.round((d.amount || 0) * (d.vat_percent || 0)) / 100; await API.post('/vendor-bills', d); toast(t('saved')); close(); done(); } });
+    ], onSave: async (d, close) => { d.vat_amount = Math.round((d.amount || 0) * (d.vat_percent || 0)) / 100; if (existing) await API.put('/vendor-bills/' + existing.id, d); else await API.post('/vendor-bills', d); toast(t('saved')); close(); done(); } });
   }
   // ---- Vendor payments (سند صرف) ----
   async function vendorPayments(c) {
@@ -318,12 +329,13 @@ Object.assign(Pages, (() => {
     const r = await API.get('/reports/liquidity?upto=' + upto);
     const sec = (title, rows, total, cls) => `<h3>${title}</h3><table><tbody>${rows.map((x) => `<tr><td>${esc(x.code)}</td><td>${esc(x.name)}</td><td class="num">${money(x.amt)}</td></tr>`).join('') || `<tr><td colspan="3" class="muted">${t('no_data')}</td></tr>`}</tbody><tfoot><tr><td></td><td>${t('total')}</td><td class="num ${cls}"><b>${money(total)}</b></td></tr></tfoot></table>`;
     const kpi = (lbl, val, sub, cls) => `<div class="card kpi ${cls}"><div class="lbl">${lbl}</div><div class="val mono">${val}</div><div class="sub">${sub}</div></div>`;
+    const pctR = (x) => (Math.round((x || 0) * 1000) / 10) + '%';
     c.querySelector('#rbody').innerHTML = `<div class="bd">
       <div class="grid g-4" style="margin-bottom:16px">
         ${kpi('رأس المال العامل', money(r.working_capital), 'أصول متداولة − التزامات', r.working_capital >= 0 ? 'k-green' : 'k-red')}
-        ${kpi('نسبة التداول', r.current_ratio, 'الأصول ÷ الالتزامات (>1 جيد)', r.current_ratio >= 1 ? 'k-green' : 'k-amber')}
-        ${kpi('السيولة السريعة', r.quick_ratio, 'Quick Ratio', r.quick_ratio >= 1 ? 'k-green' : 'k-amber')}
-        ${kpi('نسبة النقدية', r.cash_ratio, 'النقدية ÷ الالتزامات', 'k-blue')}
+        ${kpi('نسبة التداول', pctR(r.current_ratio), 'الأصول ÷ الالتزامات (>100% جيد)', r.current_ratio >= 1 ? 'k-green' : 'k-amber')}
+        ${kpi('السيولة السريعة', pctR(r.quick_ratio), 'Quick Ratio', r.quick_ratio >= 1 ? 'k-green' : 'k-amber')}
+        ${kpi('نسبة النقدية', pctR(r.cash_ratio), 'النقدية ÷ الالتزامات', 'k-blue')}
       </div>
       ${sec('الأصول المتداولة (نقدية + ذمم مدينة — تتحصّل خلال سنة)', r.current_assets, r.total_current_assets, 'pos')}
       ${sec('الالتزامات المتداولة (ذمم دائنة + مقدمات + ض.ق.م — تُدفع خلال سنة)', r.current_liabilities, r.total_current_liabilities, 'neg')}

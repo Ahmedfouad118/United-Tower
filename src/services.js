@@ -370,6 +370,23 @@ function recordVendorBill(input, created_by) {
   return { id: bid, bill_no: billNo, journal_id: jid };
 }
 
+// Delete a vendor bill (reverses its journal). Blocked if a payment settled it.
+function deleteVendorBill(billId) {
+  const b = db.prepare('SELECT * FROM vendor_bills WHERE id=?').get(billId);
+  if (!b) return;
+  const al = db.prepare('SELECT COUNT(*) n FROM vendor_payment_allocations WHERE bill_id=?').get(billId);
+  if (al && al.n > 0) throw new Error('لا يمكن حذف/تعديل فاتورة عليها سند صرف — احذف سند الصرف أولاً');
+  if (b.journal_id) deleteJournal(b.journal_id);
+  db.prepare('DELETE FROM vendor_bills WHERE id=?').run(billId);
+}
+// Edit = reverse the old bill then re-create with the same bill number.
+function updateVendorBill(billId, input, created_by) {
+  const b = db.prepare('SELECT * FROM vendor_bills WHERE id=?').get(billId);
+  if (!b) throw new Error('Bill not found');
+  deleteVendorBill(billId);
+  return recordVendorBill({ ...input, bill_no: input.bill_no || b.bill_no }, created_by);
+}
+
 // ---- Vendor payment (سند صرف) --------------------------------------------
 function recordVendorPayment(input, created_by) {
   const { pdate, vendor_id, amount, method = 'bank', cash_account = '10400', bank_id, cheque_no, cheque_due, memo } = input;
@@ -509,7 +526,7 @@ module.exports = {
   issueInvoiceForContract, issueInvoicesForPeriod, backfillInvoices, issueAdHocInvoice,
   recognizeInvoice, recognizeRevenueForPeriod,
   recordPayment, deletePayment, recordDeposit,
-  recordVendorBill, recordVendorPayment, runPayroll, terminateContract, runDepreciation, setTenantOpening, setVendorOpening,
+  recordVendorBill, deleteVendorBill, updateVendorBill, recordVendorPayment, runPayroll, terminateContract, runDepreciation, setTenantOpening, setVendorOpening,
   settleVAT,
   tenantAdvanceBalance, addMonths, periodOf, firstOfMonth, currentMonth, today,
   CUSTOMER_ADVANCE,
