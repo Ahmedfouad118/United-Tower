@@ -5,6 +5,7 @@
 // ==========================================================================
 const { db } = require('./db');
 const { r2 } = require('./ledger');
+const CFG = require('./config');
 
 const nameCol = (lang) => (lang === 'ar' ? "COALESCE(a.name_ar,a.name)" : lang === 'ur' ? "COALESCE(a.name_ur,a.name)" : "a.name");
 
@@ -617,22 +618,46 @@ function vatReport(from, to) {
      FROM journal_lines l JOIN journals j ON j.id=l.journal_id
      WHERE l.account_code=? ${from ? 'AND j.jdate>=?' : ''} ${to ? 'AND j.jdate<=?' : ''}`)
     .get(...[code, ...(from ? [from] : []), ...(to ? [to] : [])]);
-  const out = bal('23200'), inp = bal('11600');
-  const output_vat = r2(out.c - out.d), input_vat = r2(inp.d - inp.c);
-  // Accrual view from invoices — VAT is collected LAST: a payment covers the rent
-  // first, so an invoice's VAT stays uncollected until the invoice is fully paid.
-  // outstanding VAT = min(invoice VAT, invoice unpaid balance).
+  // GL provision view — output & input VAT may share ONE account (20000) by config.
+  const OUT = CFG.acct('output_vat'), IN = CFG.acct('input_vat');
+  let output_vat, input_vat;
+  if (OUT === IN) { const b = bal(OUT); output_vat = r2(b.c); input_vat = r2(b.d); }
+  else { const o = bal(OUT), i = bal(IN); output_vat = r2(o.c - o.d); input_vat = r2(i.d - i.c); }
+  // Accrual view — VAT is collected LAST: a payment covers the rent/expense first,
+  // so VAT stays outstanding until the invoice/bill is fully paid.
   const inv = db.prepare(
     `SELECT COALESCE(SUM(vat_amount),0) due,
             COALESCE(SUM(MIN(vat_amount, MAX(0, total - paid_amount))),0) outstanding
      FROM invoices WHERE status!='cancelled' ${from ? 'AND due_date>=?' : ''} ${to ? 'AND due_date<=?' : ''}`)
     .get(...[...(from ? [from] : []), ...(to ? [to] : [])]);
   const vat_due = r2(inv.due), vat_outstanding = r2(inv.outstanding), vat_collected = r2(vat_due - vat_outstanding);
+  // input VAT accrual from vendor bills (who we still owe VAT to)
+  const bill = db.prepare(
+    `SELECT COALESCE(SUM(vat_amount),0) due,
+            COALESCE(SUM(MIN(vat_amount, MAX(0, total - paid_amount))),0) outstanding
+     FROM vendor_bills WHERE status!='cancelled' ${from ? 'AND bdate>=?' : ''} ${to ? 'AND bdate<=?' : ''}`)
+    .get(...[...(from ? [from] : []), ...(to ? [to] : [])]);
+  const vat_input_due = r2(bill.due), vat_input_outstanding = r2(bill.outstanding), vat_input_paid = r2(vat_input_due - vat_input_outstanding);
   return {
     from, to,
     vat_due, vat_collected, vat_outstanding,
-    output_vat, input_vat, net_payable: r2(output_vat - input_vat),
+    vat_input_due, vat_input_paid, vat_input_outstanding,
+    output_vat, input_vat, net_payable: r2(output_vat - input_vat), provision_account: OUT === IN ? OUT : null,
   };
+}
+
+// ---- Unpaid INPUT VAT per vendor (VAT we still owe on vendor bills) --------
+function vatInputUnpaidByVendor(from, to) {
+  const rows = db.prepare(
+    `SELECT COALESCE(v.name,'—') vendor,
+            COALESCE(SUM(b.vat_amount),0) vat_due,
+            COALESCE(SUM(MIN(b.vat_amount, MAX(0, b.total - b.paid_amount))),0) vat_outstanding
+       FROM vendor_bills b LEFT JOIN vendors v ON v.id=b.vendor_id
+      WHERE b.status!='cancelled' ${from ? 'AND b.bdate>=?' : ''} ${to ? 'AND b.bdate<=?' : ''}
+      GROUP BY b.vendor_id`).all(...[...(from ? [from] : []), ...(to ? [to] : [])]);
+  const outr = rows.map((r) => ({ vendor: r.vendor, vat_due: r2(r.vat_due), vat_paid: r2(r.vat_due - r.vat_outstanding), vat_outstanding: r2(r.vat_outstanding) }))
+    .filter((x) => x.vat_outstanding > 0.005).sort((a, b) => b.vat_outstanding - a.vat_outstanding);
+  return { from, to, rows: outr, grand_total: r2(outr.reduce((s, x) => s + x.vat_outstanding, 0)) };
 }
 
 // ---- Uncollected VAT per customer (the VAT portion still inside 11100) -----
@@ -774,7 +799,7 @@ function buildingComparison(from, to) {
 module.exports = {
   trialBalance, incomeStatement, incomeStatementConsolidated, accountLedger, generalLedgerFull, groupedJournals, legacyJournals, legacyDrill,
   liquidityReport, financialRatios, balanceSheet, receivablesAging, payablesAging,
-  flatStatement, vendorStatement, advancesReport, occupancy, propertyPL, roi, cashFlowForecast, vatReport, vatUncollectedByCustomer,
+  flatStatement, vendorStatement, advancesReport, occupancy, propertyPL, roi, cashFlowForecast, vatReport, vatUncollectedByCustomer, vatInputUnpaidByVendor,
   bankReport, chequesReport, chequesDashboard, dashboard, contractExpiry, buildingComparison,
   depreciationReport, customersSummary,
 };

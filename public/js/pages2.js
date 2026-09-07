@@ -560,26 +560,33 @@ Object.assign(Pages, (() => {
     reportShell(c, 'm_vat', `<div class="field" style="margin:0"><label>${t('from')}</label><input type="date" id="f" value="${from}"></div><div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="t2" value="${to}"></div>`, null);
     const r = await API.get(`/reports/vat?from=${from}&to=${to}`);
     const payOpts = ac.filter((a) => a.type === 'asset' && /^10/.test(a.code)).map((a) => `<option value="${a.code}"${a.code === '10400' ? ' selected' : ''}>${a.code} ${esc(a.name)}</option>`).join('');
+    const prov = r.provision_account || '23200';
     c.querySelector('#rbody').innerHTML = `<div class="bd">
-      <div class="section-title">أساس الاستحقاق (من الفواتير)</div>
+      <div class="section-title">ضريبة المخرجات — على العملاء (من الفواتير)</div>
       <table>
         <tr><td>ض.ق.م مستحقة (على الفواتير الصادرة)</td><td class="num"><b>${money(r.vat_due)}</b></td></tr>
         <tr><td>ض.ق.م محصّلة فعلاً</td><td class="num pos">${money(r.vat_collected)}</td></tr>
-        <tr><td>ض.ق.م غير محصّلة (الجزء الضريبي على العملاء)</td><td class="num neg">${drillA(money(r.vat_outstanding), 'data-owes="1"')}</td></tr></table>
+        <tr><td>ض.ق.م غير محصّلة (مين ما دفعش)</td><td class="num neg">${drillA(money(r.vat_outstanding), 'data-owes="1"')}</td></tr></table>
       <p class="muted" style="font-size:11px">اضغط على «غير محصّلة» لعرض مين ما دفعش الضريبة (الجزء الضريبي فقط).</p>
-      <div class="section-title" style="margin-top:14px">التسوية مع الضرائب</div>
+      <div class="section-title" style="margin-top:14px">ضريبة المدخلات — على الموردين (من فواتير الموردين)</div>
       <table>
-        <tr><td>ض.ق.م المخرجات (Output) — حساب 23200</td><td class="num">${drillA(money(r.output_vat), 'data-acc="23200"')}</td></tr>
-        <tr><td>ض.ق.م المدخلات (Input) — حساب 11600</td><td class="num">${drillA(money(r.input_vat), 'data-acc="11600"')}</td></tr>
-        <tfoot><tr><td>صافي المستحق للضرائب</td><td class="num"><b>${drillA(money(r.net_payable), 'data-accs="23200,11600"')}</b></td></tr></tfoot></table>
-      <p class="muted" style="font-size:11px;margin-top:8px">اضغط على أي رقم في «التسوية مع الضرائب» لعرض الحركات والقيود اللي كوّنته.</p>
+        <tr><td>ض.ق.م مدخلات مستحقة</td><td class="num"><b>${money(r.vat_input_due)}</b></td></tr>
+        <tr><td>ض.ق.م مدخلات مدفوعة</td><td class="num pos">${money(r.vat_input_paid)}</td></tr>
+        <tr><td>ض.ق.م مدخلات غير مدفوعة (إحنا مدفعناهاش للمورد)</td><td class="num neg">${drillA(money(r.vat_input_outstanding), 'data-inowes="1"')}</td></tr></table>
+      <p class="muted" style="font-size:11px">اضغط على «غير مدفوعة» لعرض المورّدين اللي لسه مدفعناش ضريبتهم.</p>
+      <div class="section-title" style="margin-top:14px">التسوية مع الضرائب — حساب المخصص ${esc(prov)}</div>
+      <table>
+        <tr><td>ض.ق.م المخرجات (دائن ${esc(prov)})</td><td class="num">${drillA(money(r.output_vat), 'data-acc="' + prov + '"')}</td></tr>
+        <tr><td>ض.ق.م المدخلات (مدين ${esc(prov)})</td><td class="num">${drillA(money(r.input_vat), 'data-acc="' + prov + '"')}</td></tr>
+        <tfoot><tr><td>الرصيد الباقي = المستحق للضرائب</td><td class="num"><b>${drillA(money(r.net_payable), 'data-acc="' + prov + '"')}</b></td></tr></tfoot></table>
+      <p class="muted" style="font-size:11px;margin-top:8px">رصيد حساب ${esc(prov)} = المبلغ اللي هتدفعه للضرائب.</p>
       <div class="section-title" style="margin-top:14px">سداد الضريبة (توليد قيد التسوية)</div>
       <div class="toolbar" style="margin:0;align-items:flex-end">
         <div class="field" style="margin:0"><label>من حساب الدفع</label><select id="vpay">${payOpts}</select></div>
         <div class="field" style="margin:0"><label>تاريخ السداد</label><input type="date" id="vpd" value="${to || today()}"></div>
         <button class="btn primary" id="vgo">🧾 توليد قيد السداد</button>
       </div>
-      <p class="muted" style="font-size:11px;margin-top:6px">بيقفل 23200 و11600 للفترة ويدفع الصافي (<b>${money(r.net_payable)}</b>) من الحساب المختار. قيد واحد لكل فترة.</p></div>`;
+      <p class="muted" style="font-size:11px;margin-top:6px">القيد: مدين ${esc(prov)} / دائن البنك بالصافي (<b>${money(r.net_payable)}</b>). قيد واحد لكل فترة.</p></div>`;
     c.querySelector('#rbody').onclick = async (e) => {
       const a = e.target.closest('.drill'); if (!a) return; e.preventDefault();
       if (a.dataset.acc) return accountDrill({ title: 'ض.ق.م ' + a.dataset.acc, account: a.dataset.acc, from, to });
@@ -592,6 +599,15 @@ Object.assign(Pages, (() => {
           { key: 'vat_outstanding', label: 'ض.ق.م غير مدفوعة', num: true, render: (x) => money(x.vat_outstanding) }], u.rows,
           { foot: [{ v: '' }, { v: t('total') }, { v: '' }, { v: '' }, { v: money(u.grand_total), num: true }] });
         modal({ title: 'مين ما دفعش الضريبة (الجزء الضريبي فقط)', wide: true, bodyHTML: body, footerHTML: `<button class="btn" id="dx">📊 Excel</button><button class="btn" id="dp">🖨 ${t('print')}</button>`, onMount: (bg) => { bg.querySelector('#dp').onclick = () => printReport('ضريبة غير محصّلة', body); bg.querySelector('#dx').onclick = () => UI.exportTableToExcel('ضريبة غير محصلة', body); } });
+      }
+      if (a.dataset.inowes) { // vendors whose INPUT VAT we have not paid yet
+        const u = await API.get(`/reports/vat-input-unpaid?from=${from}&to=${to}`);
+        const body = table([{ key: 'vendor', label: t('vendor') },
+          { key: 'vat_due', label: 'ض.ق.م مستحقة', num: true, render: (x) => money(x.vat_due) },
+          { key: 'vat_paid', label: 'ض.ق.م مدفوعة', num: true, render: (x) => money(x.vat_paid) },
+          { key: 'vat_outstanding', label: 'ض.ق.م غير مدفوعة', num: true, render: (x) => money(x.vat_outstanding) }], u.rows,
+          { foot: [{ v: t('total') }, { v: '' }, { v: '' }, { v: money(u.grand_total), num: true }] });
+        modal({ title: 'موردين لسه مدفعناش ضريبتهم (مدخلات)', wide: true, bodyHTML: body, footerHTML: `<button class="btn" id="dx">📊 Excel</button><button class="btn" id="dp">🖨 ${t('print')}</button>`, onMount: (bg) => { bg.querySelector('#dp').onclick = () => printReport('ضريبة مدخلات غير مدفوعة', body); bg.querySelector('#dx').onclick = () => UI.exportTableToExcel('ضريبة مدخلات غير مدفوعة', body); } });
       }
     };
     c.querySelector('#vgo').onclick = async () => {

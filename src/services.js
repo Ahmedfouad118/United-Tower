@@ -85,7 +85,7 @@ function issueInvoiceForContract(contract, period, created_by) {
     [
       { account_code: ACC.TENANT_RECV, debit: total, building_id: contract.building_id, flat_id: contract.flat_id, tenant_id: contract.tenant_id, memo: narr },
       { account_code: ACC.RENT_INCOME, credit: rent, building_id: contract.building_id, flat_id: contract.flat_id, tenant_id: contract.tenant_id },
-      ...(vat > 0 ? [{ account_code: ACC.VAT_PAYABLE, credit: vat, tenant_id: contract.tenant_id, memo: 'VAT 5%' }] : []),
+      ...(vat > 0 ? [{ account_code: CFG.acct('output_vat'), credit: vat, tenant_id: contract.tenant_id, memo: 'VAT 5%' }] : []),
     ]
   );
 
@@ -115,7 +115,7 @@ function issueAdHocInvoice({ tenant_id, flat_id, building_id, period, rent, vat_
     [
       { account_code: ACC.TENANT_RECV, debit: total, building_id, flat_id, tenant_id, memo: narr },
       { account_code: ACC.RENT_INCOME, credit: r, building_id, flat_id, tenant_id },
-      ...(vat > 0 ? [{ account_code: ACC.VAT_PAYABLE, credit: vat, tenant_id, memo: 'VAT' }] : []),
+      ...(vat > 0 ? [{ account_code: CFG.acct('output_vat'), credit: vat, tenant_id, memo: 'VAT' }] : []),
     ]);
   const res = db.prepare(`INSERT INTO invoices (invoice_no,building_id,flat_id,tenant_id,period,idate,due_date,rent_amount,vat_amount,total,recognized_amount,status,issue_journal,created_by)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(invNo, building_id || null, flat_id || null, tenant_id, period, due, due, r, vat, total, r, 'issued', jid, created_by || null);
@@ -363,7 +363,7 @@ function recordVendorBill(input, created_by) {
       memo_ar: 'فاتورة مورد', source_table: 'vendor_bills', source_id: bid, created_by },
     [
       { account_code: expense_code, debit: amt, vendor_id: vendor_id || null, building_id: building_id || null, flat_id: flat_id || null, memo: description || 'Expense' },
-      ...(vat > 0 ? [{ account_code: ACC.INPUT_VAT, debit: vat, memo: 'Input VAT' }] : []),
+      ...(vat > 0 ? [{ account_code: CFG.acct('input_vat'), debit: vat, vendor_id: vendor_id || null, memo: 'Input VAT' }] : []),
       { account_code: credit, credit: total, vendor_id: vendor_id || null, memo: paid ? 'Paid' : 'Payable' },
     ]);
   db.prepare('UPDATE vendor_bills SET journal_id=? WHERE id=?').run(jid, bid);
@@ -491,9 +491,10 @@ function terminateContract(contractId, date, settledAmount, created_by) {
 }
 
 // ---- VAT settlement (quarterly filing) ------------------------------------
-// Closes output VAT (23200) against input VAT (11600) for the period and pays
-// the net from the chosen account. Positive net = we pay the authority; negative
-// = a refund due. Does NOT touch 20000 (vendors) — VAT stays in its own account.
+// Output & input VAT share ONE provision account (20000 by config). The net
+// balance of that account for the period = what is owed to the authority, and
+// settlement clears it to the bank (Dr 20000 / Cr 10400). If output & input are
+// two different accounts, it closes each against the bank instead.
 function settleVAT(input, created_by) {
   const { from, to } = input;
   const pay_account = input.pay_account || CFG.acct('bank');
@@ -504,22 +505,53 @@ function settleVAT(input, created_by) {
        FROM journal_lines l JOIN journals j ON j.id=l.journal_id
       WHERE l.account_code=? ${from ? 'AND j.jdate>=?' : ''} ${to ? 'AND j.jdate<=?' : ''}`)
     .get(...[code, ...(from ? [from] : []), ...(to ? [to] : [])]);
-  const o = bal(OUT), i = bal(IN);
-  const output_vat = r2(o.c - o.d), input_vat = r2(i.d - i.c);
-  const net = r2(output_vat - input_vat);
-  if (Math.abs(output_vat) < 0.005 && Math.abs(input_vat) < 0.005) throw new Error('لا توجد ضريبة للتسوية في هذه الفترة');
+  let output_vat, input_vat, net;
+  if (OUT === IN) { const b = bal(OUT); output_vat = r2(b.c); input_vat = r2(b.d); net = r2(b.c - b.d); }
+  else { const o = bal(OUT), i = bal(IN); output_vat = r2(o.c - o.d); input_vat = r2(i.d - i.c); net = r2(output_vat - input_vat); }
+  if (Math.abs(net) < 0.005 && Math.abs(output_vat) < 0.005) throw new Error('لا توجد ضريبة للتسوية في هذه الفترة');
   const ref = `VAT-${from || '~'}_${to || '~'}`;
   if (db.prepare('SELECT id FROM journals WHERE reference=?').get(ref)) throw new Error('تم عمل تسوية لهذه الفترة من قبل: ' + ref);
   const lines = [];
-  if (Math.abs(output_vat) > 0.005) lines.push({ account_code: OUT, debit: output_vat, memo: 'تقفيل ضريبة المخرجات' });
-  if (Math.abs(input_vat) > 0.005) lines.push({ account_code: IN, credit: input_vat, memo: 'تقفيل ضريبة المدخلات' });
-  if (net > 0.005) lines.push({ account_code: pay_account, credit: net, memo: 'سداد صافي الضريبة للجهاز' });
-  else if (net < -0.005) lines.push({ account_code: pay_account, debit: -net, memo: 'استرداد ضريبة' });
+  if (OUT === IN) {
+    // clear the provision's net balance to the bank
+    if (net > 0.005) { lines.push({ account_code: OUT, debit: net, memo: 'تسوية صافي الضريبة' }); lines.push({ account_code: pay_account, credit: net, memo: 'سداد صافي الضريبة للجهاز' }); }
+    else if (net < -0.005) { lines.push({ account_code: OUT, credit: -net, memo: 'تسوية صافي الضريبة' }); lines.push({ account_code: pay_account, debit: -net, memo: 'استرداد ضريبة' }); }
+  } else {
+    if (Math.abs(output_vat) > 0.005) lines.push({ account_code: OUT, debit: output_vat, memo: 'تقفيل ضريبة المخرجات' });
+    if (Math.abs(input_vat) > 0.005) lines.push({ account_code: IN, credit: input_vat, memo: 'تقفيل ضريبة المدخلات' });
+    if (net > 0.005) lines.push({ account_code: pay_account, credit: net, memo: 'سداد صافي الضريبة للجهاز' });
+    else if (net < -0.005) lines.push({ account_code: pay_account, debit: -net, memo: 'استرداد ضريبة' });
+  }
   const jid = postJournal(
     { jdate: date, jtype: 'vat_settlement', reference: ref,
       memo: `VAT settlement ${from || ''}..${to || ''}`, memo_ar: `تسوية ضريبة ${from || ''} → ${to || ''}`, created_by },
     lines);
   return { journal_id: jid, reference: ref, output_vat, input_vat, net_payable: net, pay_account, date };
+}
+
+// One-time: repurpose 20000 as the single VAT provision. Moves any legacy vendor
+// balance out of 20000 into 23000 (per vendor), then reclasses existing output
+// (23200) and input (11600) VAT lines into 20000. Idempotent (guarded by a flag).
+function migrateVatTo20000(created_by) {
+  const done = db.prepare("SELECT value v FROM settings WHERE key='vat_provision_20000'").get();
+  if (done && done.v === '1') return { skipped: true };
+  const run = db.transaction(() => {
+    // 1) move legacy AP balance out of 20000 -> 23000, keeping vendor tags
+    const bals = db.prepare("SELECT vendor_id vid, COALESCE(SUM(credit-debit),0) net FROM journal_lines WHERE account_code='20000' GROUP BY vendor_id").all();
+    const lines = []; let moved = 0;
+    for (const r of bals) {
+      const net = r2(r.net); if (Math.abs(net) < 0.005) continue;
+      if (net > 0) { lines.push({ account_code: '20000', debit: net, vendor_id: r.vid || null }); lines.push({ account_code: '23000', credit: net, vendor_id: r.vid || null }); }
+      else { lines.push({ account_code: '20000', credit: -net, vendor_id: r.vid || null }); lines.push({ account_code: '23000', debit: -net, vendor_id: r.vid || null }); }
+      moved = r2(moved + Math.abs(net));
+    }
+    if (lines.length) postJournal({ jdate: today(), jtype: 'adjustment', reference: 'REPURPOSE-20000-VAT', memo: 'Move legacy AP 20000 -> 23000; 20000 becomes VAT provision', memo_ar: 'نقل أرصدة الموردين من 20000 إلى 23000 (20000 أصبح مخصص ضريبة)', created_by }, lines);
+    // 2) reclass existing output/input VAT into 20000
+    const u = db.prepare("UPDATE journal_lines SET account_code='20000' WHERE account_code IN ('23200','11600')").run();
+    db.prepare("INSERT INTO settings (key,value) VALUES ('vat_provision_20000','1') ON CONFLICT(key) DO UPDATE SET value=excluded.value").run();
+    return { moved, reclassed: u.changes };
+  });
+  return run();
 }
 
 module.exports = {
