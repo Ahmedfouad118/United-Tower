@@ -58,6 +58,12 @@ function tenantReceivableBalance(tenant_id) {
 function issueInvoiceForContract(contract, period, created_by) {
   const existing = db.prepare('SELECT id FROM invoices WHERE contract_id=? AND period=?').get(contract.id, period);
   if (existing) return { skipped: true, reason: 'exists', id: existing.id };
+  // one invoice per UNIT per month — prevents double billing when a contract is
+  // renewed and the old + new contracts overlap within the same month.
+  if (contract.flat_id) {
+    const dup = db.prepare("SELECT id FROM invoices WHERE flat_id=? AND period=? AND status!='cancelled'").get(contract.flat_id, period);
+    if (dup) return { skipped: true, reason: 'unit-period-exists', id: dup.id };
+  }
 
   const start = periodOf(contract.start_date), end = periodOf(contract.end_date);
   if (period < start || period > end) return { skipped: true, reason: 'out-of-window' };
