@@ -392,6 +392,81 @@ function balanceSheet(upto, lang = 'en') {
   };
 }
 
+// ---- Full IFRS-style financial statements (comparative: current vs prior) --
+// Returns the classified Balance Sheet, Income/Comprehensive Income, Statement of
+// Changes in Equity and (indirect) Cash Flow, each with current & prior-year figures.
+function financialStatements(year, lang = 'en') {
+  year = Number(year) || new Date().getFullYear();
+  const endCur = `${year}-12-31`, endPrev = `${year - 1}-12-31`;
+  const startCur = `${year}-01-01`, startPrev = `${year - 1}-01-01`;
+  const bsC = balanceSheet(endCur, lang), bsP = balanceSheet(endPrev, lang);
+  const isC = incomeStatement(startCur, endCur, lang), isP = incomeStatement(startPrev, endPrev, lang);
+  const merge = (aCur, aPrev) => {
+    const m = {};
+    for (const x of aCur) m[x.code] = { code: x.code, name: x.name, cur: r2(x.amt), prev: 0 };
+    for (const x of aPrev) { (m[x.code] = m[x.code] || { code: x.code, name: x.name, cur: 0, prev: 0 }).prev = r2(x.amt); }
+    return Object.values(m).sort((a, b) => a.code.localeCompare(b.code));
+  };
+  const sum = (rows, k) => r2(rows.reduce((s, x) => s + (x[k] || 0), 0));
+  const pair = (cur, prev) => ({ cur: r2(cur), prev: r2(prev) });
+
+  const NONCUR_ASSET = new Set(FIXED_ASSET_CODES);
+  const NONCUR_LIAB = new Set(['21000', '25000', '26000', '27000']); // deposits held + long-term loans
+  const cashCodes = new Set(CASH_CODES);
+  const assetsAll = merge(bsC.assets, bsP.assets);
+  const liabAll = merge(bsC.liabilities, bsP.liabilities);
+  const equityAll = merge(bsC.equity, bsP.equity);
+  const ncAssets = assetsAll.filter((x) => NONCUR_ASSET.has(x.code));
+  const cAssets = assetsAll.filter((x) => !NONCUR_ASSET.has(x.code));
+  const ncLiab = liabAll.filter((x) => NONCUR_LIAB.has(x.code));
+  const cLiab = liabAll.filter((x) => !NONCUR_LIAB.has(x.code));
+  const retName = lang === 'ar' ? 'الأرباح المُدوّرة' : 'Retained Earnings';
+  const equityRows = [...equityAll, { code: 'RET', name: retName, cur: r2(bsC.total_equity - sum(equityAll, 'cur')), prev: r2(bsP.total_equity - sum(equityAll, 'prev')) }];
+
+  const balance_sheet = {
+    non_current_assets: ncAssets, current_assets: cAssets,
+    total_non_current_assets: pair(sum(ncAssets, 'cur'), sum(ncAssets, 'prev')),
+    total_current_assets: pair(sum(cAssets, 'cur'), sum(cAssets, 'prev')),
+    total_assets: pair(bsC.total_assets, bsP.total_assets),
+    equity: equityRows, total_equity: pair(bsC.total_equity, bsP.total_equity),
+    non_current_liabilities: ncLiab, current_liabilities: cLiab,
+    total_non_current_liabilities: pair(sum(ncLiab, 'cur'), sum(ncLiab, 'prev')),
+    total_current_liabilities: pair(sum(cLiab, 'cur'), sum(cLiab, 'prev')),
+    total_liabilities: pair(bsC.total_liabilities, bsP.total_liabilities),
+    total_equity_liabilities: pair(r2(bsC.total_equity + bsC.total_liabilities), r2(bsP.total_equity + bsP.total_liabilities)),
+  };
+  const income = {
+    revenue: merge(isC.income, isP.income), expenses: merge(isC.expense, isP.expense),
+    total_revenue: pair(isC.total_income, isP.total_income),
+    total_expenses: pair(isC.total_expense, isP.total_expense),
+    net: pair(isC.net, isP.net),
+  };
+  const equity = {
+    opening: pair(bsP.total_equity, balanceSheet(`${year - 2}-12-31`, lang).total_equity),
+    net: pair(isC.net, isP.net), closing: pair(bsC.total_equity, bsP.total_equity),
+  };
+  // ---- Cash flow (indirect) ----
+  const cashBal = (upto) => r2(balanceSheet(upto, lang).assets.filter((x) => cashCodes.has(x.code)).reduce((s, x) => s + x.amt, 0));
+  const cashStart = cashBal(endPrev), cashEnd = cashBal(endCur);
+  const dep = r2((isC.expense.find((x) => /depre|إهلاك|اهلاك/i.test(x.name)) || {}).amt || 0);
+  const wcAssetCur = r2(cAssets.reduce((s, x) => s + (cashCodes.has(x.code) ? 0 : x.cur), 0));
+  const wcAssetPrev = r2(cAssets.reduce((s, x) => s + (cashCodes.has(x.code) ? 0 : x.prev), 0));
+  const dRecv = r2(wcAssetCur - wcAssetPrev);
+  const dPay = r2(sum(cLiab, 'cur') - sum(cLiab, 'prev'));
+  const operating = r2(isC.net + dep - dRecv + dPay);
+  const dNCA = r2(sum(ncAssets, 'cur') - sum(ncAssets, 'prev'));
+  const investing = r2(-dNCA);
+  const financing = r2((sum(equityAll, 'cur') - sum(equityAll, 'prev')) + (sum(ncLiab, 'cur') - sum(ncLiab, 'prev')));
+  const net_change = r2(operating + investing + financing);
+  const cash_flow = {
+    net_income: r2(isC.net), depreciation: dep, change_receivables: r2(-dRecv), change_payables: dPay,
+    operating, investing, financing, net_change, cash_start: cashStart,
+    cash_end_computed: r2(cashStart + net_change), cash_end_actual: cashEnd,
+    reconciles: Math.abs(r2(cashStart + net_change) - cashEnd) < 1,
+  };
+  return { year, prev_year: year - 1, currency: 'OMR', end_cur: endCur, end_prev: endPrev, balance_sheet, income, equity, cash_flow };
+}
+
 // ---- Receivables aging (GL-based: ties to the trial balance) ---------------
 // Built from the customer receivable accounts (11000/11100) so it INCLUDES the
 // opening balances (posted as journals, not invoices). Each debit "charge"
@@ -805,7 +880,7 @@ function buildingComparison(from, to) {
 
 module.exports = {
   trialBalance, incomeStatement, incomeStatementConsolidated, accountLedger, generalLedgerFull, groupedJournals, legacyJournals, legacyDrill,
-  liquidityReport, financialRatios, balanceSheet, receivablesAging, payablesAging,
+  liquidityReport, financialRatios, balanceSheet, financialStatements, receivablesAging, payablesAging,
   flatStatement, vendorStatement, advancesReport, occupancy, propertyPL, roi, cashFlowForecast, vatReport, vatUncollectedByCustomer, vatInputUnpaidByVendor,
   bankReport, chequesReport, chequesDashboard, dashboard, contractExpiry, buildingComparison,
   depreciationReport, customersSummary,

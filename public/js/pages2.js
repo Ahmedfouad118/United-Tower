@@ -554,6 +554,55 @@ Object.assign(Pages, (() => {
     c.querySelector('#rbody').innerHTML = table([{ key: 'period', label: t('period') }, { key: 'expected_inflow', label: 'المتوقع', num: true, render: (x) => money(x.expected_inflow) }], r);
     bindPrint(c, t('m_cashflow'));
   }
+  // ---- IFRS Financial Statements module (comparative current vs prior year) --
+  async function financialStatements(c) {
+    const year = c._fy || new Date().getFullYear();
+    const co = (window.UT && UT.company) || {};
+    reportShell(c, 'm_finstmts', `<div class="field" style="margin:0"><label>السنة المالية</label><input type="number" id="fy" value="${year}" style="width:110px"></div>
+      <button class="btn" id="fsprint">🖨 طباعة الكل</button><button class="btn" id="fsxls">📊 Excel</button>`, null);
+    const r = await API.get('/reports/financial-statements?year=' + year);
+    const m = (v) => money(v);
+    const hdr = (title, sub) => `<div style="text-align:center;margin:4px 0 10px"><div style="font-weight:800;font-size:15px">${esc(co.name || 'United Tower')}</div><div style="font-weight:700;font-size:14px">${title}</div><div class="muted" style="font-size:12px">${sub} — بالريال العُماني (OMR)</div></div>`;
+    const th = `<thead><tr><th>البند</th><th class="num">${year}</th><th class="num">${year - 1}</th></tr></thead>`;
+    const row2 = (label, cur, prev, bold) => `<tr${bold ? ' class="tot"' : ''}><td>${bold ? '<b>' + label + '</b>' : label}</td><td class="num">${bold ? '<b>' + m(cur) + '</b>' : m(cur)}</td><td class="num muted">${m(prev)}</td></tr>`;
+    const secRows = (rows) => rows.map((x) => row2(esc((x.code && x.code !== 'RET' ? x.code + ' - ' : '') + x.name), x.cur, x.prev)).join('') || `<tr><td colspan="3" class="muted">—</td></tr>`;
+    const bs = r.balance_sheet, is = r.income, eq = r.equity, cf = r.cash_flow;
+    const bsHTML = `${hdr('قائمة المركز المالي', 'كما في ' + r.end_cur)}<table>${th}<tbody>
+      <tr class="sec"><td colspan="3">الأصول غير المتداولة</td></tr>${secRows(bs.non_current_assets)}${row2('إجمالي الأصول غير المتداولة', bs.total_non_current_assets.cur, bs.total_non_current_assets.prev, 1)}
+      <tr class="sec"><td colspan="3">الأصول المتداولة</td></tr>${secRows(bs.current_assets)}${row2('إجمالي الأصول المتداولة', bs.total_current_assets.cur, bs.total_current_assets.prev, 1)}
+      ${row2('إجمالي الأصول', bs.total_assets.cur, bs.total_assets.prev, 1)}
+      <tr class="sec"><td colspan="3">حقوق الملكية</td></tr>${secRows(bs.equity)}${row2('إجمالي حقوق الملكية', bs.total_equity.cur, bs.total_equity.prev, 1)}
+      <tr class="sec"><td colspan="3">الالتزامات غير المتداولة</td></tr>${secRows(bs.non_current_liabilities)}${row2('إجمالي الالتزامات غير المتداولة', bs.total_non_current_liabilities.cur, bs.total_non_current_liabilities.prev, 1)}
+      <tr class="sec"><td colspan="3">الالتزامات المتداولة</td></tr>${secRows(bs.current_liabilities)}${row2('إجمالي الالتزامات المتداولة', bs.total_current_liabilities.cur, bs.total_current_liabilities.prev, 1)}
+      ${row2('إجمالي حقوق الملكية والالتزامات', bs.total_equity_liabilities.cur, bs.total_equity_liabilities.prev, 1)}</tbody></table>`;
+    const isHTML = `${hdr('قائمة الدخل الشامل', 'عن السنة المنتهية في ' + r.end_cur)}<table>${th}<tbody>
+      <tr class="sec"><td colspan="3">الإيرادات</td></tr>${secRows(is.revenue)}${row2('إجمالي الإيرادات', is.total_revenue.cur, is.total_revenue.prev, 1)}
+      <tr class="sec"><td colspan="3">المصروفات</td></tr>${secRows(is.expenses)}${row2('إجمالي المصروفات', is.total_expenses.cur, is.total_expenses.prev, 1)}
+      ${row2('صافي ربح السنة', is.net.cur, is.net.prev, 1)}</tbody></table>`;
+    const eqHTML = `${hdr('قائمة التغيرات في حقوق الملكية', 'عن السنة المنتهية في ' + r.end_cur)}<table>${th}<tbody>
+      ${row2('رصيد بداية السنة', eq.opening.cur, eq.opening.prev)}${row2('صافي ربح السنة', eq.net.cur, eq.net.prev)}${row2('رصيد نهاية السنة', eq.closing.cur, eq.closing.prev, 1)}</tbody></table>`;
+    const cfHTML = `${hdr('قائمة التدفقات النقدية', 'عن السنة المنتهية في ' + r.end_cur)}<table><thead><tr><th>البند</th><th class="num">${year}</th></tr></thead><tbody>
+      <tr class="sec"><td colspan="2">الأنشطة التشغيلية</td></tr>
+      <tr><td>صافي الربح</td><td class="num">${m(cf.net_income)}</td></tr><tr><td>الإهلاك (غير نقدي)</td><td class="num">${m(cf.depreciation)}</td></tr>
+      <tr><td>التغير في الذمم المدينة</td><td class="num">${m(cf.change_receivables)}</td></tr><tr><td>التغير في الذمم الدائنة</td><td class="num">${m(cf.change_payables)}</td></tr>
+      <tr class="tot"><td><b>صافي النقد من الأنشطة التشغيلية</b></td><td class="num"><b>${m(cf.operating)}</b></td></tr>
+      <tr class="sec"><td colspan="2">الأنشطة الاستثمارية</td></tr><tr class="tot"><td><b>صافي النقد من الأنشطة الاستثمارية</b></td><td class="num"><b>${m(cf.investing)}</b></td></tr>
+      <tr class="sec"><td colspan="2">الأنشطة التمويلية</td></tr><tr class="tot"><td><b>صافي النقد من الأنشطة التمويلية</b></td><td class="num"><b>${m(cf.financing)}</b></td></tr>
+      <tr class="tot"><td><b>صافي التغير في النقد</b></td><td class="num"><b>${m(cf.net_change)}</b></td></tr>
+      <tr><td>النقد وما يعادله بداية السنة</td><td class="num">${m(cf.cash_start)}</td></tr><tr class="tot"><td><b>النقد وما يعادله نهاية السنة</b></td><td class="num"><b>${m(cf.cash_end_actual)}</b></td></tr></tbody></table>
+      ${cf.reconciles ? '<p class="muted" style="font-size:11px">✓ التدفقات متوازنة مع رصيد النقد الفعلي</p>' : '<p class="neg" style="font-size:11px">⚠ فرق بسيط في المطابقة (' + m(r2diff(cf)) + ')</p>'}`;
+    const allHTML = `<div style="margin-bottom:18px">${bsHTML}</div><div style="margin-bottom:18px">${isHTML}</div><div style="margin-bottom:18px">${eqHTML}</div><div>${cfHTML}</div>`;
+    c.querySelector('#rbody').innerHTML = `<div class="bd">
+      <div class="pill-tabs" style="margin-bottom:12px"><button data-tab="bs" class="active">المركز المالي</button><button data-tab="is">الدخل الشامل</button><button data-tab="eq">حقوق الملكية</button><button data-tab="cf">التدفقات النقدية</button></div>
+      <div id="fs-bs">${bsHTML}</div><div id="fs-is" hidden>${isHTML}</div><div id="fs-eq" hidden>${eqHTML}</div><div id="fs-cf" hidden>${cfHTML}</div></div>`;
+    const tabs = c.querySelectorAll('.pill-tabs button');
+    tabs.forEach((b) => b.onclick = () => { tabs.forEach((x) => x.classList.remove('active')); b.classList.add('active'); ['bs', 'is', 'eq', 'cf'].forEach((id) => c.querySelector('#fs-' + id).hidden = (id !== b.dataset.tab)); });
+    c.querySelector('#fy').onchange = (e) => { c._fy = +e.target.value; financialStatements(c); };
+    c.querySelector('#fsprint').onclick = () => printReport('القوائم المالية ' + year, allHTML);
+    c.querySelector('#fsxls').onclick = () => UI.exportTableToExcel('financial-statements-' + year, allHTML);
+  }
+  function r2diff(cf) { return Math.round((cf.cash_end_computed - cf.cash_end_actual) * 1000) / 1000; }
+
   async function vat(c) {
     const from = c._from || '', to = c._to || today();
     const ac = await ref('accounts');
@@ -1062,5 +1111,5 @@ Object.assign(Pages, (() => {
 
   return { customers, vendors, buildings, units, categories, paymethods, banks, employees, coa,
     vendorBills, vendorPayments, trialBalance, incomeStatement, incomeStatementConsolidated, generalLedger, balanceSheet, arAging, apAging,
-    statement, vendorStatement, advances, propertyPL, roi, cashflow, comparison, vat, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, configuration, assets, depreciation, customersSummary, reconciliation, liquidity };
+    statement, vendorStatement, advances, propertyPL, roi, cashflow, comparison, vat, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements };
 })());

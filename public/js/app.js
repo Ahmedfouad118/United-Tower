@@ -57,6 +57,9 @@
       { path: 'roi', label: 'm_roi', page: 'roi', mod: 'finance' },
       { path: 'comparison', label: 'm_comparison', page: 'comparison', mod: 'finance' },
     ] },
+    { id: 'finrep', icon: '📑', label: 'm_finrep', items: [
+      { path: 'finstmts', label: 'm_finstmts', page: 'financialStatements', mod: 'finance' },
+    ] },
     { id: 'treasury', icon: '💵', label: 'm_treasury', items: [
       { path: 'banks', label: 'm_banks', page: 'banks', mod: 'treasury' },
       { path: 'cheques', label: 'm_cheques', page: 'cheques', mod: 'treasury' },
