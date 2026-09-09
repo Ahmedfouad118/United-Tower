@@ -51,14 +51,24 @@ function postJournal(head, lines) {
   if (Math.abs(totD - totC) > 0.005)
     throw new Error(`Unbalanced journal: debit ${totD} != credit ${totC}`);
 
-  const j = db
-    .prepare(
+  // head.id lets an edit REUSE the same journal number (the row was deleted first),
+  // so editing a journal keeps its number instead of taking a new one.
+  let jid;
+  if (head.id) {
+    db.prepare(
+      `INSERT INTO journals (id,jdate,jtype,reference,memo,memo_ar,source_table,source_id,created_by)
+       VALUES (?,?,?,?,?,?,?,?,?)`)
+      .run(head.id, head.jdate, head.jtype, head.reference || null, head.memo || null, head.memo_ar || null,
+        head.source_table || null, head.source_id || null, head.created_by || null);
+    jid = Number(head.id);
+  } else {
+    const j = db.prepare(
       `INSERT INTO journals (jdate,jtype,reference,memo,memo_ar,source_table,source_id,created_by)
-       VALUES (?,?,?,?,?,?,?,?)`
-    )
-    .run(head.jdate, head.jtype, head.reference || null, head.memo || null, head.memo_ar || null,
-      head.source_table || null, head.source_id || null, head.created_by || null);
-  const jid = Number(j.lastInsertRowid);
+       VALUES (?,?,?,?,?,?,?,?)`)
+      .run(head.jdate, head.jtype, head.reference || null, head.memo || null, head.memo_ar || null,
+        head.source_table || null, head.source_id || null, head.created_by || null);
+    jid = Number(j.lastInsertRowid);
+  }
   const ins = db.prepare(
     `INSERT INTO journal_lines (journal_id,account_code,debit,credit,building_id,flat_id,tenant_id,vendor_id,memo)
      VALUES (?,?,?,?,?,?,?,?,?)`

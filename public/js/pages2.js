@@ -739,6 +739,7 @@ Object.assign(Pages, (() => {
       <button class="btn primary" id="jgo">🔍 ${t('search')}</button><button class="btn" id="jclr">مسح</button></div>`;
     c.innerHTML = toolbar(tbCfg) + filterBar + `<div class="card"><div class="hd"><h3>${t('m_journals')} <span class="muted" style="font-size:12px">(${rows.length})</span></h3><div style="display:flex;gap:6px">${canWrite() ? '<button class="btn sm" id="jcopy">📄 نسخ المحدد</button>' : ''}${canDel ? UI.bulkDelHTML() : ''}<button class="btn sm btn-print">🖨</button></div></div><div id="jt"></div></div>`;
     const cols = [...(canDel ? [{ key: '_s', label: '<input type="checkbox" class="sel-all">', render: (r) => `<input type="checkbox" class="row-sel" data-id="${r.id}">` }] : []),
+      { key: 'seq', label: 'مسلسل', render: (r) => `<b>${r.seq || ''}</b>` },
       { key: 'id', label: 'رقم القيد', render: (r) => `<a href="#" class="drill" data-jid="${r.id}"><b>#${r.id}</b></a>` },
       { key: 'jdate', label: t('date'), render: (r) => dateStr(r.jdate) }, { key: 'jtype', label: 'النوع', render: (r) => JL[r.jtype] || r.jtype },
       { key: 'reference', label: 'المرجع' }, { key: 'memo', label: t('description'), render: (r) => esc(r.memo_ar || r.memo || '') },

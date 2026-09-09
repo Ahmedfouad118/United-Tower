@@ -542,9 +542,12 @@ router.get('/journals', (req, res) => {
   if (q) { const s = '%' + q + '%'; where += ' AND (CAST(j.id AS TEXT)=? OR j.reference LIKE ? OR j.memo LIKE ? OR j.memo_ar LIKE ?)'; p.push(String(q), s, s, s); }
   // search by amount: any journal whose debit total (or any line) matches
   if (amount) { where += ' AND j.id IN (SELECT journal_id FROM journal_lines WHERE ABS(debit-?)<0.005 OR ABS(credit-?)<0.005)'; p.push(Number(amount), Number(amount)); }
+  // seq = a clean running serial over ALL journals (oldest = 1), stable regardless
+  // of the current filter, shown as the sequential journal number.
   res.json(db.prepare(
-    `SELECT j.*, (SELECT COALESCE(SUM(debit),0) FROM journal_lines WHERE journal_id=j.id) total
-     FROM journals j WHERE ${where} ORDER BY jdate DESC, id DESC LIMIT 500`).all(...p));
+    `WITH numbered AS (SELECT id, ROW_NUMBER() OVER (ORDER BY jdate, id) seq FROM journals)
+     SELECT j.*, n.seq, (SELECT COALESCE(SUM(debit),0) FROM journal_lines WHERE journal_id=j.id) total
+     FROM journals j JOIN numbered n ON n.id=j.id WHERE ${where} ORDER BY jdate DESC, j.id DESC LIMIT 500`).all(...p));
 });
 router.get('/journals/:id', (req, res) => {
   const j = db.prepare('SELECT * FROM journals WHERE id=?').get(req.params.id);
@@ -589,7 +592,8 @@ router.put('/journals/:id', writers, (req, res) => {
   try {
     detachJournalFromSource(j);
     deleteJournal(j.id);
-    res.json({ id: postJournal({ jdate, jtype: j.jtype || 'manual', memo, reference: reference || j.reference, created_by: req.user.id }, lines) });
+    // reuse the same id so editing keeps the journal number stable
+    res.json({ id: postJournal({ id: j.id, jdate, jtype: j.jtype || 'manual', memo, reference: reference || j.reference, created_by: req.user.id }, lines) });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
