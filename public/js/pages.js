@@ -179,7 +179,7 @@ const Pages = (() => {
     const tbCfg = { search: true, searchFn: (rs, q) => rs.filter((r) => [r.flat, r.tenant, r.contract_no].join(' ').toLowerCase().includes(q)),
       exportType: 'contracts', templateType: 'contracts',
       onImport: () => importModal('contracts', `<label style="display:block;margin-top:6px"><input type="checkbox" id="imp-backfill" style="width:auto"> توليد الفواتير بعد الاستيراد</label>`, () => contracts(c)),
-      onNew: canWrite() ? () => contractForm(fl, tn, () => contracts(c)) : null, newLabel: t('m_contracts') };
+      onNew: canWrite() ? () => contractForm(fl, tn, () => contracts(c), null, null, null, bl) : null, newLabel: t('m_contracts') };
     const canDel = canDo('delete');
     c.innerHTML = toolbar(tbCfg) + `<div class="card"><div class="hd"><h3>${t('m_contracts')}</h3><div style="display:flex;gap:6px">${canDel ? UI.bulkDelHTML() : ''}<button class="btn sm btn-print">🖨 ${t('print')}</button></div></div><div id="ct"></div></div>`;
     const cols = [
@@ -203,20 +203,20 @@ const Pages = (() => {
       const r = rows.find((x) => x.id === +btn.dataset.id);
       if (btn.dataset.act === 'terminate') return terminate(r.id, () => { clearCache(); contracts(c); });
       if (btn.dataset.act === 'view') return contractView(r);
-      if (btn.dataset.act === 'edit') return contractForm(fl, tn, () => { clearCache(); contracts(c); }, r);
-      if (btn.dataset.act === 'renew') return renewContract(r, fl, tn, () => { clearCache(); contracts(c); });
+      if (btn.dataset.act === 'edit') return contractForm(fl, tn, () => { clearCache(); contracts(c); }, r, null, null, bl);
+      if (btn.dataset.act === 'renew') return renewContract(r, fl, tn, bl, () => { clearCache(); contracts(c); });
       if (btn.dataset.act === 'delete') { if (confirm(t('confirm_delete') + '\nسيتم حذف العقد وفواتيره غير المدفوعة.')) API.del('/contracts/' + r.id).then(() => { toast(t('deleted')); clearCache(); contracts(c); }).catch((e) => toast(e.message, 'err')); return; }
     };
   }
   // Renew: pre-fill a new contract starting the day after the old one ends (+1 year),
   // and mark the old contract expired.
-  function renewContract(r, fl, tn, done) {
+  function renewContract(r, fl, tn, bl, done) {
     const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
     const addYear = (d) => { const x = new Date(d); x.setFullYear(x.getFullYear() + 1); return x.toISOString().slice(0, 10); };
     const start = r.end_date ? addDays(r.end_date, 1) : today();
-    const seed = { flat_id: r.flat_id, tenant_id: r.tenant_id, contract_no: '', contract_type: r.contract_type,
+    const seed = { flat_id: r.flat_id, tenant_id: r.tenant_id, building_id: r.building_id, contract_no: '', contract_type: r.contract_type,
       monthly_rent: r.monthly_rent, start_date: start, end_date: addYear(start), vat_percent: r.vat_percent, deposit: 0 };
-    contractForm(fl, tn, async () => { try { await API.put('/contracts/' + r.id + '/status', { status: 'expired' }); } catch {} done(); }, null, seed, 'تجديد العقد');
+    contractForm(fl, tn, async () => { try { await API.put('/contracts/' + r.id + '/status', { status: 'expired' }); } catch {} done(); }, null, seed, 'تجديد العقد', bl);
   }
   function contractView(r) {
     modal({ title: 'عقد ' + (r.contract_no || r.id), bodyHTML: `<table>
@@ -228,12 +228,15 @@ const Pages = (() => {
       <tr><td>${t('deposit')}</td><td>${money(r.deposit)}</td></tr>
       <tr><td>${t('status')}</td><td>${statusBadge(r.status)}</td></tr></table>` });
   }
-  function contractForm(fl, tn, done, row, seed, titleOverride) {
+  function contractForm(fl, tn, done, row, seed, titleOverride, bl) {
     const edit = !!row;
+    bl = bl || [];
+    const defBld = (row && row.building_id) || (seed && seed.building_id) || (bl[0] && bl[0].id) || '';
     formModal({
       title: titleOverride || (edit ? t('edit') : t('add')) + ' — ' + t('m_contracts'), wide: true,
-      values: row || seed || {},
+      values: { ...(row || seed || {}), building_id: defBld },
       fields: [
+        { key: 'building_id', label: t('building'), type: 'select', options: bl.map((b) => ({ value: b.id, label: b.name })), required: true },
         { key: 'flat_id', label: t('unit'), type: 'select', options: fl.map((f) => ({ value: f.id, label: f.code })), required: true },
         { key: 'tenant_id', label: t('tenant'), type: 'select', options: [{ value: '', label: '— جديد —' }].concat(tn.map((x) => ({ value: x.id, label: x.name }))) },
         ...(edit ? [] : [{ key: '_newtenant', label: 'اسم عميل جديد', full: true }]),
