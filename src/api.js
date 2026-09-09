@@ -673,6 +673,7 @@ router.get('/reports/cash-flow', (req, res) => res.json(R.cashFlowForecast(Numbe
 router.get('/reports/vat', (req, res) => res.json(R.vatReport(req.query.from, req.query.to)));
 router.get('/reports/vat-uncollected', (req, res) => res.json(R.vatUncollectedByCustomer(req.query.from, req.query.to)));
 router.get('/reports/vat-input-unpaid', (req, res) => res.json(R.vatInputUnpaidByVendor(req.query.from, req.query.to)));
+router.get('/reports/vat-return', (req, res) => res.json(R.vatReturn(req.query.from, req.query.to)));
 router.post('/vat/settle', writers, (req, res) => {
   try { res.json(svc.settleVAT(req.body, req.user.id)); } catch (e) { res.status(400).json({ error: e.message }); }
 });

@@ -72,6 +72,7 @@
     ] },
     { id: 'tax', icon: '🧾', label: 'm_tax', items: [
       { path: 'vat', label: 'm_vat', page: 'vat', mod: 'tax' },
+      { path: 'vatreturn', label: 'm_vatreturn', page: 'vatReturn', mod: 'tax' },
     ] },
     { id: 'hr', icon: '🧑‍💼', label: 'm_hr', items: [
       { path: 'employees', label: 'm_employees', page: 'employees', mod: 'hr' },

@@ -554,6 +554,46 @@ Object.assign(Pages, (() => {
     c.querySelector('#rbody').innerHTML = table([{ key: 'period', label: t('period') }, { key: 'expected_inflow', label: 'المتوقع', num: true, render: (x) => money(x.expected_inflow) }], r);
     bindPrint(c, t('m_cashflow'));
   }
+  // ---- Oman VAT Return (الإقرار الضريبي) ------------------------------------
+  async function vatReturn(c) {
+    const now = new Date(), y = now.getFullYear(), qm = Math.floor(now.getMonth() / 3) * 3;
+    const from = c._from || `${y}-${String(qm + 1).padStart(2, '0')}-01`;
+    const to = c._to || new Date(y, qm + 3, 0).toISOString().slice(0, 10);
+    reportShell(c, 'm_vatreturn', `<div class="field" style="margin:0"><label>من</label><input type="date" id="rf" value="${from}"></div><div class="field" style="margin:0"><label>إلى</label><input type="date" id="rt" value="${to}"></div><button class="btn" id="rxls">📊 Excel</button>`, null);
+    const r = await API.get(`/reports/vat-return?from=${from}&to=${to}`);
+    const m = (v) => money(v);
+    const bx = (box, label, base, vat) => `<tr><td>${box}</td><td>${label}</td><td class="num">${base != null ? m(base) : ''}</td><td class="num">${vat != null ? m(vat) : ''}</td></tr>`;
+    const html = `
+      <div style="text-align:center;margin-bottom:10px"><div style="font-weight:800;font-size:15px">${esc(r.legal_name)}</div><div style="font-weight:700;font-size:14px">الإقرار الضريبي — ضريبة القيمة المضافة (سلطنة عُمان)</div>
+      <div class="muted" style="font-size:12px">الرقم الضريبي: ${esc(r.vatin)} — القطاع: عقارات — الفترة: ${dateStr(r.from)} → ${dateStr(r.to)} — بالريال العُماني</div></div>
+      <div class="section-title">القسم أ: المبيعات والإيرادات (ضريبة المخرجات)</div>
+      <table><thead><tr><th>الخانة</th><th>البيان</th><th class="num">القيمة الخاضعة</th><th class="num">ض.ق.م</th></tr></thead><tbody>
+      ${bx('1(أ)', 'التوريدات الخاضعة بالمعدل العادي (5%)', r.box1a.base, r.box1a.vat)}
+      ${bx('1(ب)', 'التوريدات الخاضعة بنسبة الصفر', r.box1b.base, r.box1b.vat)}
+      ${bx('1(ج)', 'التوريدات المعفاة', r.box1c.base, null)}
+      ${bx('2', 'التوريدات الخاضعة للاحتساب العكسي', r.box2.base, r.box2.vat)}
+      <tr class="tot"><td>5</td><td><b>إجمالي ضريبة المخرجات المستحقة</b></td><td class="num"></td><td class="num"><b>${m(r.box5_output)}</b></td></tr>
+      </tbody></table>
+      <div class="section-title" style="margin-top:14px">القسم ب: المشتريات والمصروفات (ضريبة المدخلات)</div>
+      <table><thead><tr><th>الخانة</th><th>البيان</th><th class="num">القيمة</th><th class="num">ض.ق.م</th></tr></thead><tbody>
+      ${bx('6(أ)', 'مدخلات قابلة للخصم على المشتريات', r.box6a.base, r.box6a.vat)}
+      ${bx('6(ج)', 'مدخلات على شراء أصول ثابتة', r.box6c.base, r.box6c.vat)}
+      <tr class="tot"><td>6</td><td><b>إجمالي ضريبة المدخلات القابلة للخصم</b></td><td class="num"></td><td class="num"><b>${m(r.box6_input)}</b></td></tr>
+      </tbody></table>
+      <div class="section-title" style="margin-top:14px">القسم ج: صافي الضريبة</div>
+      <table><tbody>
+      <tr><td>ضريبة المخرجات (خانة 5)</td><td class="num">${m(r.box5_output)}</td></tr>
+      <tr><td>ناقص: ضريبة المدخلات (خانة 6)</td><td class="num">${m(r.box6_input)}</td></tr>
+      <tr class="tot"><td><b>7 — صافي الضريبة ${r.box7_net < 0 ? 'القابلة للاسترداد' : 'المستحقة السداد'}</b></td><td class="num"><b>${m(Math.abs(r.box7_net))}</b></td></tr>
+      </tbody></table>
+      <p class="muted" style="font-size:11px;margin-top:8px">الأرقام على أساس الاستحقاق (تاريخ الفاتورة). المخرجات من فواتير الإيجار، والمدخلات من فواتير الموردين. الفترة الربعية محددة تلقائيًا وتقدر تغيّرها.</p>`;
+    c.querySelector('#rbody').innerHTML = `<div class="bd">${html}</div>`;
+    c.querySelector('#rf').onchange = (e) => { c._from = e.target.value; vatReturn(c); };
+    c.querySelector('#rt').onchange = (e) => { c._to = e.target.value; vatReturn(c); };
+    c.querySelector('#rxls').onclick = () => UI.exportTableToExcel('VAT-Return-' + r.from + '_' + r.to, html);
+    bindPrint(c, t('m_vatreturn'));
+  }
+
   // ---- IFRS Financial Statements module (comparative current vs prior year) --
   async function financialStatements(c) {
     const year = c._fy || new Date().getFullYear();
@@ -1111,5 +1151,5 @@ Object.assign(Pages, (() => {
 
   return { customers, vendors, buildings, units, categories, paymethods, banks, employees, coa,
     vendorBills, vendorPayments, trialBalance, incomeStatement, incomeStatementConsolidated, generalLedger, balanceSheet, arAging, apAging,
-    statement, vendorStatement, advances, propertyPL, roi, cashflow, comparison, vat, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements };
+    statement, vendorStatement, advances, propertyPL, roi, cashflow, comparison, vat, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, vatReturn };
 })());

@@ -728,6 +728,38 @@ function vatReport(from, to) {
   };
 }
 
+// ---- Oman VAT Return (الإقرار الضريبي) — the box figures for filing ---------
+// Accrual basis (VAT due on invoice/bill date). Standard-rated supplies = rent;
+// input VAT = vendor bills. Boxes follow the OTA VAT return layout.
+function vatReturn(from, to) {
+  const setg = (k) => (db.prepare('SELECT value FROM settings WHERE key=?').get(k) || {}).value || '';
+  const inv = db.prepare(
+    `SELECT COALESCE(SUM(rent_amount),0) base, COALESCE(SUM(vat_amount),0) vat
+       FROM invoices WHERE status!='cancelled' ${from ? 'AND due_date>=?' : ''} ${to ? 'AND due_date<=?' : ''}`)
+    .get(...[...(from ? [from] : []), ...(to ? [to] : [])]);
+  // input VAT split: fixed-asset purchases (Box 6c) vs normal purchases (Box 6a)
+  const bill = db.prepare(
+    `SELECT a.type acctype, COALESCE(SUM(b.amount),0) base, COALESCE(SUM(b.vat_amount),0) vat
+       FROM vendor_bills b JOIN accounts a ON a.code=b.expense_code
+      WHERE b.status!='cancelled' ${from ? 'AND b.bdate>=?' : ''} ${to ? 'AND b.bdate<=?' : ''}
+      GROUP BY a.type`).all(...[...(from ? [from] : []), ...(to ? [to] : [])]);
+  let b6a = { base: 0, vat: 0 }, b6c = { base: 0, vat: 0 };
+  for (const r of bill) { const t = r.acctype === 'asset' ? b6c : b6a; t.base = r2(t.base + r.base); t.vat = r2(t.vat + r.vat); }
+  const box1a = { base: r2(inv.base), vat: r2(inv.vat) };
+  const box5_output = box1a.vat;
+  const box6_input = r2(b6a.vat + b6c.vat);
+  const box7_net = r2(box5_output - box6_input);
+  return {
+    from, to, vatin: setg('vat_number') || 'OM1100201030',
+    legal_name: setg('company_name') || 'United Tower', sector: 'Real Estate', currency: 'OMR',
+    box1a, box1b: { base: 0, vat: 0 }, box1c: { base: 0 },
+    box2: { base: 0, vat: 0 }, box3: { base: 0 },
+    box5_output,
+    box6a: { base: r2(b6a.base), vat: r2(b6a.vat) }, box6c: { base: r2(b6c.base), vat: r2(b6c.vat) },
+    box6_input, box7_net,
+  };
+}
+
 // ---- Unpaid INPUT VAT per vendor (VAT we still owe on vendor bills) --------
 function vatInputUnpaidByVendor(from, to) {
   const rows = db.prepare(
@@ -881,7 +913,7 @@ function buildingComparison(from, to) {
 module.exports = {
   trialBalance, incomeStatement, incomeStatementConsolidated, accountLedger, generalLedgerFull, groupedJournals, legacyJournals, legacyDrill,
   liquidityReport, financialRatios, balanceSheet, financialStatements, receivablesAging, payablesAging,
-  flatStatement, vendorStatement, advancesReport, occupancy, propertyPL, roi, cashFlowForecast, vatReport, vatUncollectedByCustomer, vatInputUnpaidByVendor,
+  flatStatement, vendorStatement, advancesReport, occupancy, propertyPL, roi, cashFlowForecast, vatReport, vatReturn, vatUncollectedByCustomer, vatInputUnpaidByVendor,
   bankReport, chequesReport, chequesDashboard, dashboard, contractExpiry, buildingComparison,
   depreciationReport, customersSummary,
 };
