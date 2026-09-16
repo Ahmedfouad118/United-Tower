@@ -555,6 +555,26 @@ Object.assign(Pages, (() => {
     c.querySelector('#rbody').innerHTML = table([{ key: 'period', label: t('period') }, { key: 'expected_inflow', label: 'المتوقع', num: true, render: (x) => money(x.expected_inflow) }], r);
     bindPrint(c, t('m_cashflow'));
   }
+  // ---- Activity log (audit trail) -------------------------------------------
+  async function activityLog(c) {
+    loading(c);
+    const rows = await API.get('/activity-log');
+    const ACT = { POST: 'إضافة', PUT: 'تعديل', DELETE: 'حذف' };
+    const tbCfg = { search: true, searchFn: (rs, q) => rs.filter((r) => [r.username, r.path, r.method, r.summary].join(' ').toLowerCase().includes(q)) };
+    c.innerHTML = toolbar(tbCfg) + `<div class="card"><div class="hd"><h3>سجل النشاط <span class="muted" style="font-size:12px">(${rows.length})</span></h3><button class="btn sm btn-print">🖨</button></div><div id="alt"></div></div>`;
+    const cols = [
+      { key: 'ts', label: 'التاريخ/الوقت', render: (r) => (r.ts || '').replace('T', ' ').slice(0, 19) },
+      { key: 'username', label: t('name') }, { key: 'role', label: 'الصلاحية' },
+      { key: 'method', label: 'الإجراء', render: (r) => `<span class="badge ${r.method === 'DELETE' ? 'b-red' : r.method === 'PUT' ? 'b-amber' : 'b-green'}">${ACT[r.method] || r.method}</span>` },
+      { key: 'path', label: 'المورد', render: (r) => esc(r.path) },
+      { key: 'status', label: t('status'), render: (r) => `<span class="badge ${r.status < 300 ? 'b-green' : 'b-red'}">${r.status}</span>` },
+      { key: 'summary', label: 'الحقول', render: (r) => esc(r.summary || '') },
+    ];
+    const draw = (rs) => c.querySelector('#alt').innerHTML = table(cols, rs);
+    draw(rows); wireToolbar(c, tbCfg, draw, rows);
+    c.querySelector('.btn-print').onclick = () => printTable('سجل النشاط', cols, rows);
+  }
+
   // ---- Oman VAT Return (الإقرار الضريبي) ------------------------------------
   async function vatReturn(c) {
     const now = new Date(), y = now.getFullYear(), qm = Math.floor(now.getMonth() / 3) * 3;
@@ -1164,5 +1184,5 @@ Object.assign(Pages, (() => {
 
   return { customers, vendors, buildings, units, categories, paymethods, banks, employees, coa,
     vendorBills, vendorPayments, trialBalance, incomeStatement, incomeStatementConsolidated, generalLedger, balanceSheet, arAging, apAging,
-    statement, vendorStatement, advances, propertyPL, roi, cashflow, comparison, vat, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, vatReturn };
+    statement, vendorStatement, advances, propertyPL, roi, cashflow, comparison, vat, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, vatReturn, activityLog };
 })());

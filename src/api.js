@@ -8,6 +8,9 @@ const { postJournal } = require('./ledger');
 const router = express.Router();
 const writers = requireRole('admin', 'accountant');
 
+// ---- Activity log (audit trail of write actions) --------------------------
+try { db.exec(`CREATE TABLE IF NOT EXISTS activity_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, user_id INTEGER, username TEXT, role TEXT, method TEXT, path TEXT, status INTEGER, summary TEXT)`); } catch (e) {}
+
 // Download a full backup of the live database (admin only).
 router.get('/backup', (req, res) => {
   // token can come via header or ?token= (so a plain browser link works)
@@ -65,6 +68,27 @@ router.post('/login', (req, res) => {
   res.json(r);
 });
 router.use(authMiddleware);
+// log every write action (POST/PUT/DELETE) with the user + outcome
+router.use((req, res, next) => {
+  if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
+    res.on('finish', () => {
+      try {
+        const u = req.user || {};
+        const keys = (req.body && typeof req.body === 'object') ? Object.keys(req.body).filter((k) => !/pass|pw|token/i.test(k)).slice(0, 8).join(', ') : '';
+        db.prepare('INSERT INTO activity_log (ts,user_id,username,role,method,path,status,summary) VALUES (?,?,?,?,?,?,?,?)')
+          .run(new Date().toISOString(), u.id || null, u.full_name || u.username || '', u.role || '', req.method, req.path, res.statusCode, keys);
+      } catch (e) {}
+    });
+  }
+  next();
+});
+router.get('/activity-log', requireRole('admin'), (req, res) => {
+  const q = req.query.q ? '%' + req.query.q + '%' : null;
+  const rows = q
+    ? db.prepare('SELECT * FROM activity_log WHERE username LIKE ? OR path LIKE ? OR summary LIKE ? ORDER BY id DESC LIMIT 500').all(q, q, q)
+    : db.prepare('SELECT * FROM activity_log ORDER BY id DESC LIMIT 500').all();
+  res.json(rows);
+});
 router.get('/me', (req, res) => {
   const buildings = req.user.role === 'admin'
     ? db.prepare('SELECT id,name,name_ar FROM buildings WHERE active=1 ORDER BY name').all()

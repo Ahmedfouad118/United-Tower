@@ -83,6 +83,7 @@
       { path: 'categories', label: 'm_categories', page: 'categories', mod: 'settings' },
       { path: 'paymethods', label: 'm_paymethods', page: 'paymethods', mod: 'settings' },
       { path: 'users', label: 'm_users', page: 'users', admin: true, mod: 'users' },
+      { path: 'activity', label: 'm_activity', page: 'activityLog', admin: true, mod: 'users' },
     ] },
   ];
   const allItems = () => NAV.flatMap((g) => g.single ? [g] : g.items.map((it) => ({ ...it, group: g.id })));
