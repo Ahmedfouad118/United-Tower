@@ -10,6 +10,8 @@ const writers = requireRole('admin', 'accountant');
 
 // ---- Activity log (audit trail of write actions) --------------------------
 try { db.exec(`CREATE TABLE IF NOT EXISTS activity_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, user_id INTEGER, username TEXT, role TEXT, method TEXT, path TEXT, status INTEGER, summary TEXT)`); } catch (e) {}
+// company documents (licences, CR, contracts, certificates...) with attachments
+try { db.exec(`CREATE TABLE IF NOT EXISTS company_documents (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, doc_type TEXT, doc_no TEXT, issue_date TEXT, expiry_date TEXT, attachment TEXT, notes TEXT, created_by INTEGER, created_at TEXT DEFAULT (datetime('now')))`); } catch (e) {}
 
 // Download a full backup of the live database (admin only).
 router.get('/backup', (req, res) => {
@@ -278,6 +280,7 @@ router.put('/vendors/:id', writers, (req, res) => {
 });
 crud('vendors', 'vendors', ['code', 'name', 'name_ar', 'phone', 'email', 'tax_no', 'category_id', 'opening_balance', 'notes'], { order: 'ORDER BY name' });
 crud('categories', 'categories', ['entity', 'name', 'name_ar', 'name_ur', 'notes'], { order: 'ORDER BY entity,name' });
+crud('company-documents', 'company_documents', ['title', 'doc_type', 'doc_no', 'issue_date', 'expiry_date', 'attachment', 'notes'], { order: 'ORDER BY expiry_date IS NULL, expiry_date' });
 crud('payment-methods', 'payment_methods', ['name', 'name_ar', 'name_ur', 'kind', 'gl_account', 'active'], { order: 'ORDER BY id' });
 crud('banks', 'banks', ['name', 'name_ar', 'name_ur', 'branch', 'account_no', 'iban', 'swift', 'currency', 'gl_account', 'opening_balance', 'notes', 'active'], { order: 'ORDER BY name' });
 crud('employees', 'employees', ['name', 'name_ar', 'job_title', 'salary', 'active', 'notes'], { order: 'ORDER BY name' });

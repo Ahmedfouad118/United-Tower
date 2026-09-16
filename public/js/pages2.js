@@ -49,7 +49,43 @@ Object.assign(Pages, (() => {
   async function categories(c) {
     return M(c, { title: t('m_categories'), endpoint: 'categories', type: 'categories',
       columns: [{ key: 'entity', label: 'النوع' }, { key: 'name', label: t('name') }, { key: 'name_ar', label: 'عربي' }],
-      fields: [{ key: 'entity', label: 'يخص', type: 'select', options: [{ value: 'customer', label: 'عملاء' }, { value: 'vendor', label: 'موردين' }, { value: 'unit', label: 'وحدات' }, { value: 'expense', label: 'مصروفات' }] }, { key: 'name', label: t('name'), required: true }, { key: 'name_ar', label: 'عربي' }] });
+      fields: [{ key: 'entity', label: 'يخص', type: 'select', options: [{ value: 'customer', label: 'عملاء' }, { value: 'vendor', label: 'موردين' }, { value: 'unit', label: 'وحدات' }, { value: 'expense', label: 'مصروفات' }, { value: 'document', label: 'أنواع أوراق الشركة' }] }, { key: 'name', label: t('name'), required: true }, { key: 'name_ar', label: 'عربي' }] });
+  }
+  // ---- Company documents (licences, CR, certificates...) with attachments ----
+  async function companyDocuments(c) {
+    loading(c);
+    const [rows, cats] = [await API.get('/company-documents'), await ref('categories')];
+    const types = cats.filter((x) => x.entity === 'document').map((x) => ({ value: x.name, label: x.name_ar || x.name }));
+    const canEd = canDo('edit'), canDel = canDo('delete');
+    const form = (existing) => formModal({ title: existing ? 'تعديل ورقة' : 'إضافة ورقة', wide: true, values: existing || {}, fields: [
+      { key: 'title', label: 'اسم الورقة', required: true },
+      { key: 'doc_type', label: 'التصنيف', type: 'select', options: [{ value: '', label: '—' }].concat(types.length ? types : [{ value: 'عام', label: 'عام' }]) },
+      { key: 'doc_no', label: 'رقم الوثيقة' },
+      { key: 'issue_date', label: 'تاريخ الإصدار', type: 'date' },
+      { key: 'expiry_date', label: 'تاريخ الانتهاء', type: 'date' },
+      { key: 'attachment', label: '📎 المرفق (صورة/PDF)', type: 'file', accept: 'image/*,.pdf', full: true },
+      { key: 'notes', label: t('description'), full: true },
+    ], onSave: async (d, close) => { if (existing) await API.put('/company-documents/' + existing.id, d); else await API.post('/company-documents', d); toast(t('saved')); close(); companyDocuments(c); } });
+    const tbCfg = { search: true, searchFn: (rs, q) => rs.filter((r) => [r.title, r.doc_type, r.doc_no].join(' ').toLowerCase().includes(q)), onNew: canWrite() ? () => form(null) : null, newLabel: 'ورقة جديدة' };
+    c.innerHTML = toolbar(tbCfg) + `<div class="card"><div class="hd"><h3>أوراق الشركة</h3><button class="btn sm btn-print">🖨</button></div><div id="cdt"></div></div>`;
+    const today0 = today();
+    const cols = [
+      { key: 'title', label: 'اسم الورقة' }, { key: 'doc_type', label: 'التصنيف' }, { key: 'doc_no', label: 'رقم الوثيقة' },
+      { key: 'issue_date', label: 'الإصدار', render: (r) => r.issue_date ? dateStr(r.issue_date) : '' },
+      { key: 'expiry_date', label: 'الانتهاء', render: (r) => r.expiry_date ? `<span class="${r.expiry_date < today0 ? 'neg' : ''}">${dateStr(r.expiry_date)}${r.expiry_date < today0 ? ' ⚠️' : ''}</span>` : '' },
+      { key: 'attachment', label: 'المرفق', render: (r) => r.attachment ? `<a class="drill" data-view="${r.id}">📎 عرض</a>` : '—' },
+      { key: '_a', label: t('actions'), render: (r) => actions(r.id, [...(canEd ? ['edit'] : []), ...(canDel ? ['delete'] : [])]) },
+    ];
+    const draw = (rs) => c.querySelector('#cdt').innerHTML = table(cols, rs);
+    draw(rows); wireToolbar(c, tbCfg, draw, rows);
+    c.querySelector('.btn-print').onclick = () => printTable('أوراق الشركة', cols.filter((x) => x.key !== '_a' && x.key !== 'attachment'), rows);
+    c.querySelector('#cdt').onclick = async (e) => {
+      const v = e.target.closest('[data-view]'); if (v) { const r = rows.find((x) => String(x.id) === v.dataset.view); const w = window.open(); w.document.write(`<iframe src="${r.attachment}" style="width:100%;height:100%;border:0"></iframe>`); return; }
+      const b = e.target.closest('[data-act]'); if (!b) return;
+      const r = rows.find((x) => String(x.id) === b.dataset.id);
+      if (b.dataset.act === 'edit') return form(r);
+      if (b.dataset.act === 'delete') { if (confirm(t('confirm_delete'))) { await API.del('/company-documents/' + r.id); toast(t('deleted')); companyDocuments(c); } }
+    };
   }
   async function paymethods(c) {
     const ac = await ref('accounts');
@@ -1184,5 +1220,5 @@ Object.assign(Pages, (() => {
 
   return { customers, vendors, buildings, units, categories, paymethods, banks, employees, coa,
     vendorBills, vendorPayments, trialBalance, incomeStatement, incomeStatementConsolidated, generalLedger, balanceSheet, arAging, apAging,
-    statement, vendorStatement, advances, propertyPL, roi, cashflow, comparison, vat, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, vatReturn, activityLog };
+    statement, vendorStatement, advances, propertyPL, roi, cashflow, comparison, vat, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, vatReturn, activityLog, companyDocuments };
 })());
