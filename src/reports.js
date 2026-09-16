@@ -445,6 +445,9 @@ function financialStatements(year, lang = 'en') {
     opening: pair(bsP.total_equity, balanceSheet(`${year - 2}-12-31`, lang).total_equity),
     net: pair(isC.net, isP.net), closing: pair(bsC.total_equity, bsP.total_equity),
   };
+  // reconciling line: capital introduced / opening balances / other equity moves
+  // = closing − opening − net (so opening + net + capital = closing exactly).
+  equity.capital = { cur: r2(equity.closing.cur - equity.opening.cur - equity.net.cur), prev: r2(equity.closing.prev - equity.opening.prev - equity.net.prev) };
   // ---- Cash flow (indirect) ----
   const cashBal = (upto) => r2(balanceSheet(upto, lang).assets.filter((x) => cashCodes.has(x.code)).reduce((s, x) => s + x.amt, 0));
   const cashStart = cashBal(endPrev), cashEnd = cashBal(endCur);

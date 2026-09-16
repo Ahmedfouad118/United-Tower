@@ -70,8 +70,9 @@ Object.assign(Pages, (() => {
     // add payroll button to toolbar
     const tb = c.querySelector('.toolbar');
     if (tb && canWrite()) {
-      const b = document.createElement('button'); b.className = 'btn teal'; b.textContent = t('run_payroll') + ' ' + curMonth();
-      b.onclick = async () => { if (confirm('ترحيل رواتب هذا الشهر؟')) { const r = await API.post('/payroll/run', { period: curMonth() }); toast(`تم ترحيل ${r.posted}`); } };
+      const b = document.createElement('button'); b.className = 'btn teal'; b.textContent = t('run_payroll');
+      b.onclick = () => formModal({ title: t('run_payroll'), fields: [{ key: 'period', label: 'الشهر', type: 'month', value: curMonth() }],
+        onSave: async (d, close) => { try { const r = await API.post('/payroll/run', { period: d.period }); toast(`تم ترحيل ${r.posted} راتب لشهر ${d.period}`); close(); } catch (e) { toast(e.message, 'err'); } } });
       tb.insertBefore(b, tb.querySelector('.tb-new') || null);
     }
   }
@@ -605,22 +606,29 @@ Object.assign(Pages, (() => {
     const hdr = (title, sub) => `<div style="text-align:center;margin:4px 0 10px"><div style="font-weight:800;font-size:15px">${esc(co.name || 'United Tower')}</div><div style="font-weight:700;font-size:14px">${title}</div><div class="muted" style="font-size:12px">${sub} — بالريال العُماني (OMR)</div></div>`;
     const th = `<thead><tr><th>البند</th><th class="num">${year}</th><th class="num">${year - 1}</th></tr></thead>`;
     const row2 = (label, cur, prev, bold) => `<tr${bold ? ' class="tot"' : ''}><td>${bold ? '<b>' + label + '</b>' : label}</td><td class="num">${bold ? '<b>' + m(cur) + '</b>' : m(cur)}</td><td class="num muted">${m(prev)}</td></tr>`;
-    const secRows = (rows) => rows.map((x) => row2(esc((x.code && x.code !== 'RET' ? x.code + ' - ' : '') + x.name), x.cur, x.prev)).join('') || `<tr><td colspan="3" class="muted">—</td></tr>`;
+    const secRows = (rows, from, to) => rows.map((x) => {
+      const hasAcc = x.code && x.code !== 'RET';
+      const curCell = hasAcc ? drillA(m(x.cur), `data-acc="${x.code}" data-from="${from || ''}" data-to="${to}"`) : m(x.cur);
+      return `<tr><td>${esc((hasAcc ? x.code + ' - ' : '') + x.name)}</td><td class="num">${curCell}</td><td class="num muted">${m(x.prev)}</td></tr>`;
+    }).join('') || `<tr><td colspan="3" class="muted">—</td></tr>`;
     const bs = r.balance_sheet, is = r.income, eq = r.equity, cf = r.cash_flow;
+    const BSTO = r.end_cur, ISFROM = year + '-01-01';
     const bsHTML = `${hdr('قائمة المركز المالي', 'كما في ' + r.end_cur)}<table>${th}<tbody>
-      <tr class="sec"><td colspan="3">الأصول غير المتداولة</td></tr>${secRows(bs.non_current_assets)}${row2('إجمالي الأصول غير المتداولة', bs.total_non_current_assets.cur, bs.total_non_current_assets.prev, 1)}
-      <tr class="sec"><td colspan="3">الأصول المتداولة</td></tr>${secRows(bs.current_assets)}${row2('إجمالي الأصول المتداولة', bs.total_current_assets.cur, bs.total_current_assets.prev, 1)}
+      <tr class="sec"><td colspan="3">الأصول غير المتداولة</td></tr>${secRows(bs.non_current_assets, '', BSTO)}${row2('إجمالي الأصول غير المتداولة', bs.total_non_current_assets.cur, bs.total_non_current_assets.prev, 1)}
+      <tr class="sec"><td colspan="3">الأصول المتداولة</td></tr>${secRows(bs.current_assets, '', BSTO)}${row2('إجمالي الأصول المتداولة', bs.total_current_assets.cur, bs.total_current_assets.prev, 1)}
       ${row2('إجمالي الأصول', bs.total_assets.cur, bs.total_assets.prev, 1)}
-      <tr class="sec"><td colspan="3">حقوق الملكية</td></tr>${secRows(bs.equity)}${row2('إجمالي حقوق الملكية', bs.total_equity.cur, bs.total_equity.prev, 1)}
-      <tr class="sec"><td colspan="3">الالتزامات غير المتداولة</td></tr>${secRows(bs.non_current_liabilities)}${row2('إجمالي الالتزامات غير المتداولة', bs.total_non_current_liabilities.cur, bs.total_non_current_liabilities.prev, 1)}
-      <tr class="sec"><td colspan="3">الالتزامات المتداولة</td></tr>${secRows(bs.current_liabilities)}${row2('إجمالي الالتزامات المتداولة', bs.total_current_liabilities.cur, bs.total_current_liabilities.prev, 1)}
+      <tr class="sec"><td colspan="3">حقوق الملكية</td></tr>${secRows(bs.equity, '', BSTO)}${row2('إجمالي حقوق الملكية', bs.total_equity.cur, bs.total_equity.prev, 1)}
+      <tr class="sec"><td colspan="3">الالتزامات غير المتداولة</td></tr>${secRows(bs.non_current_liabilities, '', BSTO)}${row2('إجمالي الالتزامات غير المتداولة', bs.total_non_current_liabilities.cur, bs.total_non_current_liabilities.prev, 1)}
+      <tr class="sec"><td colspan="3">الالتزامات المتداولة</td></tr>${secRows(bs.current_liabilities, '', BSTO)}${row2('إجمالي الالتزامات المتداولة', bs.total_current_liabilities.cur, bs.total_current_liabilities.prev, 1)}
       ${row2('إجمالي حقوق الملكية والالتزامات', bs.total_equity_liabilities.cur, bs.total_equity_liabilities.prev, 1)}</tbody></table>`;
     const isHTML = `${hdr('قائمة الدخل الشامل', 'عن السنة المنتهية في ' + r.end_cur)}<table>${th}<tbody>
-      <tr class="sec"><td colspan="3">الإيرادات</td></tr>${secRows(is.revenue)}${row2('إجمالي الإيرادات', is.total_revenue.cur, is.total_revenue.prev, 1)}
-      <tr class="sec"><td colspan="3">المصروفات</td></tr>${secRows(is.expenses)}${row2('إجمالي المصروفات', is.total_expenses.cur, is.total_expenses.prev, 1)}
+      <tr class="sec"><td colspan="3">الإيرادات</td></tr>${secRows(is.revenue, ISFROM, BSTO)}${row2('إجمالي الإيرادات', is.total_revenue.cur, is.total_revenue.prev, 1)}
+      <tr class="sec"><td colspan="3">المصروفات</td></tr>${secRows(is.expenses, ISFROM, BSTO)}${row2('إجمالي المصروفات', is.total_expenses.cur, is.total_expenses.prev, 1)}
       ${row2('صافي ربح السنة', is.net.cur, is.net.prev, 1)}</tbody></table>`;
     const eqHTML = `${hdr('قائمة التغيرات في حقوق الملكية', 'عن السنة المنتهية في ' + r.end_cur)}<table>${th}<tbody>
-      ${row2('رصيد بداية السنة', eq.opening.cur, eq.opening.prev)}${row2('صافي ربح السنة', eq.net.cur, eq.net.prev)}${row2('رصيد نهاية السنة', eq.closing.cur, eq.closing.prev, 1)}</tbody></table>`;
+      ${row2('رصيد بداية السنة', eq.opening.cur, eq.opening.prev)}
+      ${(Math.abs(eq.capital.cur) > 0.005 || Math.abs(eq.capital.prev) > 0.005) ? row2('رأس المال المُدرج / أرصدة افتتاحية', eq.capital.cur, eq.capital.prev) : ''}
+      ${row2('صافي ربح السنة', eq.net.cur, eq.net.prev)}${row2('رصيد نهاية السنة', eq.closing.cur, eq.closing.prev, 1)}</tbody></table>`;
     const cfHTML = `${hdr('قائمة التدفقات النقدية', 'عن السنة المنتهية في ' + r.end_cur)}<table><thead><tr><th>البند</th><th class="num">${year}</th></tr></thead><tbody>
       <tr class="sec"><td colspan="2">الأنشطة التشغيلية</td></tr>
       <tr><td>صافي الربح</td><td class="num">${m(cf.net_income)}</td></tr><tr><td>الإهلاك (غير نقدي)</td><td class="num">${m(cf.depreciation)}</td></tr>
@@ -640,6 +648,10 @@ Object.assign(Pages, (() => {
     c.querySelector('#fy').onchange = (e) => { c._fy = +e.target.value; financialStatements(c); };
     c.querySelector('#fsprint').onclick = () => printReport('القوائم المالية ' + year, allHTML);
     c.querySelector('#fsxls').onclick = () => UI.exportTableToExcel('financial-statements-' + year, allHTML);
+    c.querySelector('#rbody').addEventListener('click', (e) => {
+      const a = e.target.closest('.drill[data-acc]'); if (!a) return; e.preventDefault();
+      accountDrill({ title: 'حركات حساب ' + a.dataset.acc, account: a.dataset.acc, from: a.dataset.from || null, to: a.dataset.to });
+    });
   }
   function r2diff(cf) { return Math.round((cf.cash_end_computed - cf.cash_end_actual) * 1000) / 1000; }
 
@@ -727,8 +739,9 @@ Object.assign(Pages, (() => {
         { key: 'purchase_date', label: 'تاريخ الشراء', type: 'date' }] });
     const tb = c.querySelector('.toolbar');
     if (tb && canWrite()) {
-      const b = document.createElement('button'); b.className = 'btn teal'; b.textContent = 'ترحيل إهلاك ' + curMonth();
-      b.onclick = async () => { if (confirm('ترحيل إهلاك هذا الشهر لكل الأصول؟')) { try { const r = await API.post('/assets/depreciation/run', { period: curMonth() }); toast(`تم ترحيل إهلاك ${r.posted} أصل`); assets(c); } catch (e) { toast(e.message, 'err'); } } };
+      const b = document.createElement('button'); b.className = 'btn teal'; b.textContent = 'ترحيل إهلاك';
+      b.onclick = () => formModal({ title: 'ترحيل إهلاك', fields: [{ key: 'period', label: 'الشهر', type: 'month', value: curMonth() }],
+        onSave: async (d, close) => { try { const r = await API.post('/assets/depreciation/run', { period: d.period }); toast(`تم ترحيل إهلاك ${r.posted} أصل لشهر ${d.period}`); close(); assets(c); } catch (e) { toast(e.message, 'err'); } } });
       tb.insertBefore(b, tb.querySelector('.tb-new') || null);
     }
   }
