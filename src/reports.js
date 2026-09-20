@@ -750,10 +750,12 @@ function cashFlowForecast(months = 6) {
 
 // ---- VAT report (accrual + collected/outstanding split) -------------------
 function vatReport(from, to) {
+  // excludes vat_settlement journals — a settlement clears prior VAT, it isn't new
+  // VAT activity, so it shouldn't count as this period's output/input movement.
   const bal = (code) => db.prepare(
     `SELECT COALESCE(SUM(l.credit),0) c, COALESCE(SUM(l.debit),0) d
      FROM journal_lines l JOIN journals j ON j.id=l.journal_id
-     WHERE l.account_code=? ${from ? 'AND j.jdate>=?' : ''} ${to ? 'AND j.jdate<=?' : ''}`)
+     WHERE l.account_code=? AND j.jtype!='vat_settlement' ${from ? 'AND j.jdate>=?' : ''} ${to ? 'AND j.jdate<=?' : ''}`)
     .get(...[code, ...(from ? [from] : []), ...(to ? [to] : [])]);
   // GL provision view — output & input VAT may share ONE account (20000) by config.
   const OUT = CFG.acct('output_vat'), IN = CFG.acct('input_vat');
@@ -761,19 +763,36 @@ function vatReport(from, to) {
   if (OUT === IN) { const b = bal(OUT); output_vat = r2(b.c); input_vat = r2(b.d); }
   else { const o = bal(OUT), i = bal(IN); output_vat = r2(o.c - o.d); input_vat = r2(i.d - i.c); }
   // Accrual view — VAT is collected LAST: a payment covers the rent/expense first,
-  // so VAT stays outstanding until the invoice/bill is fully paid.
+  // so VAT stays outstanding until the invoice/bill is fully paid. "Outstanding as
+  // of `to`" uses payments dated on/before `to`, not today's live paid_amount —
+  // otherwise a payment made after `to` would wrongly show the invoice as settled
+  // for a report run against an earlier period.
   const inv = db.prepare(
-    `SELECT COALESCE(SUM(vat_amount),0) due,
-            COALESCE(SUM(MIN(vat_amount, MAX(0, total - paid_amount))),0) outstanding
-     FROM invoices WHERE status!='cancelled' ${from ? 'AND due_date>=?' : ''} ${to ? 'AND due_date<=?' : ''}`)
-    .get(...[...(from ? [from] : []), ...(to ? [to] : [])]);
+    `SELECT COALESCE(SUM(i.vat_amount),0) due,
+            COALESCE(SUM(MIN(i.vat_amount, MAX(0, i.total - COALESCE(pa.paid_as_of,0)))),0) outstanding
+       FROM invoices i
+       LEFT JOIN (
+         SELECT al.invoice_id, SUM(al.amount) paid_as_of
+           FROM payment_allocations al JOIN payments p ON p.id=al.payment_id
+          ${to ? 'WHERE p.pdate<=?' : ''}
+          GROUP BY al.invoice_id
+       ) pa ON pa.invoice_id = i.id
+      WHERE i.status!='cancelled' ${from ? 'AND i.due_date>=?' : ''} ${to ? 'AND i.due_date<=?' : ''}`)
+    .get(...[...(to ? [to] : []), ...(from ? [from] : []), ...(to ? [to] : [])]);
   const vat_due = r2(inv.due), vat_outstanding = r2(inv.outstanding), vat_collected = r2(vat_due - vat_outstanding);
   // input VAT accrual from vendor bills (who we still owe VAT to)
   const bill = db.prepare(
-    `SELECT COALESCE(SUM(vat_amount),0) due,
-            COALESCE(SUM(MIN(vat_amount, MAX(0, total - paid_amount))),0) outstanding
-     FROM vendor_bills WHERE status!='cancelled' ${from ? 'AND bdate>=?' : ''} ${to ? 'AND bdate<=?' : ''}`)
-    .get(...[...(from ? [from] : []), ...(to ? [to] : [])]);
+    `SELECT COALESCE(SUM(b.vat_amount),0) due,
+            COALESCE(SUM(MIN(b.vat_amount, MAX(0, b.total - COALESCE(pa.paid_as_of,0)))),0) outstanding
+       FROM vendor_bills b
+       LEFT JOIN (
+         SELECT al.bill_id, SUM(al.amount) paid_as_of
+           FROM vendor_payment_allocations al JOIN vendor_payments p ON p.id=al.payment_id
+          ${to ? 'WHERE p.pdate<=?' : ''}
+          GROUP BY al.bill_id
+       ) pa ON pa.bill_id = b.id
+      WHERE b.status!='cancelled' ${from ? 'AND b.bdate>=?' : ''} ${to ? 'AND b.bdate<=?' : ''}`)
+    .get(...[...(to ? [to] : []), ...(from ? [from] : []), ...(to ? [to] : [])]);
   const vat_input_due = r2(bill.due), vat_input_outstanding = r2(bill.outstanding), vat_input_paid = r2(vat_input_due - vat_input_outstanding);
   // Net payable for the period comes from the LEDGER (output_vat/input_vat above),
   // not just the accrual (invoices/vendor-bills) totals — this way a VAT amount
@@ -819,7 +838,7 @@ function vatReturn(from, to) {
   const balVat = (code) => db.prepare(
     `SELECT COALESCE(SUM(l.credit),0) c, COALESCE(SUM(l.debit),0) d
        FROM journal_lines l JOIN journals j ON j.id=l.journal_id
-      WHERE l.account_code=? ${from ? 'AND j.jdate>=?' : ''} ${to ? 'AND j.jdate<=?' : ''}`)
+      WHERE l.account_code=? AND j.jtype!='vat_settlement' ${from ? 'AND j.jdate>=?' : ''} ${to ? 'AND j.jdate<=?' : ''}`)
     .get(...[code, ...(from ? [from] : []), ...(to ? [to] : [])]);
   let box5_output, box6_input;
   if (OUT === IN) { const b = balVat(OUT); box5_output = r2(b.c); box6_input = r2(b.d); }
@@ -858,10 +877,13 @@ function vatStatement(year) {
     `SELECT CAST(substr(bdate,6,2) AS INTEGER) mo, COALESCE(SUM(vat_amount),0) v
        FROM vendor_bills WHERE status!='cancelled' AND bdate>=? AND bdate<=? GROUP BY mo`).all(from, to), 'v');
 
+  // excludes vat_settlement journals — a settlement clears prior VAT, it isn't new
+  // VAT activity for the month, so it would otherwise inflate the "فعلي" row and
+  // falsely show a gap against the accrual row.
   const glMovement = (code) => db.prepare(
     `SELECT CAST(substr(j.jdate,6,2) AS INTEGER) mo, COALESCE(SUM(l.credit),0) c, COALESCE(SUM(l.debit),0) d
        FROM journal_lines l JOIN journals j ON j.id=l.journal_id
-      WHERE l.account_code=? AND j.jdate>=? AND j.jdate<=? GROUP BY mo`).all(code, from, to);
+      WHERE l.account_code=? AND j.jtype!='vat_settlement' AND j.jdate>=? AND j.jdate<=? GROUP BY mo`).all(code, from, to);
   const glOut = zeros(), glIn = zeros();
   if (OUT === IN) {
     for (const r of glMovement(OUT)) { if (r.mo >= 1 && r.mo <= 12) { glOut[r.mo - 1] = r2(glOut[r.mo - 1] + r.c); glIn[r.mo - 1] = r2(glIn[r.mo - 1] + r.d); } }
@@ -874,14 +896,37 @@ function vatStatement(year) {
   const netOf = (out, inn) => out.map((v, i) => r2(v - inn[i]));
   const accrual_net = netOf(accOut, accIn), ledger_net = netOf(glOut, glIn);
   const gap = ledger_net.map((v, i) => r2(v - accrual_net[i]));
-  let running = 0;
-  const cumulative_balance = ledger_net.map((v) => r2(running += v));
+
+  // Running balance of the provision account — the TRUE balance (includes
+  // settlements, unlike the "فعلي" gap-detection rows above), seeded with the
+  // account's opening balance before this year so it ties to "رصيد حساب 20000".
+  const balBefore = (code) => {
+    const b = db.prepare(
+      `SELECT COALESCE(SUM(l.credit),0) c, COALESCE(SUM(l.debit),0) d
+         FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+        WHERE l.account_code=? AND j.jdate<?`).get(code, from);
+    return r2(b.c - b.d);
+  };
+  const openingNet = OUT === IN ? balBefore(OUT) : r2(balBefore(OUT) - balBefore(IN));
+  const allMovement = (code) => db.prepare(
+    `SELECT CAST(substr(j.jdate,6,2) AS INTEGER) mo, COALESCE(SUM(l.credit),0) c, COALESCE(SUM(l.debit),0) d
+       FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+      WHERE l.account_code=? AND j.jdate>=? AND j.jdate<=? GROUP BY mo`).all(code, from, to);
+  const trueOut = zeros(), trueIn = zeros();
+  if (OUT === IN) {
+    for (const r of allMovement(OUT)) { if (r.mo >= 1 && r.mo <= 12) { trueOut[r.mo - 1] = r2(trueOut[r.mo - 1] + r.c); trueIn[r.mo - 1] = r2(trueIn[r.mo - 1] + r.d); } }
+  } else {
+    for (const r of allMovement(OUT)) { if (r.mo >= 1 && r.mo <= 12) trueOut[r.mo - 1] = r2(trueOut[r.mo - 1] + (r.c - r.d)); }
+    for (const r of allMovement(IN)) { if (r.mo >= 1 && r.mo <= 12) trueIn[r.mo - 1] = r2(trueIn[r.mo - 1] + (r.d - r.c)); }
+  }
+  let running = openingNet;
+  const cumulative_balance = netOf(trueOut, trueIn).map((v) => r2(running += v));
 
   const settlements = db.prepare(
     `SELECT jdate, reference, memo_ar FROM journals WHERE jtype='vat_settlement' AND jdate>=? AND jdate<=? ORDER BY jdate`).all(from, to);
 
   return {
-    year, provision_account: OUT === IN ? OUT : null, output_account: OUT, input_account: IN,
+    year, provision_account: OUT === IN ? OUT : null, output_account: OUT, input_account: IN, opening_balance: openingNet,
     accrual_output: { months: accOut, total: sum(accOut) },
     accrual_input: { months: accIn, total: sum(accIn) },
     accrual_net: { months: accrual_net, total: sum(accrual_net) },
@@ -895,28 +940,47 @@ function vatStatement(year) {
 }
 
 // ---- Unpaid INPUT VAT per vendor (VAT we still owe on vendor bills) --------
+// Same as vatUncollectedByCustomer: "unpaid as of `to`" uses the payment's own
+// date, not the bill's live paid_amount, so a payment made after `to` doesn't
+// count yet.
 function vatInputUnpaidByVendor(from, to) {
   const rows = db.prepare(
     `SELECT COALESCE(v.name,'—') vendor,
             COALESCE(SUM(b.vat_amount),0) vat_due,
-            COALESCE(SUM(MIN(b.vat_amount, MAX(0, b.total - b.paid_amount))),0) vat_outstanding
+            COALESCE(SUM(MIN(b.vat_amount, MAX(0, b.total - COALESCE(pa.paid_as_of,0)))),0) vat_outstanding
        FROM vendor_bills b LEFT JOIN vendors v ON v.id=b.vendor_id
+       LEFT JOIN (
+         SELECT al.bill_id, SUM(al.amount) paid_as_of
+           FROM vendor_payment_allocations al JOIN vendor_payments p ON p.id=al.payment_id
+          ${to ? 'WHERE p.pdate<=?' : ''}
+          GROUP BY al.bill_id
+       ) pa ON pa.bill_id = b.id
       WHERE b.status!='cancelled' ${from ? 'AND b.bdate>=?' : ''} ${to ? 'AND b.bdate<=?' : ''}
-      GROUP BY b.vendor_id`).all(...[...(from ? [from] : []), ...(to ? [to] : [])]);
+      GROUP BY b.vendor_id`).all(...[...(to ? [to] : []), ...(from ? [from] : []), ...(to ? [to] : [])]);
   const outr = rows.map((r) => ({ vendor: r.vendor, vat_due: r2(r.vat_due), vat_paid: r2(r.vat_due - r.vat_outstanding), vat_outstanding: r2(r.vat_outstanding) }))
     .filter((x) => x.vat_outstanding > 0.005).sort((a, b) => b.vat_outstanding - a.vat_outstanding);
   return { from, to, rows: outr, grand_total: r2(outr.reduce((s, x) => s + x.vat_outstanding, 0)) };
 }
 
 // ---- Uncollected VAT per customer (the VAT portion still inside 11100) -----
+// "Outstanding as of `to`" means paid-as-of-that-date, not the invoice's current
+// (today's) paid_amount — a payment made AFTER `to` must not count yet, so this
+// joins payment_allocations by the payment's own date instead of using the
+// invoice's live running total.
 function vatUncollectedByCustomer(from, to) {
   const rows = db.prepare(
     `SELECT t.name tenant, MAX(f.code) flat,
             COALESCE(SUM(i.vat_amount),0) vat_due,
-            COALESCE(SUM(MIN(i.vat_amount, MAX(0, i.total - i.paid_amount))),0) vat_outstanding
+            COALESCE(SUM(MIN(i.vat_amount, MAX(0, i.total - COALESCE(pa.paid_as_of,0)))),0) vat_outstanding
        FROM invoices i JOIN tenants t ON t.id=i.tenant_id LEFT JOIN flats f ON f.id=i.flat_id
+       LEFT JOIN (
+         SELECT al.invoice_id, SUM(al.amount) paid_as_of
+           FROM payment_allocations al JOIN payments p ON p.id=al.payment_id
+          ${to ? 'WHERE p.pdate<=?' : ''}
+          GROUP BY al.invoice_id
+       ) pa ON pa.invoice_id = i.id
       WHERE i.status!='cancelled' ${from ? 'AND i.due_date>=?' : ''} ${to ? 'AND i.due_date<=?' : ''}
-      GROUP BY i.tenant_id`).all(...[...(from ? [from] : []), ...(to ? [to] : [])]);
+      GROUP BY i.tenant_id`).all(...[...(to ? [to] : []), ...(from ? [from] : []), ...(to ? [to] : [])]);
   const out = rows.map((r) => ({ tenant: r.tenant, flat: r.flat, vat_due: r2(r.vat_due), vat_paid: r2(r.vat_due - r.vat_outstanding), vat_outstanding: r2(r.vat_outstanding) }))
     .filter((x) => x.vat_outstanding > 0.005).sort((a, b) => b.vat_outstanding - a.vat_outstanding);
   return { from, to, rows: out, grand_total: r2(out.reduce((s, x) => s + x.vat_outstanding, 0)) };

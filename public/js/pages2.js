@@ -846,6 +846,7 @@ Object.assign(Pages, (() => {
     const rowD = (lbl, obj, acc, cls) => `<tr><td>${lbl}</td>${obj.months.map((v, i) => `<td class="num ${cls || ''}">${v ? drillA(money(v), `data-acc="${acc}" data-mo="${i}"`) : money(v)}</td>`).join('')}<td class="num ${cls || ''}"><b>${obj.total ? drillA(money(obj.total), `data-acc="${acc}"`) : money(obj.total)}</b></td></tr>`;
     const gapRow = `<tr class="tot"><td><b>${t('vat_gap')}</b></td>${r.gap.months.map((v) => `<td class="num ${Math.abs(v) > 0.005 ? 'neg' : ''}">${money(v)}</td>`).join('')}<td class="num"><b>${money(r.gap.total)}</b></td></tr>`;
     const cumRow = `<tr class="tot"><td><b>${t('vat_cumulative')}</b></td>${r.cumulative_balance.map((v) => `<td class="num">${money(v)}</td>`).join('')}<td class="num"></td></tr>`;
+    const openingNote = `<p class="muted" style="font-size:11px">الرصيد التراكمي بيبدأ من رصيد حساب الضريبة الافتتاحي قبل ${year} (<b>${money(r.opening_balance)}</b>) — يعني بيمثّل الرصيد الحقيقي للحساب أول بأول، مش بس صافي حركة السنة.</p>`;
     const settleRows = (r.settlements || []).length
       ? r.settlements.map((s) => `<tr><td>${dateStr(s.jdate)}</td><td>${esc(s.reference)}</td><td>${esc(s.memo_ar || '')}</td></tr>`).join('')
       : `<tr><td colspan="3" class="muted">${t('no_data')}</td></tr>`;
@@ -863,6 +864,7 @@ Object.assign(Pages, (() => {
         ${gapRow}
         ${cumRow}
       </tbody></table></div>
+      ${openingNote}
       <p class="muted" style="font-size:11px;margin-top:6px">اضغط على أي رقم في "فعلي (دفتر الأستاذ)" تشوف القيود اللي كوّنته.</p>
       <p class="muted" style="font-size:11px;margin-top:8px">لو «${t('vat_gap')}» مش صفر في شهر معيّن، يبقى فيه مبلغ ضريبة اترحّل بقيد يدوي (مش من شاشة الفواتير أو فواتير الموردين) في الشهر ده.</p>
       <div class="card" style="margin-top:14px"><div class="hd"><h3>${t('vat_settlements')}</h3></div>

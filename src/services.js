@@ -532,7 +532,7 @@ function settleVAT(input, created_by) {
   const bal = (code) => db.prepare(
     `SELECT COALESCE(SUM(l.debit),0) d, COALESCE(SUM(l.credit),0) c
        FROM journal_lines l JOIN journals j ON j.id=l.journal_id
-      WHERE l.account_code=? ${from ? 'AND j.jdate>=?' : ''} ${to ? 'AND j.jdate<=?' : ''}`)
+      WHERE l.account_code=? AND j.jtype!='vat_settlement' ${from ? 'AND j.jdate>=?' : ''} ${to ? 'AND j.jdate<=?' : ''}`)
     .get(...[code, ...(from ? [from] : []), ...(to ? [to] : [])]);
   // Net for the period comes from the LEDGER movement on the output/input VAT
   // account(s) — not just the invoice/vendor-bill documents — so a VAT amount
