@@ -632,14 +632,15 @@ Object.assign(Pages, (() => {
       ${bx('1(ب)', 'التوريدات الخاضعة بنسبة الصفر', r.box1b.base, r.box1b.vat)}
       ${bx('1(ج)', 'التوريدات المعفاة', r.box1c.base, null)}
       ${bx('2', 'التوريدات الخاضعة للاحتساب العكسي', r.box2.base, r.box2.vat)}
-      <tr class="tot"><td>5</td><td><b>إجمالي ضريبة المخرجات المستحقة</b></td><td class="num"></td><td class="num"><b>${m(r.box5_output)}</b></td></tr>
+      <tr class="tot"><td>5</td><td><b>إجمالي ضريبة المخرجات المستحقة</b></td><td class="num"></td><td class="num"><b>${r.box5_output ? drillA(m(r.box5_output), `data-acc="${r.output_account}"`) : m(r.box5_output)}</b></td></tr>
       </tbody></table>
       <div class="section-title" style="margin-top:14px">القسم ب: المشتريات والمصروفات (ضريبة المدخلات)</div>
       <table><thead><tr><th>الخانة</th><th>البيان</th><th class="num">القيمة</th><th class="num">ض.ق.م</th></tr></thead><tbody>
       ${bx('6(أ)', 'مدخلات قابلة للخصم على المشتريات', r.box6a.base, r.box6a.vat)}
       ${bx('6(ج)', 'مدخلات على شراء أصول ثابتة', r.box6c.base, r.box6c.vat)}
-      <tr class="tot"><td>6</td><td><b>إجمالي ضريبة المدخلات القابلة للخصم</b></td><td class="num"></td><td class="num"><b>${m(r.box6_input)}</b></td></tr>
+      <tr class="tot"><td>6</td><td><b>إجمالي ضريبة المدخلات القابلة للخصم</b></td><td class="num"></td><td class="num"><b>${r.box6_input ? drillA(m(r.box6_input), `data-acc="${r.input_account}"`) : m(r.box6_input)}</b></td></tr>
       </tbody></table>
+      <p class="muted" style="font-size:11px;margin-top:4px">اضغط على إجمالي الخانة 5 أو 6 تشوف القيود الفعلية اللي كوّنتها.</p>
       ${Math.abs(r.box6_reconciliation_gap || 0) > 0.005 ? `<p class="muted" style="font-size:11px;color:#b45309">⚠ فيه فرق ${m(Math.abs(r.box6_reconciliation_gap))} بين إجمالي ضريبة المدخلات في دفتر الأستاذ وإجمالي فواتير الموردين المُدخلة — يبقى فيه مبلغ ضريبة مدخلات اترحّل بقيد يدوي مش من خلال شاشة فواتير الموردين. راجع «كشف الضريبة» لمعرفة الشهر.</p>` : ''}
       <div class="section-title" style="margin-top:14px">القسم ج: صافي الضريبة</div>
       <table><tbody>
@@ -649,6 +650,10 @@ Object.assign(Pages, (() => {
       </tbody></table>
       <p class="muted" style="font-size:11px;margin-top:8px">الأرقام على أساس الاستحقاق (تاريخ الفاتورة). المخرجات من فواتير الإيجار، والمدخلات من فواتير الموردين. الفترة الربعية محددة تلقائيًا وتقدر تغيّرها.</p>`;
     c.querySelector('#rbody').innerHTML = `<div class="bd">${html}</div>`;
+    c.querySelector('#rbody').onclick = (e) => {
+      const a = e.target.closest('.drill'); if (!a) return; e.preventDefault();
+      accountDrill({ title: 'ض.ق.م ' + a.dataset.acc, account: a.dataset.acc, from, to });
+    };
     c.querySelector('#rf').onchange = (e) => { c._from = e.target.value; vatReturn(c); };
     c.querySelector('#rt').onchange = (e) => { c._to = e.target.value; vatReturn(c); };
     c.querySelector('#rxls').onclick = () => UI.exportTableToExcel('VAT-Return-' + r.from + '_' + r.to, html);
@@ -838,6 +843,7 @@ Object.assign(Pages, (() => {
     const r = await API.get('/reports/vat-statement?year=' + year);
     const head = `<tr><th></th>${MONTHS_AR.map((m) => `<th class="num">${m}</th>`).join('')}<th class="num">${t('total')}</th></tr>`;
     const row = (lbl, obj, cls) => `<tr><td>${lbl}</td>${obj.months.map((v) => `<td class="num ${cls || ''}">${money(v)}</td>`).join('')}<td class="num ${cls || ''}"><b>${money(obj.total)}</b></td></tr>`;
+    const rowD = (lbl, obj, acc, cls) => `<tr><td>${lbl}</td>${obj.months.map((v, i) => `<td class="num ${cls || ''}">${v ? drillA(money(v), `data-acc="${acc}" data-mo="${i}"`) : money(v)}</td>`).join('')}<td class="num ${cls || ''}"><b>${obj.total ? drillA(money(obj.total), `data-acc="${acc}"`) : money(obj.total)}</b></td></tr>`;
     const gapRow = `<tr class="tot"><td><b>${t('vat_gap')}</b></td>${r.gap.months.map((v) => `<td class="num ${Math.abs(v) > 0.005 ? 'neg' : ''}">${money(v)}</td>`).join('')}<td class="num"><b>${money(r.gap.total)}</b></td></tr>`;
     const cumRow = `<tr class="tot"><td><b>${t('vat_cumulative')}</b></td>${r.cumulative_balance.map((v) => `<td class="num">${money(v)}</td>`).join('')}<td class="num"></td></tr>`;
     const settleRows = (r.settlements || []).length
@@ -851,15 +857,23 @@ Object.assign(Pages, (() => {
         ${row(t('vat_accrual_input'), r.accrual_input)}
         ${row(t('vat_accrual_net'), r.accrual_net)}
         <tr class="sec"><td colspan="${MONTHS_AR.length + 2}"><b>فعلي (دفتر الأستاذ — يشمل أي قيد يدوي)</b></td></tr>
-        ${row(t('vat_ledger_output'), r.ledger_output)}
-        ${row(t('vat_ledger_input'), r.ledger_input)}
+        ${rowD(t('vat_ledger_output'), r.ledger_output, r.output_account)}
+        ${rowD(t('vat_ledger_input'), r.ledger_input, r.input_account)}
         ${row(t('vat_ledger_net'), r.ledger_net)}
         ${gapRow}
         ${cumRow}
       </tbody></table></div>
+      <p class="muted" style="font-size:11px;margin-top:6px">اضغط على أي رقم في "فعلي (دفتر الأستاذ)" تشوف القيود اللي كوّنته.</p>
       <p class="muted" style="font-size:11px;margin-top:8px">لو «${t('vat_gap')}» مش صفر في شهر معيّن، يبقى فيه مبلغ ضريبة اترحّل بقيد يدوي (مش من شاشة الفواتير أو فواتير الموردين) في الشهر ده.</p>
       <div class="card" style="margin-top:14px"><div class="hd"><h3>${t('vat_settlements')}</h3></div>
         <div class="table-wrap"><table><thead><tr><th>${t('date')}</th><th>${t('reference')}</th><th>${t('description')}</th></tr></thead><tbody>${settleRows}</tbody></table></div></div>`;
+    c.querySelector('#rbody').onclick = (e) => {
+      const a = e.target.closest('.drill'); if (!a) return; e.preventDefault();
+      const moIdx = a.dataset.mo != null ? Number(a.dataset.mo) : null;
+      const from = moIdx != null ? `${year}-${String(moIdx + 1).padStart(2, '0')}-01` : `${year}-01-01`;
+      const to = moIdx != null ? `${year}-${String(moIdx + 1).padStart(2, '0')}-31` : `${year}-12-31`;
+      accountDrill({ title: `${a.dataset.acc}${moIdx != null ? ' — ' + MONTHS_AR[moIdx] : ''} ${year}`, account: a.dataset.acc, from, to });
+    };
     c.querySelector('#yr').onchange = (e) => { c._year = e.target.value; vatStatement(c); };
     bindPrint(c, t('m_vat_statement'));
   }

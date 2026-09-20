@@ -833,7 +833,7 @@ function vatReturn(from, to) {
     box2: { base: 0, vat: 0 }, box3: { base: 0 },
     box5_output,
     box6a: { base: r2(b6a.base), vat: r2(b6a.vat) }, box6c: { base: r2(b6c.base), vat: r2(b6c.vat) },
-    box6_input, box7_net, box6_reconciliation_gap,
+    box6_input, box7_net, box6_reconciliation_gap, output_account: OUT, input_account: IN,
   };
 }
 
@@ -881,7 +881,7 @@ function vatStatement(year) {
     `SELECT jdate, reference, memo_ar FROM journals WHERE jtype='vat_settlement' AND jdate>=? AND jdate<=? ORDER BY jdate`).all(from, to);
 
   return {
-    year, provision_account: OUT === IN ? OUT : null,
+    year, provision_account: OUT === IN ? OUT : null, output_account: OUT, input_account: IN,
     accrual_output: { months: accOut, total: sum(accOut) },
     accrual_input: { months: accIn, total: sum(accIn) },
     accrual_net: { months: accrual_net, total: sum(accrual_net) },
