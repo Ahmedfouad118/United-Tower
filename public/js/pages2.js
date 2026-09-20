@@ -281,7 +281,10 @@ Object.assign(Pages, (() => {
         <tr class="sec"><td colspan="${MONTHS_AR.length + 3}"><b>${t('expense')}</b></td></tr>
         ${r.expense.map(dataRow).join('') || `<tr><td colspan="${MONTHS_AR.length + 3}" class="muted">${t('no_data')}</td></tr>`}
         ${totRow(t('total_expense'), r.total_expense, 'neg')}
-        ${totRow(t('net'), r.net, '')}
+        ${totRow(t('ebitda'), r.ebitda, '')}
+        ${totRow(t('depreciation'), r.depreciation, 'neg')}
+        ${totRow(t('income_tax'), r.income_tax, 'neg')}
+        ${totRow(t('net_after_dep_tax'), r.net, '')}
       </tbody></table></div>`;
     // click a month cell or account total -> movements for that account
     c.querySelector('#rbody').onclick = (e) => {
@@ -637,6 +640,7 @@ Object.assign(Pages, (() => {
       ${bx('6(ج)', 'مدخلات على شراء أصول ثابتة', r.box6c.base, r.box6c.vat)}
       <tr class="tot"><td>6</td><td><b>إجمالي ضريبة المدخلات القابلة للخصم</b></td><td class="num"></td><td class="num"><b>${m(r.box6_input)}</b></td></tr>
       </tbody></table>
+      ${Math.abs(r.box6_reconciliation_gap || 0) > 0.005 ? `<p class="muted" style="font-size:11px;color:#b45309">⚠ فيه فرق ${m(Math.abs(r.box6_reconciliation_gap))} بين إجمالي ضريبة المدخلات في دفتر الأستاذ وإجمالي فواتير الموردين المُدخلة — يبقى فيه مبلغ ضريبة مدخلات اترحّل بقيد يدوي مش من خلال شاشة فواتير الموردين. راجع «كشف الضريبة» لمعرفة الشهر.</p>` : ''}
       <div class="section-title" style="margin-top:14px">القسم ج: صافي الضريبة</div>
       <table><tbody>
       <tr><td>ضريبة المخرجات (خانة 5)</td><td class="num">${m(r.box5_output)}</td></tr>
@@ -711,6 +715,53 @@ Object.assign(Pages, (() => {
   }
   function r2diff(cf) { return Math.round((cf.cash_end_computed - cf.cash_end_actual) * 1000) / 1000; }
 
+  // ---- "فلوسي فين؟" / "الأرباح المحتجزة فين؟" — plain-language cash position --
+  async function moneyPosition(c) {
+    const upto = c._upto || today();
+    reportShell(c, 'm_money_position', `<div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="mpd" value="${upto}"></div>`, null);
+    const r = await API.get('/reports/money-position?upto=' + upto);
+    const m = (v) => money(v);
+    const accs = (rows) => rows.map((x) => x.code).join(',');
+    const otherLiabRows = () => r.other_liabilities.length ? `<tr><td>ناقص: التزامات أخرى</td><td class="num neg">${drillA(m(r.other_liab_total), 'data-accs="' + accs(r.other_liabilities) + '"')}</td></tr>` : '';
+    const otherAssetRows = () => r.other_assets_total ? `<tr><td>أصول أخرى</td><td class="num">${drillA(m(r.other_assets_total), 'data-accs="' + accs(r.other_assets) + '"')}</td></tr>` : '';
+    const html = `
+      <div class="section-title">💰 فلوسي فين؟ (كما في ${dateStr(upto)})</div>
+      <table><tbody>
+        <tr><td>نقدًا وبالبنوك الآن</td><td class="num pos"><b>${drillA(m(r.cash), 'data-cash="1"')}</b></td></tr>
+        <tr><td>زائد: مستحق ليا من العملاء (لسه ما حصلتوش)</td><td class="num">${r.receivables.length ? drillA(m(r.receivables_total), 'data-accs="' + accs(r.receivables) + '"') : m(0)}</td></tr>
+        <tr><td>ناقص: مستحق عليا للموردين</td><td class="num neg">${r.payables.length ? drillA(m(r.payables_total), 'data-accs="' + accs(r.payables) + '"') : m(0)}</td></tr>
+        <tr><td>ناقص: تأمينات ودفعات مقدمة من العملاء (مش فلوسي، هترجع/تتخصم)</td><td class="num neg">${r.held.length ? drillA(m(r.held_total), 'data-accs="' + accs(r.held) + '"') : m(0)}</td></tr>
+        ${otherLiabRows()}
+        <tr class="tot"><td><b>صافي اللي أقدر أصرفه فعليًا دلوقتي</b></td><td class="num"><b>${m(r.net_liquid_position)}</b></td></tr>
+      </tbody></table>
+      <p class="muted" style="font-size:11px;margin-top:6px">اضغط على أي رقم تشوف تفاصيله. الفرق بين ده وإجمالي حقوق الملكية إن جزء من رأس مالك مش كاش — استثمرته في المبنى/الأرض (شوف تحت).</p>
+
+      <div class="section-title" style="margin-top:20px">📈 الأرباح المحتجزة فين؟</div>
+      <table><tbody>
+        <tr><td>رصيد الأرباح المحتجزة (تراكمي من أول ما اشتغل المشروع)</td><td class="num"><b>${m(r.retained_earnings)}</b></td></tr>
+        <tr><td class="muted">منها: توزيعات أرباح اتصرفت فعلاً حتى الآن</td><td class="num muted">${m(r.dividends_paid_life)}</td></tr>
+        <tr><td>+ رأس المال المُدرج / أرصدة افتتاحية</td><td class="num">${m(r.capital_total)}</td></tr>
+        <tr class="tot"><td><b>= إجمالي حقوق الملكية</b></td><td class="num"><b>${m(r.total_equity)}</b></td></tr>
+      </tbody></table>
+      <div class="section-title" style="margin-top:14px">وده فين محفوظ فعليًا؟</div>
+      <table><tbody>
+        <tr><td>نقدًا وبالبنوك</td><td class="num">${m(r.cash)}</td></tr>
+        <tr><td>عند العملاء (لسه ما حصلتوش)</td><td class="num">${m(r.tied_up_in_receivables)}</td></tr>
+        <tr><td>مستثمر في المباني/الأراضي (صافي بعد الإهلاك)</td><td class="num">${m(r.tied_up_in_fixed_assets)}</td></tr>
+        ${otherAssetRows()}
+        <tr><td>ناقص: مطلوب لسه للموردين وتأمينات والتزامات تانية</td><td class="num neg">${m(-r2(r.payables_total + r.held_total + r.other_liab_total))}</td></tr>
+      </tbody></table>`;
+    c.querySelector('#rbody').innerHTML = `<div class="bd">${html}</div>`;
+    c.querySelector('#rbody').onclick = (e) => {
+      const a = e.target.closest('.drill'); if (!a) return; e.preventDefault();
+      if (a.dataset.cash) return accountDrill({ title: 'النقد والبنوك', accounts: ['10000', '10100', '10200', '10300', '10400', '10500'], to: upto });
+      if (a.dataset.accs) return accountDrill({ title: 'التفاصيل', accounts: a.dataset.accs.split(','), to: upto });
+    };
+    c.querySelector('#mpd').onchange = (e) => { c._upto = e.target.value; moneyPosition(c); };
+    bindPrint(c, t('m_money_position'));
+  }
+  function r2(v) { return Math.round(v * 1000) / 1000; }
+
   async function vat(c) {
     const from = c._from || '', to = c._to || today();
     const ac = await ref('accounts');
@@ -778,20 +829,55 @@ Object.assign(Pages, (() => {
     c.querySelector('#t2').onchange = (e) => { c._to = e.target.value; vat(c); };
     bindPrint(c, t('m_vat'));
   }
+
+  // ---- VAT Statement (كشف الضريبة) — month-by-month, accrual vs ledger -------
+  async function vatStatement(c) {
+    const year = c._year || String(new Date().getFullYear());
+    reportShell(c, 'm_vat_statement', `<div class="field" style="margin:0"><label>${t('year')}</label><input type="number" id="yr" value="${year}" style="width:100px"></div>`, 'vat-statement');
+    c._qs = '?year=' + year;
+    const r = await API.get('/reports/vat-statement?year=' + year);
+    const head = `<tr><th></th>${MONTHS_AR.map((m) => `<th class="num">${m}</th>`).join('')}<th class="num">${t('total')}</th></tr>`;
+    const row = (lbl, obj, cls) => `<tr><td>${lbl}</td>${obj.months.map((v) => `<td class="num ${cls || ''}">${money(v)}</td>`).join('')}<td class="num ${cls || ''}"><b>${money(obj.total)}</b></td></tr>`;
+    const gapRow = `<tr class="tot"><td><b>${t('vat_gap')}</b></td>${r.gap.months.map((v) => `<td class="num ${Math.abs(v) > 0.005 ? 'neg' : ''}">${money(v)}</td>`).join('')}<td class="num"><b>${money(r.gap.total)}</b></td></tr>`;
+    const cumRow = `<tr class="tot"><td><b>${t('vat_cumulative')}</b></td>${r.cumulative_balance.map((v) => `<td class="num">${money(v)}</td>`).join('')}<td class="num"></td></tr>`;
+    const settleRows = (r.settlements || []).length
+      ? r.settlements.map((s) => `<tr><td>${dateStr(s.jdate)}</td><td>${esc(s.reference)}</td><td>${esc(s.memo_ar || '')}</td></tr>`).join('')
+      : `<tr><td colspan="3" class="muted">${t('no_data')}</td></tr>`;
+    c.querySelector('#rbody').innerHTML = `<div class="table-wrap"><table>
+      <thead>${head}</thead>
+      <tbody>
+        <tr class="sec"><td colspan="${MONTHS_AR.length + 2}"><b>محاسبي (حسب تواريخ الفواتير)</b></td></tr>
+        ${row(t('vat_accrual_output'), r.accrual_output)}
+        ${row(t('vat_accrual_input'), r.accrual_input)}
+        ${row(t('vat_accrual_net'), r.accrual_net)}
+        <tr class="sec"><td colspan="${MONTHS_AR.length + 2}"><b>فعلي (دفتر الأستاذ — يشمل أي قيد يدوي)</b></td></tr>
+        ${row(t('vat_ledger_output'), r.ledger_output)}
+        ${row(t('vat_ledger_input'), r.ledger_input)}
+        ${row(t('vat_ledger_net'), r.ledger_net)}
+        ${gapRow}
+        ${cumRow}
+      </tbody></table></div>
+      <p class="muted" style="font-size:11px;margin-top:8px">لو «${t('vat_gap')}» مش صفر في شهر معيّن، يبقى فيه مبلغ ضريبة اترحّل بقيد يدوي (مش من شاشة الفواتير أو فواتير الموردين) في الشهر ده.</p>
+      <div class="card" style="margin-top:14px"><div class="hd"><h3>${t('vat_settlements')}</h3></div>
+        <div class="table-wrap"><table><thead><tr><th>${t('date')}</th><th>${t('reference')}</th><th>${t('description')}</th></tr></thead><tbody>${settleRows}</tbody></table></div></div>`;
+    c.querySelector('#yr').onchange = (e) => { c._year = e.target.value; vatStatement(c); };
+    bindPrint(c, t('m_vat_statement'));
+  }
+
   async function assets(c) {
     const bl = await ref('buildings');
-    await Pages.masterScreen(c, { title: t('m_assets'), endpoint: 'assets', type: 'assets', template: true, import: false, wide: true,
-      columns: [{ key: 'name', label: t('name') }, { key: 'category', label: t('category') },
+    await Pages.masterScreen(c, { title: t('m_assets'), endpoint: 'assets', type: 'assets', template: true, import: true, wide: true,
+      columns: [{ key: 'name', label: t('name') }, { key: 'category', label: t('category'), render: (r) => ({ building: 'مبنى', land: 'أرض (لا تُهلك)', furniture: 'أثاث', equipment: 'معدات', vehicle: 'سيارة' }[r.category] || r.category) },
         { key: 'cost', label: 'التكلفة', num: true, render: (r) => money(r.cost) },
         { key: 'accum_depreciation', label: 'مجمع الإهلاك', num: true, render: (r) => money(r.accum_depreciation) },
         { key: 'nbv', label: 'القيمة الدفترية', num: true, render: (r) => money(r.cost - r.accum_depreciation) },
         { key: 'status', label: t('status'), render: (r) => statusBadge(r.status) }],
       fields: [{ key: 'name', label: t('name'), required: true }, { key: 'name_ar', label: 'عربي' },
         { key: 'building_id', label: t('building'), type: 'select', options: [{ value: '', label: '—' }].concat(bl.map((b) => ({ value: b.id, label: b.name }))) },
-        { key: 'category', label: t('category'), type: 'select', options: [{ value: 'building', label: 'مبنى' }, { value: 'furniture', label: 'أثاث' }, { value: 'equipment', label: 'معدات' }, { value: 'vehicle', label: 'سيارة' }] },
+        { key: 'category', label: t('category'), type: 'select', options: [{ value: 'building', label: 'مبنى' }, { value: 'land', label: 'أرض (لا تُهلك)' }, { value: 'furniture', label: 'أثاث' }, { value: 'equipment', label: 'معدات' }, { value: 'vehicle', label: 'سيارة' }] },
         { key: 'cost', label: 'التكلفة', type: 'number', step: '0.001', required: true },
         { key: 'salvage_value', label: 'قيمة الخردة', type: 'number', step: '0.001', value: 0 },
-        { key: 'life_years', label: 'العمر (سنوات)', type: 'number', value: 5 },
+        { key: 'life_years', label: 'العمر (سنوات) — 0 أو فارغ لأصل لا يُهلك مثل الأرض', type: 'number', value: 5 },
         { key: 'purchase_date', label: 'تاريخ الشراء', type: 'date' }] });
     const tb = c.querySelector('.toolbar');
     if (tb && canWrite()) {
@@ -1080,7 +1166,7 @@ Object.assign(Pages, (() => {
     ['المالية', [['coa', 'شجرة الحسابات'], ['journals', 'القيود اليومية'], ['gjournals', 'القيود المجمعة'], ['legacy', 'قيود النظام القديم'], ['tb', 'ميزان المراجعة'], ['is', 'قائمة الدخل'], ['is_consolidated', 'قائمة الدخل المجمعة'], ['gl', 'دفتر الأستاذ'], ['bs', 'المركز المالي'], ['liquidity', 'تقرير السيولة'], ['cashflow', 'التدفق النقدي'], ['ppl', 'أرباح العقارات'], ['roi', 'العائد ROI'], ['comparison', 'مقارنة أداء البنايات']]],
     ['الخزينة والبنوك', [['banks', 'الحسابات البنكية'], ['cheques', 'الشيكات'], ['cheques_dash', 'متابعة الشيكات'], ['reconciliation', 'التسوية البنكية']]],
     ['الأصول', [['assets', 'الأصول الثابتة'], ['depreciation', 'جدول الإهلاك']]],
-    ['الضرائب', [['vat', 'تقرير ض.ق.م']]],
+    ['الضرائب', [['vat', 'تقرير ض.ق.م'], ['vat_statement', 'كشف الضريبة'], ['vatreturn', 'إقرار ض.ق.م (عُمان)']]],
     ['الموارد البشرية', [['employees', 'الموظفون والرواتب']]],
     ['الإعدادات', [['company', 'بيانات البناية'], ['categories', 'التصنيفات'], ['paymethods', 'طرق الدفع'], ['users', 'المستخدمون والصلاحيات']]],
   ];
@@ -1181,7 +1267,7 @@ Object.assign(Pages, (() => {
     [t('m_finance'), ['m_finance', 'm_coa', 'm_journals', 'm_gjournals', 'm_legacy', 'm_tb', 'm_is', 'm_is_consolidated', 'm_gl', 'm_bs', 'm_liquidity', 'm_cashflow', 'm_ppl', 'm_roi', 'm_comparison']],
     [t('m_treasury'), ['m_treasury', 'm_banks', 'm_cheques', 'm_cheques_dash', 'm_recon']],
     [t('m_assets_mod'), ['m_assets_mod', 'm_assets', 'm_depreciation']],
-    [t('m_tax'), ['m_tax', 'm_vat']],
+    [t('m_tax'), ['m_tax', 'm_vat', 'm_vat_statement', 'm_vatreturn']],
     [t('m_hr'), ['m_hr', 'm_employees']],
     [t('m_admin'), ['m_admin', 'm_company', 'm_categories', 'm_paymethods', 'm_config', 'm_users']],
   ];
@@ -1220,5 +1306,5 @@ Object.assign(Pages, (() => {
 
   return { customers, vendors, buildings, units, categories, paymethods, banks, employees, coa,
     vendorBills, vendorPayments, trialBalance, incomeStatement, incomeStatementConsolidated, generalLedger, balanceSheet, arAging, apAging,
-    statement, vendorStatement, advances, propertyPL, roi, cashflow, comparison, vat, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, vatReturn, activityLog, companyDocuments };
+    statement, vendorStatement, advances, propertyPL, roi, cashflow, comparison, vat, vatStatement, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, moneyPosition, vatReturn, activityLog, companyDocuments };
 })());

@@ -23,6 +23,8 @@ const ACCT_DEFAULTS = {
   cash:             '10000', // الصندوق
   bank:             '10400', // البنك
   opening_equity:   '39999', // حقوق ملكية افتتاحية (الطرف المقابل للأرصدة)
+  depreciation_expense: '64000', // مصروف الإهلاك (سطر منفصل في قائمة الدخل المجمعة)
+  income_tax_expense:   '66500', // ضريبة الدخل (سطر منفصل في قائمة الدخل المجمعة)
 };
 
 // human labels (Arabic) for the config screen
@@ -40,6 +42,8 @@ const ACCT_LABELS = {
   cash:             'الصندوق',
   bank:             'البنك الرئيسي',
   opening_equity:   'حقوق الملكية الافتتاحية',
+  depreciation_expense: 'مصروف الإهلاك (قائمة الدخل)',
+  income_tax_expense:   'ضريبة الدخل (قائمة الدخل)',
 };
 
 const KEY = (k) => 'acct.' + k;

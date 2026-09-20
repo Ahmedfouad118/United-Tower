@@ -59,6 +59,7 @@
     ] },
     { id: 'finrep', icon: '📑', label: 'm_finrep', items: [
       { path: 'finstmts', label: 'm_finstmts', page: 'financialStatements', mod: 'finance' },
+      { path: 'money_position', label: 'm_money_position', page: 'moneyPosition', mod: 'finance' },
     ] },
     { id: 'treasury', icon: '💵', label: 'm_treasury', items: [
       { path: 'banks', label: 'm_banks', page: 'banks', mod: 'treasury' },
@@ -72,6 +73,7 @@
     ] },
     { id: 'tax', icon: '🧾', label: 'm_tax', items: [
       { path: 'vat', label: 'm_vat', page: 'vat', mod: 'tax' },
+      { path: 'vat_statement', label: 'm_vat_statement', page: 'vatStatement', mod: 'tax' },
       { path: 'vatreturn', label: 'm_vatreturn', page: 'vatReturn', mod: 'tax' },
     ] },
     { id: 'hr', icon: '🧑‍💼', label: 'm_hr', items: [

@@ -681,6 +681,7 @@ router.get('/reports/grouped-journals', (req, res) => res.json(R.groupedJournals
 router.get('/reports/legacy-journals', (req, res) => res.json(R.legacyJournals(req.query.from, req.query.to, lang(req), req.query.side || 'all')));
 router.get('/reports/legacy-drill', (req, res) => res.json(R.legacyDrill(req.query.account, req.query.period, req.query.side || 'debit', lang(req))));
 router.get('/reports/liquidity', (req, res) => res.json(R.liquidityReport(req.query.upto, lang(req))));
+router.get('/reports/money-position', (req, res) => res.json(R.moneyPosition(req.query.upto, lang(req))));
 router.get('/reports/financial-ratios', (req, res) => res.json(R.financialRatios(req.query.from, req.query.to, effBuilding(req) && effBuilding(req) > 0 ? effBuilding(req) : null)));
 router.get('/reports/aging', (req, res) => res.json(R.receivablesAging(req.query.asOf, effBuilding(req))));
 router.get('/reports/contract-expiry', (req, res) => res.json(R.contractExpiry(Number(req.query.days) || 60, effBuilding(req))));
@@ -701,6 +702,7 @@ router.get('/reports/vat', (req, res) => res.json(R.vatReport(req.query.from, re
 router.get('/reports/vat-uncollected', (req, res) => res.json(R.vatUncollectedByCustomer(req.query.from, req.query.to)));
 router.get('/reports/vat-input-unpaid', (req, res) => res.json(R.vatInputUnpaidByVendor(req.query.from, req.query.to)));
 router.get('/reports/vat-return', (req, res) => res.json(R.vatReturn(req.query.from, req.query.to)));
+router.get('/reports/vat-statement', (req, res) => res.json(R.vatStatement(req.query.year)));
 router.post('/vat/settle', writers, (req, res) => {
   try { res.json(svc.settleVAT(req.body, req.user.id)); } catch (e) { res.status(400).json({ error: e.message }); }
 });

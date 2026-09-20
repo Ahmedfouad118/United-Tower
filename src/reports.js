@@ -71,15 +71,21 @@ function incomeStatementConsolidated(year, lang = 'en', building_id) {
     return Object.values(byAcc).filter((x) => Math.abs(x.total) > 0.005).sort((a, b) => a.code.localeCompare(b.code));
   };
   const income = build(grab('income', 1));
-  const expense = build(grab('expense', -1));
+  const expenseAll = build(grab('expense', -1));
+  const depCode = CFG.acct('depreciation_expense'), taxCode = CFG.acct('income_tax_expense');
+  const expense = expenseAll.filter((x) => x.code !== depCode && x.code !== taxCode);
+  const depreciation_rows = expenseAll.filter((x) => x.code === depCode);
+  const tax_rows = expenseAll.filter((x) => x.code === taxCode);
   const sumMonths = (rows) => {
     const m = Array(12).fill(0); let tot = 0;
     for (const r of rows) { r.months.forEach((v, i) => m[i] = r2(m[i] + v)); tot = r2(tot + r.total); }
     return { months: m, total: tot };
   };
   const ti = sumMonths(income), te = sumMonths(expense);
-  const net = { months: ti.months.map((v, i) => r2(v - te.months[i])), total: r2(ti.total - te.total) };
-  return { year, income, expense, total_income: ti, total_expense: te, net };
+  const depreciation = sumMonths(depreciation_rows), income_tax = sumMonths(tax_rows);
+  const ebitda = { months: ti.months.map((v, i) => r2(v - te.months[i])), total: r2(ti.total - te.total) };
+  const net = { months: ebitda.months.map((v, i) => r2(v - depreciation.months[i] - income_tax.months[i])), total: r2(ebitda.total - depreciation.total - income_tax.total) };
+  return { year, income, expense, total_income: ti, total_expense: te, ebitda, depreciation, income_tax, net };
 }
 
 // ---- General Ledger / account drill-down (movements on an account) --------
@@ -350,6 +356,59 @@ function liquidityReport(upto, lang = 'en') {
     total_current_assets: ca, total_current_liabilities: cl, cash: cashTotal,
     working_capital: r2(ca - cl),
     current_ratio: ratio(ca, cl), quick_ratio: ratio(quick, cl), cash_ratio: ratio(cashTotal, cl),
+  };
+}
+
+// ---- "Where's my money?" / "Where did the retained earnings go?" ----------
+// Plain-language reconciliation: cash in hand right now, what's still owed BY
+// customers, what's still owed TO vendors/deposits, and how much of the
+// company's accumulated profit is tied up in receivables/fixed-assets instead
+// of sitting in the bank. Built from the same balance-sheet/liquidity figures
+// as the other reports, just relabeled for a non-accountant to read directly.
+function moneyPosition(upto, lang = 'en') {
+  const bs = balanceSheet(upto, lang);
+  const liq = liquidityReport(upto, lang);
+  const recvCodes = new Set([CFG.acct('tenant_recv'), CFG.acct('ar')].filter(Boolean));
+  const heldCodes = new Set([CFG.acct('deposits_held'), CFG.acct('deferred_advance'), CFG.acct('customer_advance')].filter(Boolean));
+  const payCode = CFG.acct('vendor_payable');
+  const sumAmt = (rows) => r2(rows.reduce((s, x) => s + x.amt, 0));
+
+  const receivables = bs.assets.filter((a) => recvCodes.has(a.code));
+  const fixedAssets = bs.assets.filter((a) => FIXED_ASSET_CODES.includes(a.code));
+  const otherAssets = bs.assets.filter((a) => !CASH_CODES.includes(a.code) && !recvCodes.has(a.code) && !FIXED_ASSET_CODES.includes(a.code));
+  const held = bs.liabilities.filter((l) => heldCodes.has(l.code));
+  const payables = bs.liabilities.filter((l) => l.code === payCode);
+  const otherLiabilities = bs.liabilities.filter((l) => !heldCodes.has(l.code) && l.code !== payCode);
+
+  const cash = r2(liq.cash);
+  const receivables_total = sumAmt(receivables);
+  const held_total = sumAmt(held);
+  const payables_total = sumAmt(payables);
+  const other_liab_total = sumAmt(otherLiabilities);
+  const fixed_total = sumAmt(fixedAssets);
+  const other_assets_total = sumAmt(otherAssets);
+  // what's actually "mine to spend": cash + what customers owe me − what I owe
+  // vendors − deposits/advances I'm only holding on their behalf
+  const net_liquid_position = r2(cash + receivables_total - held_total - payables_total - other_liab_total);
+
+  // Retained earnings: specific equity accounts by code (real chart), falling
+  // back to "everything in equity that isn't opening/paid-in capital" if the
+  // chart differs.
+  const retRow = bs.equity.find((e) => e.code === '39005') || bs.equity.find((e) => /retain|محتجز|مدور/i.test(e.name));
+  const divRow = bs.equity.find((e) => e.code === '39007') || bs.equity.find((e) => /dividend|توزيع/i.test(e.name));
+  const capital_total = sumAmt(bs.equity.filter((e) => e.code !== (retRow && retRow.code) && e.code !== (divRow && divRow.code)));
+  const retained_earnings = r2((retRow ? retRow.amt : 0) + bs.net_income); // net_income not yet closed into the RE account
+  const dividends_paid_life = r2(divRow ? -divRow.amt : 0); // dividends are a debit/contra in equity, shown here as a positive "paid out" figure
+
+  return {
+    upto, cash, receivables, receivables_total, held, held_total, payables, payables_total,
+    other_liabilities: otherLiabilities, other_liab_total, other_assets: otherAssets, other_assets_total,
+    net_liquid_position, fixed_assets: fixedAssets, fixed_total,
+    total_equity: bs.total_equity, net_income_to_date: bs.net_income,
+    retained_earnings, dividends_paid_life, capital_total,
+    // reconciliation: retained earnings live partly in cash, partly in receivables,
+    // partly invested in fixed assets, net of what's owed to vendors/held for others.
+    tied_up_in_receivables: receivables_total, tied_up_in_fixed_assets: fixed_total,
   };
 }
 
@@ -716,10 +775,11 @@ function vatReport(from, to) {
      FROM vendor_bills WHERE status!='cancelled' ${from ? 'AND bdate>=?' : ''} ${to ? 'AND bdate<=?' : ''}`)
     .get(...[...(from ? [from] : []), ...(to ? [to] : [])]);
   const vat_input_due = r2(bill.due), vat_input_outstanding = r2(bill.outstanding), vat_input_paid = r2(vat_input_due - vat_input_outstanding);
-  // Net payable for the period comes from ACCRUAL (invoices out − bills in) so it
-  // is period-correct on the invoice/bill dates. The provision GL balance below is
-  // the all-time running total still owed.
-  const net_payable = r2(vat_due - vat_input_due);
+  // Net payable for the period comes from the LEDGER (output_vat/input_vat above),
+  // not just the accrual (invoices/vendor-bills) totals — this way a VAT amount
+  // posted by a manual journal entry (not through the invoice/vendor-bill screens)
+  // still counts, so the settlement always clears what is really booked.
+  const net_payable = r2(output_vat - input_vat);
   const provAll = (OUT === IN)
     ? db.prepare("SELECT COALESCE(SUM(credit-debit),0) b FROM journal_lines WHERE account_code=?").get(OUT).b
     : output_vat - input_vat;
@@ -749,9 +809,23 @@ function vatReturn(from, to) {
   let b6a = { base: 0, vat: 0 }, b6c = { base: 0, vat: 0 };
   for (const r of bill) { const t = r.acctype === 'asset' ? b6c : b6a; t.base = r2(t.base + r.base); t.vat = r2(t.vat + r.vat); }
   const box1a = { base: r2(inv.base), vat: r2(inv.vat) };
-  const box5_output = box1a.vat;
-  const box6_input = r2(b6a.vat + b6c.vat);
+  // Box 5/6 VAT amounts come from the LEDGER (output/input VAT account), not only
+  // from invoice/vendor-bill documents — so a VAT amount posted via a manual
+  // journal entry is still picked up and the filed net always matches the books.
+  // box6a/box6c above stay document-based (base + vat breakdown by purchase type)
+  // for reference; box6_reconciliation_gap flags when they don't add up to the
+  // ledger total (a sign that some input VAT was booked outside the bills screen).
+  const OUT = CFG.acct('output_vat'), IN = CFG.acct('input_vat');
+  const balVat = (code) => db.prepare(
+    `SELECT COALESCE(SUM(l.credit),0) c, COALESCE(SUM(l.debit),0) d
+       FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+      WHERE l.account_code=? ${from ? 'AND j.jdate>=?' : ''} ${to ? 'AND j.jdate<=?' : ''}`)
+    .get(...[code, ...(from ? [from] : []), ...(to ? [to] : [])]);
+  let box5_output, box6_input;
+  if (OUT === IN) { const b = balVat(OUT); box5_output = r2(b.c); box6_input = r2(b.d); }
+  else { const o = balVat(OUT), i = balVat(IN); box5_output = r2(o.c - o.d); box6_input = r2(i.d - i.c); }
   const box7_net = r2(box5_output - box6_input);
+  const box6_reconciliation_gap = r2(box6_input - (b6a.vat + b6c.vat));
   return {
     from, to, vatin: setg('vat_number') || 'OM1100201030',
     legal_name: setg('company_name') || 'United Tower', sector: 'Real Estate', currency: 'OMR',
@@ -759,7 +833,64 @@ function vatReturn(from, to) {
     box2: { base: 0, vat: 0 }, box3: { base: 0 },
     box5_output,
     box6a: { base: r2(b6a.base), vat: r2(b6a.vat) }, box6c: { base: r2(b6c.base), vat: r2(b6c.vat) },
-    box6_input, box7_net,
+    box6_input, box7_net, box6_reconciliation_gap,
+  };
+}
+
+// ---- VAT Statement (كشف الضريبة) — month-by-month, whole year --------------
+// Puts the ACCRUAL view (VAT on invoices/vendor-bills, by document date) next to
+// the LEDGER view (actual movement on the output/input VAT account, by journal
+// date — this also picks up any VAT posted via a manual journal entry) so any
+// month where the two disagree is easy to spot before posting that month's
+// settlement. Also lists the settlement entries already posted this year.
+function vatStatement(year) {
+  year = String(year || new Date().getFullYear());
+  const from = `${year}-01-01`, to = `${year}-12-31`;
+  const OUT = CFG.acct('output_vat'), IN = CFG.acct('input_vat');
+  const zeros = () => Array(12).fill(0);
+  const addByMonth = (arr, rows, valKey) => rows.forEach((r) => { if (r.mo >= 1 && r.mo <= 12) arr[r.mo - 1] = r2(arr[r.mo - 1] + r[valKey]); });
+
+  const accOut = zeros(), accIn = zeros();
+  addByMonth(accOut, db.prepare(
+    `SELECT CAST(substr(due_date,6,2) AS INTEGER) mo, COALESCE(SUM(vat_amount),0) v
+       FROM invoices WHERE status!='cancelled' AND due_date>=? AND due_date<=? GROUP BY mo`).all(from, to), 'v');
+  addByMonth(accIn, db.prepare(
+    `SELECT CAST(substr(bdate,6,2) AS INTEGER) mo, COALESCE(SUM(vat_amount),0) v
+       FROM vendor_bills WHERE status!='cancelled' AND bdate>=? AND bdate<=? GROUP BY mo`).all(from, to), 'v');
+
+  const glMovement = (code) => db.prepare(
+    `SELECT CAST(substr(j.jdate,6,2) AS INTEGER) mo, COALESCE(SUM(l.credit),0) c, COALESCE(SUM(l.debit),0) d
+       FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+      WHERE l.account_code=? AND j.jdate>=? AND j.jdate<=? GROUP BY mo`).all(code, from, to);
+  const glOut = zeros(), glIn = zeros();
+  if (OUT === IN) {
+    for (const r of glMovement(OUT)) { if (r.mo >= 1 && r.mo <= 12) { glOut[r.mo - 1] = r2(glOut[r.mo - 1] + r.c); glIn[r.mo - 1] = r2(glIn[r.mo - 1] + r.d); } }
+  } else {
+    for (const r of glMovement(OUT)) { if (r.mo >= 1 && r.mo <= 12) glOut[r.mo - 1] = r2(glOut[r.mo - 1] + (r.c - r.d)); }
+    for (const r of glMovement(IN)) { if (r.mo >= 1 && r.mo <= 12) glIn[r.mo - 1] = r2(glIn[r.mo - 1] + (r.d - r.c)); }
+  }
+
+  const sum = (arr) => r2(arr.reduce((s, x) => s + x, 0));
+  const netOf = (out, inn) => out.map((v, i) => r2(v - inn[i]));
+  const accrual_net = netOf(accOut, accIn), ledger_net = netOf(glOut, glIn);
+  const gap = ledger_net.map((v, i) => r2(v - accrual_net[i]));
+  let running = 0;
+  const cumulative_balance = ledger_net.map((v) => r2(running += v));
+
+  const settlements = db.prepare(
+    `SELECT jdate, reference, memo_ar FROM journals WHERE jtype='vat_settlement' AND jdate>=? AND jdate<=? ORDER BY jdate`).all(from, to);
+
+  return {
+    year, provision_account: OUT === IN ? OUT : null,
+    accrual_output: { months: accOut, total: sum(accOut) },
+    accrual_input: { months: accIn, total: sum(accIn) },
+    accrual_net: { months: accrual_net, total: sum(accrual_net) },
+    ledger_output: { months: glOut, total: sum(glOut) },
+    ledger_input: { months: glIn, total: sum(glIn) },
+    ledger_net: { months: ledger_net, total: sum(ledger_net) },
+    gap: { months: gap, total: sum(gap) },
+    cumulative_balance,
+    settlements,
   };
 }
 
@@ -915,8 +1046,8 @@ function buildingComparison(from, to) {
 
 module.exports = {
   trialBalance, incomeStatement, incomeStatementConsolidated, accountLedger, generalLedgerFull, groupedJournals, legacyJournals, legacyDrill,
-  liquidityReport, financialRatios, balanceSheet, financialStatements, receivablesAging, payablesAging,
-  flatStatement, vendorStatement, advancesReport, occupancy, propertyPL, roi, cashFlowForecast, vatReport, vatReturn, vatUncollectedByCustomer, vatInputUnpaidByVendor,
+  liquidityReport, moneyPosition, financialRatios, balanceSheet, financialStatements, receivablesAging, payablesAging,
+  flatStatement, vendorStatement, advancesReport, occupancy, propertyPL, roi, cashFlowForecast, vatReport, vatReturn, vatStatement, vatUncollectedByCustomer, vatInputUnpaidByVendor,
   bankReport, chequesReport, chequesDashboard, dashboard, contractExpiry, buildingComparison,
   depreciationReport, customersSummary,
 };

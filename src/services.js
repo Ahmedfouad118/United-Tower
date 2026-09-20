@@ -475,10 +475,14 @@ function runPayroll(period, created_by) {
 }
 
 // ---- Fixed-asset depreciation (straight line) ----------------------------
+// Accum-depreciation account defaults to the category's dedicated COA account
+// (land/non-depreciable categories are excluded — life_years<=0 = never depreciates).
+const CATEGORY_ACCUM_ACCOUNTS = { building: '17500', furniture: '17000', equipment: '17100', vehicle: '17200' };
 function runDepreciation(period, created_by) {
   const assets = db.prepare("SELECT * FROM assets WHERE status='active'").all();
   let posted = 0;
   for (const a of assets) {
+    if (a.category === 'land' || !a.life_years || a.life_years <= 0) continue; // non-depreciable (e.g. land)
     if (db.prepare('SELECT id FROM depreciation_runs WHERE asset_id=? AND period=?').get(a.id, period)) continue;
     const depreciable = r2(a.cost - a.salvage_value);
     const remaining = r2(depreciable - a.accum_depreciation);
@@ -489,8 +493,8 @@ function runDepreciation(period, created_by) {
       { jdate: firstOfMonth(period), jtype: 'expense', reference: `DEP-${a.id}-${period}`,
         memo: `Depreciation ${a.name} ${period}`, memo_ar: `إهلاك ${period}`, source_table: 'depreciation_runs', created_by },
       [
-        { account_code: a.expense_account || '71000', debit: monthly, building_id: a.building_id, memo: `Depreciation ${a.name}` },
-        { account_code: a.accum_account || '17500', credit: monthly, building_id: a.building_id },
+        { account_code: a.expense_account || CFG.acct('depreciation_expense'), debit: monthly, building_id: a.building_id, memo: `Depreciation ${a.name}` },
+        { account_code: a.accum_account || CATEGORY_ACCUM_ACCOUNTS[a.category] || '17300', credit: monthly, building_id: a.building_id },
       ]);
     db.prepare('INSERT INTO depreciation_runs (asset_id,period,amount,journal_id) VALUES (?,?,?,?)').run(a.id, period, monthly, jid);
     db.prepare('UPDATE assets SET accum_depreciation=? WHERE id=?').run(r2(a.accum_depreciation + monthly), a.id);
@@ -530,11 +534,13 @@ function settleVAT(input, created_by) {
        FROM journal_lines l JOIN journals j ON j.id=l.journal_id
       WHERE l.account_code=? ${from ? 'AND j.jdate>=?' : ''} ${to ? 'AND j.jdate<=?' : ''}`)
     .get(...[code, ...(from ? [from] : []), ...(to ? [to] : [])]);
-  // Net for the period from ACCRUAL (invoices out − bills in) — period-correct on
-  // invoice/bill dates, independent of any legacy movements in the provision GL.
-  const outAcc = db.prepare(`SELECT COALESCE(SUM(vat_amount),0) v FROM invoices WHERE status!='cancelled' ${from ? 'AND due_date>=?' : ''} ${to ? 'AND due_date<=?' : ''}`).get(...[...(from ? [from] : []), ...(to ? [to] : [])]).v;
-  const inAcc = db.prepare(`SELECT COALESCE(SUM(vat_amount),0) v FROM vendor_bills WHERE status!='cancelled' ${from ? 'AND bdate>=?' : ''} ${to ? 'AND bdate<=?' : ''}`).get(...[...(from ? [from] : []), ...(to ? [to] : [])]).v;
-  const output_vat = r2(outAcc), input_vat = r2(inAcc), net = r2(output_vat - input_vat);
+  // Net for the period comes from the LEDGER movement on the output/input VAT
+  // account(s) — not just the invoice/vendor-bill documents — so a VAT amount
+  // posted via a manual journal entry is still cleared correctly by the settlement.
+  let output_vat, input_vat;
+  if (OUT === IN) { const b = bal(OUT); output_vat = r2(b.c); input_vat = r2(b.d); }
+  else { const o = bal(OUT), i = bal(IN); output_vat = r2(o.c - o.d); input_vat = r2(i.d - i.c); }
+  const net = r2(output_vat - input_vat);
   if (Math.abs(net) < 0.005 && Math.abs(output_vat) < 0.005) throw new Error('لا توجد ضريبة للتسوية في هذه الفترة');
   const ref = `VAT-${from || '~'}_${to || '~'}`;
   if (db.prepare('SELECT id FROM journals WHERE reference=?').get(ref)) throw new Error('تم عمل تسوية لهذه الفترة من قبل: ' + ref);

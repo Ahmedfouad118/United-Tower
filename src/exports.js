@@ -171,7 +171,24 @@ router.get('/export-report/:name', (req, res) => {
     aoa = [[`Consolidated Income Statement — ${r.year}`], hdr,
       ['', 'INCOME'], ...r.income.map(line), ['', 'Total Income', ...r.total_income.months, r.total_income.total],
       ['', ''], ['', 'EXPENSES'], ...r.expense.map(line), ['', 'Total Expense', ...r.total_expense.months, r.total_expense.total],
-      ['', ''], ['', 'NET PROFIT', ...r.net.months, r.net.total]];
+      ['', ''], ['', 'PROFIT BEFORE DEPRECIATION & TAX', ...r.ebitda.months, r.ebitda.total],
+      ['', 'Depreciation', ...r.depreciation.months, r.depreciation.total],
+      ['', 'Income Tax', ...r.income_tax.months, r.income_tax.total],
+      ['', ''], ['', 'NET PROFIT AFTER DEPRECIATION & TAX', ...r.net.months, r.net.total]];
+  } else if (name === 'vat-statement') {
+    const r = R.vatStatement(req.query.year);
+    const MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const hdr = ['', ...MO, 'Total'];
+    const line = (lbl, obj) => [lbl, ...obj.months, obj.total];
+    aoa = [[`VAT Statement — ${r.year}`], hdr,
+      ['ACCRUAL (by invoice/bill date)'],
+      line('Output VAT', r.accrual_output), line('Input VAT', r.accrual_input), line('Accrual Net', r.accrual_net),
+      [''], ['LEDGER (actual — includes manual entries)'],
+      line('Output VAT', r.ledger_output), line('Input VAT', r.ledger_input), line('Ledger Net', r.ledger_net),
+      [''], line('Gap (Ledger - Accrual)', r.gap),
+      ['Cumulative Balance', ...r.cumulative_balance, ''],
+      [''], ['Settlements posted this year'], ['Date', 'Reference', 'Memo'],
+      ...(r.settlements || []).map((s) => [s.jdate, s.reference, s.memo_ar || ''])];
   } else return res.status(404).json({ error: 'unknown report' });
   sendWorkbook(res, aoa, name);
 });

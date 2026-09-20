@@ -184,6 +184,20 @@ router.post('/:type', upload.single('file'), (req, res) => {
           db.prepare(`INSERT INTO cheques (direction,cheque_no,bank_id,party,amount,issue_date,due_date,status) VALUES (?,?,?,?,?,?,?,'pending')`)
             .run(dir, chqNo, bid, norm(pick(row, ['party', 'الطرف'])), amount, toDate(pick(row, ['issue date', 'تاريخ الإصدار'])), toDate(pick(row, ['due date', 'الاستحقاق'])));
           result.inserted++;
+        } else if (type === 'assets') {
+          const name = norm(pick(row, ['name', 'الاسم']));
+          const cost = num(pick(row, ['cost', 'التكلفة']));
+          if (!name || cost <= 0) { result.skipped++; continue; }
+          const bName = norm(pick(row, ['building', 'البناية']));
+          const bid = bName ? db.prepare('SELECT id FROM buildings WHERE name=? OR name_ar=? OR code=?').get(bName, bName, bName)?.id : null;
+          const category = norm(pick(row, ['category', 'التصنيف'])).toLowerCase() || 'other';
+          const lifeYears = num(pick(row, ['life years', 'life', 'العمر']));
+          db.prepare(
+            `INSERT INTO assets (code,name,name_ar,building_id,category,cost,salvage_value,life_years,purchase_date,accum_depreciation,status)
+             VALUES (?,?,?,?,?,?,?,?,?,0,'active')`)
+            .run(null, name, norm(pick(row, ['name (ar)', 'name_ar', 'عربي'])) || null, bid || null, category, cost,
+              num(pick(row, ['salvage value', 'salvage', 'قيمة الخردة'])), lifeYears, toDate(pick(row, ['purchase date', 'تاريخ الشراء'])) || null);
+          result.inserted++;
         } else if (type === 'journals') {
           // journals handled in bulk after the loop
         } else {
