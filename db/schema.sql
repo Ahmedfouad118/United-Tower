@@ -379,3 +379,20 @@ CREATE TABLE IF NOT EXISTS bank_statement_lines (
   reconciled   INTEGER NOT NULL DEFAULT 0,
   journal_line_id INTEGER REFERENCES journal_lines(id)
 );
+
+-- ---------- Budget (الموازنة المالية) --------------------------------------
+-- One row per account/month/year. building_id=0 is a sentinel for "whole
+-- company" (SQLite treats NULL as distinct in a UNIQUE index, so a real
+-- sentinel value is used instead of NULL to make the upsert key work).
+CREATE TABLE IF NOT EXISTS budgets (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  building_id INTEGER NOT NULL DEFAULT 0,
+  year        INTEGER NOT NULL,
+  month       INTEGER NOT NULL,          -- 1-12
+  account_code TEXT NOT NULL REFERENCES accounts(code),
+  amount      REAL NOT NULL DEFAULT 0,
+  notes       TEXT,
+  updated_by  INTEGER REFERENCES users(id),
+  updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(building_id, year, month, account_code)
+);

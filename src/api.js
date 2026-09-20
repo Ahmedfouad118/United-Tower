@@ -3,6 +3,7 @@ const { db, DB_PATH } = require('./db');
 const { login, authMiddleware, requireRole, hash } = require('./auth');
 const svc = require('./services');
 const R = require('./reports');
+const BUD = require('./budget');
 const { postJournal } = require('./ledger');
 
 const router = express.Router();
@@ -682,6 +683,14 @@ router.get('/reports/legacy-journals', (req, res) => res.json(R.legacyJournals(r
 router.get('/reports/legacy-drill', (req, res) => res.json(R.legacyDrill(req.query.account, req.query.period, req.query.side || 'debit', lang(req))));
 router.get('/reports/liquidity', (req, res) => res.json(R.liquidityReport(req.query.upto, lang(req))));
 router.get('/reports/money-position', (req, res) => res.json(R.moneyPosition(req.query.upto, lang(req))));
+router.get('/budget', (req, res) => res.json(BUD.getBudget(Number(req.query.year), Number(req.query.building_id) || 0, lang(req))));
+router.post('/budget', writers, (req, res) => {
+  try { res.json(BUD.saveBudget(Number(req.body.year), Number(req.body.building_id) || 0, req.body.entries, req.user.id)); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.get('/budget/suggest-revenue', (req, res) => res.json(BUD.suggestRevenue(req.query.occupancy, Number(req.query.building_id) || null)));
+router.get('/budget/suggest-expenses', (req, res) => res.json(BUD.suggestExpenses(Number(req.query.year), Number(req.query.building_id) || null, Number(req.query.months) || 12)));
+router.get('/reports/budget-vs-actual', (req, res) => res.json(BUD.budgetVsActual(Number(req.query.year), Number(req.query.building_id) || 0, lang(req))));
 router.get('/reports/financial-ratios', (req, res) => res.json(R.financialRatios(req.query.from, req.query.to, effBuilding(req) && effBuilding(req) > 0 ? effBuilding(req) : null)));
 router.get('/reports/aging', (req, res) => res.json(R.receivablesAging(req.query.asOf, effBuilding(req))));
 router.get('/reports/contract-expiry', (req, res) => res.json(R.contractExpiry(Number(req.query.days) || 60, effBuilding(req))));

@@ -76,6 +76,10 @@
       { path: 'vat_statement', label: 'm_vat_statement', page: 'vatStatement', mod: 'tax' },
       { path: 'vatreturn', label: 'm_vatreturn', page: 'vatReturn', mod: 'tax' },
     ] },
+    { id: 'budget', icon: '📐', label: 'm_budget_mod', items: [
+      { path: 'budget_entry', label: 'm_budget_entry', page: 'budgetEntry', mod: 'finance' },
+      { path: 'budget_report', label: 'm_budget_report', page: 'budgetReport', mod: 'finance' },
+    ] },
     { id: 'hr', icon: '🧑‍💼', label: 'm_hr', items: [
       { path: 'employees', label: 'm_employees', page: 'employees', mod: 'hr' },
     ] },

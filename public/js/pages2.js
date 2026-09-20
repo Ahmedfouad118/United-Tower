@@ -767,6 +767,107 @@ Object.assign(Pages, (() => {
   }
   function r2(v) { return Math.round(v * 1000) / 1000; }
 
+  // ---- Budget (الموازنة المالية) ---------------------------------------------
+  async function budgetEntry(c) {
+    const year = c._byear || String(new Date().getFullYear());
+    const ac = await ref('accounts');
+    const bl = await ref('buildings');
+    const postable = ac.filter((a) => !a.is_group && (a.type === 'income' || a.type === 'expense'));
+    reportShell(c, 'm_budget_entry',
+      `<div class="field" style="margin:0"><label>${t('year')}</label><input type="number" id="byr" value="${year}" style="width:100px"></div>
+       <div class="field" style="margin:0"><label>${t('building')}</label><select id="bbld"><option value="0">كل البنايات (موحّد)</option>${bl.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></div>`, null);
+    const bid = Number(c._bbld || 0);
+    c.querySelector('#bbld').value = String(bid);
+    const r = await API.get(`/budget?year=${year}&building_id=${bid}`);
+    const byCode = {}; for (const row of r) byCode[row.code] = row.months;
+    const rowsHtml = postable.map((a) => {
+      const months = byCode[a.code] || Array(12).fill(0);
+      const cells = months.map((v, i) => `<td><input type="number" step="0.001" data-code="${a.code}" data-mo="${i + 1}" value="${v || ''}" style="width:72px"></td>`).join('');
+      return `<tr><td class="muted" style="font-size:11px">${a.code}</td><td>${esc(a.name_ar || a.name)}</td>${cells}<td class="num" data-total-for="${a.code}">${money(months.reduce((s, v) => s + v, 0))}</td></tr>`;
+    }).join('');
+    c.querySelector('#rbody').innerHTML = `<div class="bd">
+      <div class="toolbar" style="margin:0 0 10px;align-items:flex-end">
+        <div class="field" style="margin:0"><label>${t('occupancy')}</label><input type="number" id="occ" value="90" style="width:80px"></div>
+        <button class="btn" id="sugRev">💡 اقتراح إيراد الإيجار</button>
+        <button class="btn" id="sugExp">💡 اقتراح المصاريف (متوسط آخر سنة)</button>
+        <div class="spacer"></div>
+        <button class="btn primary" id="saveBudget">💾 ${t('save')}</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>${t('code')}</th><th>${t('account')}</th>${MONTHS_AR.map((m) => `<th class="num">${m}</th>`).join('')}<th class="num">${t('total')}</th></tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table></div>
+      <p class="muted" style="font-size:11px;margin-top:8px">اقتراح الإيراد بيتطبق على حساب إيراد الإيجار (40000) على مدار الـ12 شهر — تقدر تعدّل أي خانة بعدها يدويًا قبل الحفظ.</p></div>`;
+    c.querySelector('#rbody').addEventListener('input', (e) => {
+      const inp = e.target.closest('input[data-code]'); if (!inp) return;
+      const tr = inp.closest('tr');
+      let sum = 0; tr.querySelectorAll('input[data-code]').forEach((i) => sum += Number(i.value) || 0);
+      tr.querySelector('[data-total-for]').textContent = money(sum);
+    });
+    const fillRow = (code, val) => {
+      const tr = [...c.querySelectorAll('#rbody tr')].find((tr2) => tr2.querySelector('td') && tr2.querySelector('td').textContent.trim() === code);
+      if (!tr) return false;
+      tr.querySelectorAll('input[data-code]').forEach((i) => i.value = val);
+      tr.querySelector('[data-total-for]').textContent = money(val * 12);
+      return true;
+    };
+    c.querySelector('#sugRev').onclick = async () => {
+      const occ = Number(c.querySelector('#occ').value) || 0;
+      const s = await API.get(`/budget/suggest-revenue?occupancy=${occ}${bid ? '&building_id=' + bid : ''}`);
+      if (!confirm(`${s.flats} وحدة — إيجار كامل شهريًا ${money(s.full_monthly_rent)} — بنسبة إشغال ${s.occupancy_percent}% = ${money(s.suggested_monthly)} شهريًا.\nتطبيقه على حساب إيراد الإيجار (40000) لكل الشهور؟`)) return;
+      if (!fillRow('40000', s.suggested_monthly)) toast('حساب إيراد الإيجار 40000 مش موجود في شجرة الحسابات', 'err');
+    };
+    c.querySelector('#sugExp').onclick = async () => {
+      const s = await API.get(`/budget/suggest-expenses?year=${year}${bid ? '&building_id=' + bid : ''}`);
+      if (!s.length) return toast('مفيش بيانات فعلية كفاية لاقتراح متوسط', 'err');
+      if (!confirm(`هيتم تعبئة ${s.length} حساب مصروف بمتوسط آخر 12 شهر فعلي. متابعة؟`)) return;
+      s.forEach((row) => fillRow(row.code, row.avg_monthly));
+    };
+    c.querySelector('#saveBudget').onclick = async () => {
+      const entries = [];
+      c.querySelectorAll('input[data-code]').forEach((i) => entries.push({ account_code: i.dataset.code, month: Number(i.dataset.mo), amount: Number(i.value) || 0 }));
+      try { await API.post('/budget', { year, building_id: bid, entries }); toast(t('saved')); } catch (e) { toast(e.message, 'err'); }
+    };
+    c.querySelector('#byr').onchange = (e) => { c._byear = e.target.value; budgetEntry(c); };
+    c.querySelector('#bbld').onchange = (e) => { c._bbld = e.target.value; budgetEntry(c); };
+    bindPrint(c, t('m_budget_entry'));
+  }
+
+  async function budgetReport(c) {
+    const year = c._bryear || String(new Date().getFullYear());
+    const bl = await ref('buildings');
+    reportShell(c, 'm_budget_report',
+      `<div class="field" style="margin:0"><label>${t('year')}</label><input type="number" id="bryr" value="${year}" style="width:100px"></div>
+       <div class="field" style="margin:0"><label>${t('building')}</label><select id="brbld"><option value="0">كل البنايات (موحّد)</option>${bl.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></div>`, null);
+    const bid = Number(c._brbld || 0);
+    c.querySelector('#brbld').value = String(bid);
+    const r = await API.get(`/reports/budget-vs-actual?year=${year}&building_id=${bid}`);
+    const head = `<tr><th>${t('code')}</th><th>${t('account')}</th><th>البند</th>${MONTHS_AR.map((m) => `<th class="num">${m}</th>`).join('')}<th class="num">${t('total')}</th></tr>`;
+    const rowsFor = (list) => list.map((x) => `
+      <tr><td rowspan="3">${x.code}</td><td rowspan="3">${esc(x.name)}</td><td class="muted">${t('budget')}</td>${x.budget.map((v) => `<td class="num muted">${money(v)}</td>`).join('')}<td class="num muted">${money(x.budget_total)}</td></tr>
+      <tr><td>${t('actual')}</td>${x.actual.map((v) => `<td class="num">${money(v)}</td>`).join('')}<td class="num"><b>${money(x.actual_total)}</b></td></tr>
+      <tr class="tot"><td>${t('variance')}</td>${x.variance.map((v) => `<td class="num ${v < 0 ? 'neg' : 'pos'}">${money(v)}</td>`).join('')}<td class="num ${x.variance_total < 0 ? 'neg' : 'pos'}">${money(x.variance_total)}</td></tr>`).join('');
+    const totalRow = (lbl, obj, cls) => `<tr class="tot"><td colspan="3"><b>${lbl}</b></td>${obj.months.map((v) => `<td class="num ${cls || ''}">${money(v)}</td>`).join('')}<td class="num ${cls || ''}"><b>${money(obj.total)}</b></td></tr>`;
+    c.querySelector('#rbody').innerHTML = `<div class="table-wrap"><table>
+      <thead>${head}</thead>
+      <tbody>
+        <tr class="sec"><td colspan="${MONTHS_AR.length + 3}"><b>${t('income')}</b></td></tr>
+        ${r.income.length ? rowsFor(r.income) : `<tr><td colspan="${MONTHS_AR.length + 3}" class="muted">${t('no_data')}</td></tr>`}
+        ${totalRow('إجمالي الإيرادات (الفعلي)', r.income_totals.actual, 'pos')}
+        ${totalRow('إجمالي الإيرادات (الموازنة)', r.income_totals.budget, 'muted')}
+        <tr class="sec"><td colspan="${MONTHS_AR.length + 3}"><b>${t('expense')}</b></td></tr>
+        ${r.expense.length ? rowsFor(r.expense) : `<tr><td colspan="${MONTHS_AR.length + 3}" class="muted">${t('no_data')}</td></tr>`}
+        ${totalRow('إجمالي المصروفات (الفعلي)', r.expense_totals.actual, 'neg')}
+        ${totalRow('إجمالي المصروفات (الموازنة)', r.expense_totals.budget, 'muted')}
+        ${totalRow('صافي الربح (الموازنة)', r.net_budget, 'muted')}
+        ${totalRow('صافي الربح (الفعلي)', r.net_actual, '')}
+        ${totalRow('الفرق (فعلي − موازنة)', r.net_variance, r.net_variance.total < 0 ? 'neg' : 'pos')}
+      </tbody></table></div>`;
+    c.querySelector('#bryr').onchange = (e) => { c._bryear = e.target.value; budgetReport(c); };
+    c.querySelector('#brbld').onchange = (e) => { c._brbld = e.target.value; budgetReport(c); };
+    bindPrint(c, t('m_budget_report'));
+  }
+
   async function vat(c) {
     const from = c._from || '', to = c._to || today();
     const ac = await ref('accounts');
@@ -1322,5 +1423,5 @@ Object.assign(Pages, (() => {
 
   return { customers, vendors, buildings, units, categories, paymethods, banks, employees, coa,
     vendorBills, vendorPayments, trialBalance, incomeStatement, incomeStatementConsolidated, generalLedger, balanceSheet, arAging, apAging,
-    statement, vendorStatement, advances, propertyPL, roi, cashflow, comparison, vat, vatStatement, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, moneyPosition, vatReturn, activityLog, companyDocuments };
+    statement, vendorStatement, advances, propertyPL, roi, cashflow, comparison, vat, vatStatement, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, moneyPosition, vatReturn, activityLog, companyDocuments, budgetEntry, budgetReport };
 })());
