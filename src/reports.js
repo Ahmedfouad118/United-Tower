@@ -772,13 +772,19 @@ function vatReport(from, to) {
             COALESCE(SUM(MIN(i.vat_amount, MAX(0, i.total - COALESCE(pa.paid_as_of,0)))),0) outstanding
        FROM invoices i
        LEFT JOIN (
-         SELECT al.invoice_id, SUM(al.amount) paid_as_of
-           FROM payment_allocations al JOIN payments p ON p.id=al.payment_id
-          ${to ? 'WHERE p.pdate<=?' : ''}
-          GROUP BY al.invoice_id
+         SELECT invoice_id, SUM(amount) paid_as_of FROM (
+           SELECT al.invoice_id invoice_id, al.amount amount
+             FROM payment_allocations al JOIN payments p ON p.id=al.payment_id
+            ${to ? 'WHERE p.pdate<=?' : ''}
+           UNION ALL
+           SELECT j.source_id invoice_id, l.credit amount
+             FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+            WHERE j.source_table='invoices' AND j.jtype='adjustment' AND l.account_code='11100'
+              ${to ? 'AND j.jdate<=?' : ''}
+         ) GROUP BY invoice_id
        ) pa ON pa.invoice_id = i.id
       WHERE i.status!='cancelled' ${from ? 'AND i.due_date>=?' : ''} ${to ? 'AND i.due_date<=?' : ''}`)
-    .get(...[...(to ? [to] : []), ...(from ? [from] : []), ...(to ? [to] : [])]);
+    .get(...[...(to ? [to, to] : []), ...(from ? [from] : []), ...(to ? [to] : [])]);
   const vat_due = r2(inv.due), vat_outstanding = r2(inv.outstanding), vat_collected = r2(vat_due - vat_outstanding);
   // input VAT accrual from vendor bills (who we still owe VAT to)
   const bill = db.prepare(
@@ -974,13 +980,19 @@ function vatUncollectedByCustomer(from, to) {
             COALESCE(SUM(MIN(i.vat_amount, MAX(0, i.total - COALESCE(pa.paid_as_of,0)))),0) vat_outstanding
        FROM invoices i JOIN tenants t ON t.id=i.tenant_id LEFT JOIN flats f ON f.id=i.flat_id
        LEFT JOIN (
-         SELECT al.invoice_id, SUM(al.amount) paid_as_of
-           FROM payment_allocations al JOIN payments p ON p.id=al.payment_id
-          ${to ? 'WHERE p.pdate<=?' : ''}
-          GROUP BY al.invoice_id
+         SELECT invoice_id, SUM(amount) paid_as_of FROM (
+           SELECT al.invoice_id invoice_id, al.amount amount
+             FROM payment_allocations al JOIN payments p ON p.id=al.payment_id
+            ${to ? 'WHERE p.pdate<=?' : ''}
+           UNION ALL
+           SELECT j.source_id invoice_id, l.credit amount
+             FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+            WHERE j.source_table='invoices' AND j.jtype='adjustment' AND l.account_code='11100'
+              ${to ? 'AND j.jdate<=?' : ''}
+         ) GROUP BY invoice_id
        ) pa ON pa.invoice_id = i.id
       WHERE i.status!='cancelled' ${from ? 'AND i.due_date>=?' : ''} ${to ? 'AND i.due_date<=?' : ''}
-      GROUP BY i.tenant_id`).all(...[...(to ? [to] : []), ...(from ? [from] : []), ...(to ? [to] : [])]);
+      GROUP BY i.tenant_id`).all(...[...(to ? [to, to] : []), ...(from ? [from] : []), ...(to ? [to] : [])]);
   const out = rows.map((r) => ({ tenant: r.tenant, flat: r.flat, vat_due: r2(r.vat_due), vat_paid: r2(r.vat_due - r.vat_outstanding), vat_outstanding: r2(r.vat_outstanding) }))
     .filter((x) => x.vat_outstanding > 0.005).sort((a, b) => b.vat_outstanding - a.vat_outstanding);
   return { from, to, rows: out, grand_total: r2(out.reduce((s, x) => s + x.vat_outstanding, 0)) };

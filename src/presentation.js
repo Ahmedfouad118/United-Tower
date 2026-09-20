@@ -43,22 +43,57 @@ function draftSwot(data) {
 }
 function money0(v) { return r2(v).toLocaleString('en-US', { minimumFractionDigits: 3 }); }
 
-function getPresentationData(year, building_id) {
-  year = Number(year) || new Date().getFullYear();
+// Bank balances as of a date — each bank's own GL account balance, plus the
+// total, so the presentation can show "رصيد البنك" without the user having to
+// open the bank report separately.
+function bankBalances(upto) {
+  const banks = db.prepare("SELECT id, name, gl_account FROM banks WHERE gl_account IS NOT NULL AND gl_account<>''").all();
+  const balOf = (code) => {
+    const b = db.prepare(
+      `SELECT COALESCE(SUM(l.debit),0) d, COALESCE(SUM(l.credit),0) c
+         FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+        WHERE l.account_code=? ${upto ? 'AND j.jdate<=?' : ''}`).get(...[code, ...(upto ? [upto] : [])]);
+    return r2(b.d - b.c);
+  };
+  const rows = banks.map((b) => ({ id: b.id, name: b.name, balance: balOf(b.gl_account) }));
+  return { rows, total: r2(rows.reduce((s, x) => s + x.balance, 0)) };
+}
+
+function getPresentationData(from, to, building_id, version) {
+  const today = new Date().toISOString().slice(0, 10);
+  to = to || today;
+  from = from || `${to.slice(0, 4)}-01-01`;
+  const year = Number(to.slice(0, 4)) || new Date().getFullYear();
   const bid = building_id ? Number(building_id) : null;
-  const from = `${year}-01-01`, to = `${year}-12-31`;
   const bld = bid ? db.prepare('SELECT name, name_ar FROM buildings WHERE id=?').get(bid) : null;
   const income = R.incomeStatement(from, to, 'ar', bid);
+  const consolidated = R.incomeStatementConsolidated(year, 'ar', bid);
+  const fromMo = Number(from.slice(0, 4)) === year ? Number(from.slice(5, 7)) : 1;
+  const toMo = Number(to.slice(0, 4)) === year ? Number(to.slice(5, 7)) : 12;
+  const monthly_trend = consolidated.total_income.months.map((v, i) => ({
+    mo: i + 1, income: v, expense: consolidated.total_expense.months[i], net: consolidated.ebitda.months[i],
+  })).filter((m) => m.mo >= fromMo && m.mo <= toMo);
   const balance_sheet = R.balanceSheet(to, 'ar');
   const liquidity = R.liquidityReport(to, 'ar');
   const ratios = R.financialRatios(from, to, bid);
   const occupancy = R.occupancy(to, bid);
   const aging = R.receivablesAging(to, bid);
-  const budget = BUD.budgetVsActual(year, bid || 0, 'ar');
+  const bank = bankBalances(to);
+  const budgetFull = BUD.budgetVsActual(year, bid || 0, 'ar', version || 1);
+  const sliceMonths = (obj) => ({
+    months: obj.months.slice(fromMo - 1, toMo),
+    total: r2(obj.months.slice(fromMo - 1, toMo).reduce((s, v) => s + v, 0)),
+  });
+  const budget = {
+    ...budgetFull,
+    income_totals: { budget: sliceMonths(budgetFull.income_totals.budget), actual: sliceMonths(budgetFull.income_totals.actual), variance: sliceMonths(budgetFull.income_totals.variance) },
+    expense_totals: { budget: sliceMonths(budgetFull.expense_totals.budget), actual: sliceMonths(budgetFull.expense_totals.actual), variance: sliceMonths(budgetFull.expense_totals.variance) },
+    net_budget: sliceMonths(budgetFull.net_budget), net_actual: sliceMonths(budgetFull.net_actual), net_variance: sliceMonths(budgetFull.net_variance),
+  };
   const notes = getNotes(year, bid || 0);
   const data = {
-    year, building_id: bid, building: bld ? (bld.name_ar || bld.name) : 'كل البنايات (موحّد)',
-    income, balance_sheet, liquidity, ratios, occupancy, aging, budget, notes,
+    year, from, to, building_id: bid, building: bld ? (bld.name_ar || bld.name) : 'كل البنايات (موحّد)',
+    income, monthly_trend, balance_sheet, liquidity, ratios, occupancy, aging, bank, budget, notes,
   };
   data.swot_draft = draftSwot(data);
   return data;

@@ -391,10 +391,21 @@ CREATE TABLE IF NOT EXISTS budgets (
   month       INTEGER NOT NULL,          -- 1-12
   account_code TEXT NOT NULL REFERENCES accounts(code),
   amount      REAL NOT NULL DEFAULT 0,
+  version     INTEGER NOT NULL DEFAULT 1, -- lets more than one budget scenario exist per year/building
   notes       TEXT,
   updated_by  INTEGER REFERENCES users(id),
   updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE(building_id, year, month, account_code)
+  UNIQUE(building_id, year, month, account_code, version)
+);
+
+-- ---------- Budget version labels (e.g. "معتمدة", "متفائلة") ------------------
+CREATE TABLE IF NOT EXISTS budget_versions (
+  building_id INTEGER NOT NULL DEFAULT 0,
+  year        INTEGER NOT NULL,
+  version     INTEGER NOT NULL,
+  label       TEXT,
+  updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (building_id, year, version)
 );
 
 -- ---------- Presentation notes (SWOT + development plan, per year/building) -

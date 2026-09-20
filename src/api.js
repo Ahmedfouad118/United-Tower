@@ -684,15 +684,21 @@ router.get('/reports/legacy-journals', (req, res) => res.json(R.legacyJournals(r
 router.get('/reports/legacy-drill', (req, res) => res.json(R.legacyDrill(req.query.account, req.query.period, req.query.side || 'debit', lang(req))));
 router.get('/reports/liquidity', (req, res) => res.json(R.liquidityReport(req.query.upto, lang(req))));
 router.get('/reports/money-position', (req, res) => res.json(R.moneyPosition(req.query.upto, lang(req))));
-router.get('/budget', (req, res) => res.json(BUD.getBudget(Number(req.query.year), Number(req.query.building_id) || 0, lang(req))));
+router.get('/budget', (req, res) => res.json(BUD.getBudget(Number(req.query.year), Number(req.query.building_id) || 0, lang(req), Number(req.query.version) || 1)));
 router.post('/budget', writers, (req, res) => {
-  try { res.json(BUD.saveBudget(Number(req.body.year), Number(req.body.building_id) || 0, req.body.entries, req.user.id)); }
+  try { res.json(BUD.saveBudget(Number(req.body.year), Number(req.body.building_id) || 0, req.body.entries, req.user.id, Number(req.body.version) || 1)); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.get('/budget/versions', (req, res) => res.json(BUD.listBudgetVersions(Number(req.query.year), Number(req.query.building_id) || 0)));
+router.put('/budget/versions/label', writers, (req, res) => {
+  try { res.json(BUD.saveBudgetVersionLabel(Number(req.body.year), Number(req.body.building_id) || 0, Number(req.body.version) || 1, req.body.label)); }
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.get('/budget/suggest-revenue', (req, res) => res.json(BUD.suggestRevenue(req.query.occupancy, Number(req.query.building_id) || null)));
 router.get('/budget/suggest-expenses', (req, res) => res.json(BUD.suggestExpenses(Number(req.query.year), Number(req.query.building_id) || null, Number(req.query.months) || 12)));
-router.get('/reports/budget-vs-actual', (req, res) => res.json(BUD.budgetVsActual(Number(req.query.year), Number(req.query.building_id) || 0, lang(req))));
-router.get('/presentation', (req, res) => res.json(PRES.getPresentationData(req.query.year, req.query.building_id)));
+router.get('/reports/budget-vs-actual', (req, res) => res.json(BUD.budgetVsActual(Number(req.query.year), Number(req.query.building_id) || 0, lang(req), Number(req.query.version) || 1)));
+router.get('/reports/budget-vs-actual-flat', (req, res) => res.json(BUD.budgetVsActualFlat(Number(req.query.year), Number(req.query.building_id) || 0, Number(req.query.version) || 1, req.query.month ? Number(req.query.month) : null, lang(req))));
+router.get('/presentation', (req, res) => res.json(PRES.getPresentationData(req.query.from, req.query.to, req.query.building_id, Number(req.query.version) || 1)));
 router.put('/presentation/notes', writers, (req, res) => {
   try { res.json(PRES.saveNotes(Number(req.body.year), Number(req.body.building_id) || 0, req.body, req.user.id)); }
   catch (e) { res.status(400).json({ error: e.message }); }

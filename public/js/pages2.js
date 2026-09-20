@@ -768,17 +768,26 @@ Object.assign(Pages, (() => {
   function r2(v) { return Math.round(v * 1000) / 1000; }
 
   // ---- Budget (الموازنة المالية) ---------------------------------------------
+  async function versionOptsHtml(year, bid, curVer) {
+    const versions = await API.get(`/budget/versions?year=${year}&building_id=${bid}`);
+    return { versions, html: versions.map((v) => `<option value="${v.version}"${v.version === curVer ? ' selected' : ''}>${esc(v.label)}</option>`).join('') };
+  }
   async function budgetEntry(c) {
     const year = c._byear || String(new Date().getFullYear());
     const ac = await ref('accounts');
     const bl = await ref('buildings');
+    const bid = Number(c._bbld || 0);
+    const ver = Number(c._bver || 1);
     const postable = ac.filter((a) => !a.is_group && (a.type === 'income' || a.type === 'expense'));
+    const { versions, html: verOpts } = await versionOptsHtml(year, bid, ver);
     reportShell(c, 'm_budget_entry',
       `<div class="field" style="margin:0"><label>${t('year')}</label><input type="number" id="byr" value="${year}" style="width:100px"></div>
-       <div class="field" style="margin:0"><label>${t('building')}</label><select id="bbld"><option value="0">كل البنايات (موحّد)</option>${bl.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></div>`, null);
-    const bid = Number(c._bbld || 0);
+       <div class="field" style="margin:0"><label>${t('building')}</label><select id="bbld"><option value="0">كل البنايات (موحّد)</option>${bl.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></div>
+       <div class="field" style="margin:0"><label>الموازنة</label><select id="bver">${verOpts}</select></div>
+       <button class="btn" id="bverNew" title="موازنة جديدة (سيناريو إضافي)">➕ موازنة جديدة</button>
+       <button class="btn" id="bverLabel" title="إعادة تسمية">✏️ تسمية</button>`, null);
     c.querySelector('#bbld').value = String(bid);
-    const r = await API.get(`/budget?year=${year}&building_id=${bid}`);
+    const r = await API.get(`/budget?year=${year}&building_id=${bid}&version=${ver}`);
     const byCode = {}; for (const row of r) byCode[row.code] = row.months;
     const rowsHtml = postable.map((a) => {
       const months = byCode[a.code] || Array(12).fill(0);
@@ -789,7 +798,7 @@ Object.assign(Pages, (() => {
       <div class="toolbar" style="margin:0 0 10px;align-items:flex-end">
         <div class="field" style="margin:0"><label>${t('occupancy')}</label><input type="number" id="occ" value="90" style="width:80px"></div>
         <button class="btn" id="sugRev">💡 اقتراح إيراد الإيجار</button>
-        <button class="btn" id="sugExp">💡 اقتراح المصاريف (متوسط آخر سنة)</button>
+        <button class="btn" id="sugExp">💡 اقتراح المصاريف (متوسط الشهور المُدخلة)</button>
         <div class="spacer"></div>
         <button class="btn primary" id="saveBudget">💾 ${t('save')}</button>
       </div>
@@ -797,7 +806,7 @@ Object.assign(Pages, (() => {
         <thead><tr><th>${t('code')}</th><th>${t('account')}</th>${MONTHS_AR.map((m) => `<th class="num">${m}</th>`).join('')}<th class="num">${t('total')}</th></tr></thead>
         <tbody>${rowsHtml}</tbody>
       </table></div>
-      <p class="muted" style="font-size:11px;margin-top:8px">اقتراح الإيراد بيتطبق على حساب إيراد الإيجار (40000) على مدار الـ12 شهر — تقدر تعدّل أي خانة بعدها يدويًا قبل الحفظ.</p></div>`;
+      <p class="muted" style="font-size:11px;margin-top:8px">اقتراح الإيراد بيتطبق على حساب إيراد الإيجار (40000) على مدار الـ12 شهر. اقتراح المصاريف بياخد متوسط كل حساب على الشهور اللي فيها بيانات فعلية بالسنة دي (أو آخر 12 شهر لو السنة لسة مفيهاش بيانات) — مش تقسيم ثابت على 12. تقدر تعدّل أي خانة يدويًا قبل الحفظ.</p></div>`;
     c.querySelector('#rbody').addEventListener('input', (e) => {
       const inp = e.target.closest('input[data-code]'); if (!inp) return;
       const tr = inp.closest('tr');
@@ -820,114 +829,223 @@ Object.assign(Pages, (() => {
     c.querySelector('#sugExp').onclick = async () => {
       const s = await API.get(`/budget/suggest-expenses?year=${year}${bid ? '&building_id=' + bid : ''}`);
       if (!s.length) return toast('مفيش بيانات فعلية كفاية لاقتراح متوسط', 'err');
-      if (!confirm(`هيتم تعبئة ${s.length} حساب مصروف بمتوسط آخر 12 شهر فعلي. متابعة؟`)) return;
+      if (!confirm(`هيتم تعبئة ${s.length} حساب مصروف بمتوسط الشهور اللي فيها بيانات فعلية. متابعة؟`)) return;
       s.forEach((row) => fillRow(row.code, row.avg_monthly));
     };
     c.querySelector('#saveBudget').onclick = async () => {
       const entries = [];
       c.querySelectorAll('input[data-code]').forEach((i) => entries.push({ account_code: i.dataset.code, month: Number(i.dataset.mo), amount: Number(i.value) || 0 }));
-      try { await API.post('/budget', { year, building_id: bid, entries }); toast(t('saved')); } catch (e) { toast(e.message, 'err'); }
+      try { await API.post('/budget', { year, building_id: bid, version: ver, entries }); toast(t('saved')); } catch (e) { toast(e.message, 'err'); }
     };
     c.querySelector('#byr').onchange = (e) => { c._byear = e.target.value; budgetEntry(c); };
-    c.querySelector('#bbld').onchange = (e) => { c._bbld = e.target.value; budgetEntry(c); };
+    c.querySelector('#bbld').onchange = (e) => { c._bbld = e.target.value; c._bver = 1; budgetEntry(c); };
+    c.querySelector('#bver').onchange = (e) => { c._bver = Number(e.target.value); budgetEntry(c); };
+    c.querySelector('#bverNew').onclick = () => {
+      const nextVer = Math.max(0, ...versions.map((v) => v.version)) + 1;
+      const label = prompt('اسم الموازنة الجديدة (اختياري):', `موازنة ${nextVer}`);
+      if (label == null) return;
+      API.put('/budget/versions/label', { year, building_id: bid, version: nextVer, label }).then(() => { c._bver = nextVer; budgetEntry(c); });
+    };
+    c.querySelector('#bverLabel').onclick = () => {
+      const cur = versions.find((v) => v.version === ver);
+      const label = prompt('اسم الموازنة:', cur ? cur.label : '');
+      if (label == null) return;
+      API.put('/budget/versions/label', { year, building_id: bid, version: ver, label }).then(() => budgetEntry(c));
+    };
     bindPrint(c, t('m_budget_entry'));
   }
 
   async function budgetReport(c) {
     const year = c._bryear || String(new Date().getFullYear());
     const bl = await ref('buildings');
+    const bid = Number(c._brbld || 0);
+    const ver = Number(c._brver || 1);
+    const mode = c._brmode || 'monthly'; // monthly | flat
+    const month = c._brmonth || '';      // '' = whole year, in flat mode
+    const { html: verOpts } = await versionOptsHtml(year, bid, ver);
     reportShell(c, 'm_budget_report',
       `<div class="field" style="margin:0"><label>${t('year')}</label><input type="number" id="bryr" value="${year}" style="width:100px"></div>
-       <div class="field" style="margin:0"><label>${t('building')}</label><select id="brbld"><option value="0">كل البنايات (موحّد)</option>${bl.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></div>`, null);
-    const bid = Number(c._brbld || 0);
+       <div class="field" style="margin:0"><label>${t('building')}</label><select id="brbld"><option value="0">كل البنايات (موحّد)</option>${bl.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></div>
+       <div class="field" style="margin:0"><label>الموازنة</label><select id="brver">${verOpts}</select></div>
+       <div class="field" style="margin:0"><label>الشكل</label><select id="brmode">
+         <option value="monthly"${mode === 'monthly' ? ' selected' : ''}>شهري (12 عمود)</option>
+         <option value="flat"${mode === 'flat' ? ' selected' : ''}>أفقي (شهر أو سنة واحدة)</option>
+       </select></div>
+       ${mode === 'flat' ? `<div class="field" style="margin:0"><label>الفترة</label><select id="brmonth">
+         <option value=""${!month ? ' selected' : ''}>السنة كاملة</option>
+         ${MONTHS_AR.map((m, i) => `<option value="${i + 1}"${month == i + 1 ? ' selected' : ''}>${m}</option>`).join('')}
+       </select></div>` : ''}`, null);
     c.querySelector('#brbld').value = String(bid);
-    const r = await API.get(`/reports/budget-vs-actual?year=${year}&building_id=${bid}`);
-    const head = `<tr><th>${t('code')}</th><th>${t('account')}</th><th>البند</th>${MONTHS_AR.map((m) => `<th class="num">${m}</th>`).join('')}<th class="num">${t('total')}</th></tr>`;
-    const rowsFor = (list) => list.map((x) => `
-      <tr><td rowspan="3">${x.code}</td><td rowspan="3">${esc(x.name)}</td><td class="muted">${t('budget')}</td>${x.budget.map((v) => `<td class="num muted">${money(v)}</td>`).join('')}<td class="num muted">${money(x.budget_total)}</td></tr>
-      <tr><td>${t('actual')}</td>${x.actual.map((v) => `<td class="num">${money(v)}</td>`).join('')}<td class="num"><b>${money(x.actual_total)}</b></td></tr>
-      <tr class="tot"><td>${t('variance')}</td>${x.variance.map((v) => `<td class="num ${v < 0 ? 'neg' : 'pos'}">${money(v)}</td>`).join('')}<td class="num ${x.variance_total < 0 ? 'neg' : 'pos'}">${money(x.variance_total)}</td></tr>`).join('');
-    const totalRow = (lbl, obj, cls) => `<tr class="tot"><td colspan="3"><b>${lbl}</b></td>${obj.months.map((v) => `<td class="num ${cls || ''}">${money(v)}</td>`).join('')}<td class="num ${cls || ''}"><b>${money(obj.total)}</b></td></tr>`;
-    c.querySelector('#rbody').innerHTML = `<div class="table-wrap"><table>
-      <thead>${head}</thead>
-      <tbody>
-        <tr class="sec"><td colspan="${MONTHS_AR.length + 3}"><b>${t('income')}</b></td></tr>
-        ${r.income.length ? rowsFor(r.income) : `<tr><td colspan="${MONTHS_AR.length + 3}" class="muted">${t('no_data')}</td></tr>`}
-        ${totalRow('إجمالي الإيرادات (الفعلي)', r.income_totals.actual, 'pos')}
-        ${totalRow('إجمالي الإيرادات (الموازنة)', r.income_totals.budget, 'muted')}
-        <tr class="sec"><td colspan="${MONTHS_AR.length + 3}"><b>${t('expense')}</b></td></tr>
-        ${r.expense.length ? rowsFor(r.expense) : `<tr><td colspan="${MONTHS_AR.length + 3}" class="muted">${t('no_data')}</td></tr>`}
-        ${totalRow('إجمالي المصروفات (الفعلي)', r.expense_totals.actual, 'neg')}
-        ${totalRow('إجمالي المصروفات (الموازنة)', r.expense_totals.budget, 'muted')}
-        ${totalRow('صافي الربح (الموازنة)', r.net_budget, 'muted')}
-        ${totalRow('صافي الربح (الفعلي)', r.net_actual, '')}
-        ${totalRow('الفرق (فعلي − موازنة)', r.net_variance, r.net_variance.total < 0 ? 'neg' : 'pos')}
-      </tbody></table></div>`;
+
+    if (mode === 'flat') {
+      const r = await API.get(`/reports/budget-vs-actual-flat?year=${year}&building_id=${bid}&version=${ver}${month ? '&month=' + month : ''}`);
+      const rowsFor = (list) => list.map((x) => `
+        <tr><td class="muted" style="font-size:11px">${x.code}</td><td>${esc(x.name)}</td>
+          <td class="num muted">${money(x.budget)}</td><td class="num"><b>${money(x.actual)}</b></td>
+          <td class="num ${x.variance < 0 ? 'neg' : 'pos'}">${money(x.variance)}</td></tr>`).join('');
+      const totalRow = (lbl, obj, cls) => `<tr class="tot"><td colspan="2"><b>${lbl}</b></td><td class="num muted">${money(obj.budget)}</td><td class="num ${cls || ''}"><b>${money(obj.actual)}</b></td><td class="num ${obj.variance < 0 ? 'neg' : 'pos'}">${money(obj.variance)}</td></tr>`;
+      c.querySelector('#rbody').innerHTML = `<div class="table-wrap"><table>
+        <thead><tr><th>${t('code')}</th><th>${t('account')}</th><th class="num">${t('budget')}</th><th class="num">${t('actual')}</th><th class="num">${t('variance')}</th></tr></thead>
+        <tbody>
+          <tr class="sec"><td colspan="5"><b>${t('income')}</b></td></tr>
+          ${r.income.length ? rowsFor(r.income) : `<tr><td colspan="5" class="muted">${t('no_data')}</td></tr>`}
+          ${totalRow('إجمالي الإيرادات', r.income_totals, 'pos')}
+          <tr class="sec"><td colspan="5"><b>${t('expense')}</b></td></tr>
+          ${r.expense.length ? rowsFor(r.expense) : `<tr><td colspan="5" class="muted">${t('no_data')}</td></tr>`}
+          ${totalRow('إجمالي المصروفات', r.expense_totals, 'neg')}
+          <tr class="tot"><td colspan="2"><b>صافي الربح</b></td><td class="num muted">${money(r.net.budget)}</td><td class="num"><b>${money(r.net.actual)}</b></td><td class="num ${r.net.variance < 0 ? 'neg' : 'pos'}">${money(r.net.variance)}</td></tr>
+        </tbody></table></div>`;
+    } else {
+      const r = await API.get(`/reports/budget-vs-actual?year=${year}&building_id=${bid}&version=${ver}`);
+      const head = `<tr><th>${t('code')}</th><th>${t('account')}</th><th>البند</th>${MONTHS_AR.map((m) => `<th class="num">${m}</th>`).join('')}<th class="num">${t('total')}</th></tr>`;
+      const rowsFor = (list) => list.map((x) => `
+        <tr><td rowspan="3">${x.code}</td><td rowspan="3">${esc(x.name)}</td><td class="muted">${t('budget')}</td>${x.budget.map((v) => `<td class="num muted">${money(v)}</td>`).join('')}<td class="num muted">${money(x.budget_total)}</td></tr>
+        <tr><td>${t('actual')}</td>${x.actual.map((v) => `<td class="num">${money(v)}</td>`).join('')}<td class="num"><b>${money(x.actual_total)}</b></td></tr>
+        <tr class="tot"><td>${t('variance')}</td>${x.variance.map((v) => `<td class="num ${v < 0 ? 'neg' : 'pos'}">${money(v)}</td>`).join('')}<td class="num ${x.variance_total < 0 ? 'neg' : 'pos'}">${money(x.variance_total)}</td></tr>`).join('');
+      const totalRow = (lbl, obj, cls) => `<tr class="tot"><td colspan="3"><b>${lbl}</b></td>${obj.months.map((v) => `<td class="num ${cls || ''}">${money(v)}</td>`).join('')}<td class="num ${cls || ''}"><b>${money(obj.total)}</b></td></tr>`;
+      c.querySelector('#rbody').innerHTML = `<div class="table-wrap"><table>
+        <thead>${head}</thead>
+        <tbody>
+          <tr class="sec"><td colspan="${MONTHS_AR.length + 3}"><b>${t('income')}</b></td></tr>
+          ${r.income.length ? rowsFor(r.income) : `<tr><td colspan="${MONTHS_AR.length + 3}" class="muted">${t('no_data')}</td></tr>`}
+          ${totalRow('إجمالي الإيرادات (الفعلي)', r.income_totals.actual, 'pos')}
+          ${totalRow('إجمالي الإيرادات (الموازنة)', r.income_totals.budget, 'muted')}
+          <tr class="sec"><td colspan="${MONTHS_AR.length + 3}"><b>${t('expense')}</b></td></tr>
+          ${r.expense.length ? rowsFor(r.expense) : `<tr><td colspan="${MONTHS_AR.length + 3}" class="muted">${t('no_data')}</td></tr>`}
+          ${totalRow('إجمالي المصروفات (الفعلي)', r.expense_totals.actual, 'neg')}
+          ${totalRow('إجمالي المصروفات (الموازنة)', r.expense_totals.budget, 'muted')}
+          ${totalRow('صافي الربح (الموازنة)', r.net_budget, 'muted')}
+          ${totalRow('صافي الربح (الفعلي)', r.net_actual, '')}
+          ${totalRow('الفرق (فعلي − موازنة)', r.net_variance, r.net_variance.total < 0 ? 'neg' : 'pos')}
+        </tbody></table></div>`;
+    }
     c.querySelector('#bryr').onchange = (e) => { c._bryear = e.target.value; budgetReport(c); };
     c.querySelector('#brbld').onchange = (e) => { c._brbld = e.target.value; budgetReport(c); };
+    c.querySelector('#brver').onchange = (e) => { c._brver = Number(e.target.value); budgetReport(c); };
+    c.querySelector('#brmode').onchange = (e) => { c._brmode = e.target.value; budgetReport(c); };
+    const brmonth = c.querySelector('#brmonth');
+    if (brmonth) brmonth.onchange = (e) => { c._brmonth = e.target.value; budgetReport(c); };
     bindPrint(c, t('m_budget_report'));
   }
 
   // ---- Building Presentation (البرزنتيشن) ------------------------------------
   const PRES_CSS = `
-    .pres-wrap { direction:rtl; font-family:inherit; background:#0b1220; color:#e8ecf6; border-radius:14px; overflow:hidden; }
-    .pres-slide { padding:32px 36px; border-bottom:1px solid rgba(255,255,255,.08); page-break-after:always; }
+    .pres-wrap { --pg-bg:#0e1521; --pg-card:#161f30; --pg-border:rgba(255,255,255,.08); --pg-text:#eef1f6;
+      --pg-muted:rgba(238,241,246,.6); --pg-accent:#c7a15a; --pg-accent2:#5b8fc7;
+      --pg-good:#4fae83; --pg-bad:#d9695f; --pg-warn:#cf9c3f;
+      direction:rtl; font-family:inherit; background:var(--pg-bg); color:var(--pg-text); border-radius:14px; overflow:hidden; }
+    .pres-slide { padding:30px 34px; border-bottom:1px solid var(--pg-border); page-break-after:always; }
     .pres-slide:last-child { border-bottom:none; }
-    .pres-cover { background:linear-gradient(135deg,#0f2540,#1b3a63 40%,#2f6fb0); text-align:center; padding:70px 30px; }
-    .pres-cover h1 { font-size:34px; margin:0 0 6px; font-weight:800; }
-    .pres-cover h2 { font-size:18px; margin:0 0 18px; font-weight:500; opacity:.9; }
-    .pres-cover .badge { display:inline-block; background:rgba(255,255,255,.14); padding:8px 18px; border-radius:999px; font-size:13px; }
-    .pres-h { font-size:20px; font-weight:800; margin:0 0 18px; color:#7fc7ff; display:flex; align-items:center; gap:8px; }
-    .kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:14px; }
-    .kpi-card { background:linear-gradient(160deg,#152640,#0e1a2e); border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:16px; }
-    .kpi-card .ico { font-size:22px; }
-    .kpi-card .val { font-size:24px; font-weight:800; margin:6px 0 2px; color:#fff; }
-    .kpi-card .lbl { font-size:12px; opacity:.75; }
-    .kpi-card.good .val { color:#5fe0a5; } .kpi-card.bad .val { color:#ff8383; } .kpi-card.warn .val { color:#ffcf6b; }
+    .pres-cover { background:linear-gradient(180deg,#101a2c,#0c1420); text-align:center; padding:60px 30px; position:relative; }
+    .pres-cover::after { content:''; position:absolute; left:50%; bottom:34px; transform:translateX(50%); width:64px; height:3px; background:var(--pg-accent); border-radius:2px; }
+    .pres-cover h1 { font-size:30px; margin:0 0 8px; font-weight:700; letter-spacing:.3px; }
+    .pres-cover h2 { font-size:15px; margin:0 0 20px; font-weight:400; color:var(--pg-muted); }
+    .pres-cover .badge { display:inline-block; border:1px solid var(--pg-border); color:var(--pg-muted); padding:6px 16px; border-radius:999px; font-size:12px; }
+    .pres-h { font-size:17px; font-weight:700; margin:0 0 16px; color:var(--pg-accent); display:flex; align-items:center; gap:8px; }
+    .kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(165px,1fr)); gap:12px; }
+    .kpi-card { background:var(--pg-card); border:1px solid var(--pg-border); border-radius:10px; padding:14px 16px; }
+    .kpi-card .ico { font-size:18px; opacity:.85; }
+    .kpi-card .val { font-size:21px; font-weight:700; margin:6px 0 2px; color:var(--pg-text); }
+    .kpi-card .lbl { font-size:11.5px; color:var(--pg-muted); }
+    .kpi-card.good .val { color:var(--pg-good); } .kpi-card.bad .val { color:var(--pg-bad); } .kpi-card.warn .val { color:var(--pg-warn); }
     .pres-table { width:100%; border-collapse:collapse; font-size:13px; }
-    .pres-table th, .pres-table td { padding:8px 10px; text-align:right; border-bottom:1px solid rgba(255,255,255,.08); }
-    .pres-table th { color:#8fb3e0; font-weight:700; }
-    .pres-table tr.tot td { font-weight:800; color:#fff; border-top:2px solid rgba(255,255,255,.2); }
-    .swot-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
-    .swot-box { border-radius:12px; padding:14px 16px; }
-    .swot-box h3 { margin:0 0 8px; font-size:15px; }
-    .swot-box textarea { width:100%; min-height:110px; background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.15); border-radius:8px; color:#fff; padding:8px; font-size:13px; font-family:inherit; resize:vertical; }
-    .swot-box.s { background:rgba(95,224,165,.08); border:1px solid rgba(95,224,165,.3); } .swot-box.s h3 { color:#5fe0a5; }
-    .swot-box.w { background:rgba(255,131,131,.08); border:1px solid rgba(255,131,131,.3); } .swot-box.w h3 { color:#ff8383; }
-    .swot-box.o { background:rgba(127,199,255,.08); border:1px solid rgba(127,199,255,.3); } .swot-box.o h3 { color:#7fc7ff; }
-    .swot-box.t { background:rgba(255,207,107,.08); border:1px solid rgba(255,207,107,.3); } .swot-box.t h3 { color:#ffcf6b; }
-    .plan-box textarea { width:100%; min-height:140px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.15); border-radius:10px; color:#fff; padding:12px; font-size:14px; font-family:inherit; resize:vertical; }
-    .pres-bar-track { background:rgba(255,255,255,.1); border-radius:8px; height:14px; overflow:hidden; }
-    .pres-bar-fill { height:100%; background:linear-gradient(90deg,#5fe0a5,#7fc7ff); }
-    .pres-foot { text-align:center; padding:26px; opacity:.6; font-size:12px; }
+    .pres-table th, .pres-table td { padding:8px 10px; text-align:right; border-bottom:1px solid var(--pg-border); }
+    .pres-table th { color:var(--pg-muted); font-weight:600; font-size:12px; }
+    .pres-table tr.tot td { font-weight:700; color:var(--pg-text); border-top:1px solid var(--pg-border); }
+    .pres-table td.num, .pres-table th.num { font-variant-numeric:tabular-nums; }
+    .swot-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .swot-box { border-radius:10px; padding:14px 16px; background:var(--pg-card); border:1px solid var(--pg-border); border-right:3px solid var(--pg-border); }
+    .swot-box h3 { margin:0 0 8px; font-size:14px; font-weight:600; }
+    .swot-box textarea { width:100%; min-height:100px; background:rgba(0,0,0,.2); border:1px solid var(--pg-border); border-radius:8px; color:var(--pg-text); padding:8px; font-size:13px; font-family:inherit; resize:vertical; }
+    .swot-box.s { border-right-color:var(--pg-good); } .swot-box.s h3 { color:var(--pg-good); }
+    .swot-box.w { border-right-color:var(--pg-bad); } .swot-box.w h3 { color:var(--pg-bad); }
+    .swot-box.o { border-right-color:var(--pg-accent2); } .swot-box.o h3 { color:var(--pg-accent2); }
+    .swot-box.t { border-right-color:var(--pg-warn); } .swot-box.t h3 { color:var(--pg-warn); }
+    .plan-box textarea { width:100%; min-height:130px; background:var(--pg-card); border:1px solid var(--pg-border); border-radius:10px; color:var(--pg-text); padding:12px; font-size:13.5px; font-family:inherit; resize:vertical; }
+    .pres-bar-track { background:rgba(255,255,255,.08); border-radius:6px; height:12px; overflow:hidden; }
+    .pres-bar-fill { height:100%; background:var(--pg-accent2); border-radius:6px; }
+    .pres-foot { text-align:center; padding:22px; color:var(--pg-muted); font-size:11.5px; }
+    .cmp-item { margin-bottom:16px; }
+    .cmp-head { display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:5px; color:var(--pg-muted); }
+    .cmp-head b { color:var(--pg-text); font-weight:600; }
+    .cmp-track { background:rgba(255,255,255,.07); border-radius:5px; height:9px; margin-bottom:3px; overflow:hidden; }
+    .cmp-track .fill { height:100%; border-radius:5px; }
+    .cmp-track.budget .fill { background:rgba(255,255,255,.34); }
+    .cmp-track.actual .fill { background:var(--pg-accent2); }
+    .cmp-track.actual .fill.bad { background:var(--pg-bad); }
+    .trend-chart { display:flex; align-items:flex-end; gap:8px; height:150px; padding-top:10px; }
+    .trend-col { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%; }
+    .trend-bars { display:flex; align-items:flex-end; gap:3px; height:120px; width:100%; justify-content:center; }
+    .trend-bars .tb { width:9px; border-radius:2px 2px 0 0; min-height:2px; }
+    .trend-bars .tb.income { background:var(--pg-accent2); }
+    .trend-bars .tb.expense { background:var(--pg-bad); opacity:.85; }
+    .trend-lbl { font-size:10.5px; color:var(--pg-muted); margin-top:6px; }
+    .trend-legend { display:flex; gap:16px; font-size:12px; color:var(--pg-muted); margin-bottom:10px; }
+    .trend-legend span { display:inline-flex; align-items:center; gap:5px; }
+    .trend-legend i { width:9px; height:9px; border-radius:2px; display:inline-block; }
+    .donut-wrap { display:flex; align-items:center; gap:22px; }
+    .donut { width:110px; height:110px; border-radius:50%; flex:none; }
+    .donut-inner { width:78px; height:78px; margin:16px; border-radius:50%; background:var(--pg-bg); display:flex; align-items:center; justify-content:center; flex-direction:column; }
+    .donut-inner b { font-size:17px; } .donut-inner span { font-size:10px; color:var(--pg-muted); }
     @media print { .pres-slide { page-break-after:always; } }
   `;
   function presKpi(ico, val, lbl, cls) { return `<div class="kpi-card ${cls || ''}"><div class="ico">${ico}</div><div class="val">${val}</div><div class="lbl">${lbl}</div></div>`; }
+  function presCmp(label, budgetVal, actualVal, badWhenOver) {
+    const max = Math.max(Math.abs(budgetVal), Math.abs(actualVal), 1) * 1.05;
+    const bw = Math.round((Math.abs(budgetVal) / max) * 100), aw = Math.round((Math.abs(actualVal) / max) * 100);
+    const over = badWhenOver ? actualVal > budgetVal : actualVal < budgetVal;
+    return `<div class="cmp-item">
+      <div class="cmp-head"><span>${label}</span><span>الموازنة <b>${money(budgetVal)}</b> · الفعلي <b>${money(actualVal)}</b></span></div>
+      <div class="cmp-track budget"><div class="fill" style="width:${bw}%"></div></div>
+      <div class="cmp-track actual"><div class="fill${over ? ' bad' : ''}" style="width:${aw}%"></div></div>
+    </div>`;
+  }
+  function presDonut(pct, cls) {
+    const color = cls === 'bad' ? 'var(--pg-bad)' : cls === 'warn' ? 'var(--pg-warn)' : 'var(--pg-good)';
+    return `<div class="donut" style="background:conic-gradient(${color} ${pct}%, rgba(255,255,255,.08) ${pct}% 100%)"><div class="donut-inner"><b>${r2(pct)}%</b><span>إشغال</span></div></div>`;
+  }
+  function presTrend(monthly) {
+    if (!monthly || !monthly.length) return `<div class="empty">${t('no_data')}</div>`;
+    const max = Math.max(...monthly.map((m) => Math.max(m.income, m.expense)), 1);
+    return `<div class="trend-legend"><span><i style="background:var(--pg-accent2)"></i> الإيرادات</span><span><i style="background:var(--pg-bad)"></i> المصروفات</span></div>
+      <div class="trend-chart">${monthly.map((m) => `
+        <div class="trend-col">
+          <div class="trend-bars">
+            <div class="tb income" style="height:${Math.round((m.income / max) * 100)}%" title="${money(m.income)}"></div>
+            <div class="tb expense" style="height:${Math.round((m.expense / max) * 100)}%" title="${money(m.expense)}"></div>
+          </div>
+          <div class="trend-lbl">${MONTHS_AR[m.mo - 1].slice(0, 3)}</div>
+        </div>`).join('')}</div>`;
+  }
   function presBuildSlides(d, notesLive) {
     const pct = (v) => `${r2(v)}%`;
     const occPct = d.occupancy.total ? r2((d.occupancy.occupied / d.occupancy.total) * 100) : 0;
+    const occCls = occPct >= 80 ? 'good' : occPct >= 50 ? 'warn' : 'bad';
     const netCls = d.income.net >= 0 ? 'good' : 'bad';
     const marginCls = d.ratios.net_margin >= 20 ? 'good' : (d.ratios.net_margin >= 0 ? 'warn' : 'bad');
     const swot = notesLive || d.notes;
+    const periodLbl = d.from === `${d.year}-01-01` && d.to === `${d.year}-12-31` ? `سنة ${d.year}` : `${dateStr(d.from)} — ${dateStr(d.to)}`;
     const draftLine = (arr) => (arr || []).map((x) => `• ${esc(x)}`).join('\n');
     const swotBox = (cls, icon, title, key, draftKey) => `
       <div class="swot-box ${cls}"><h3>${icon} ${title}</h3>
         <textarea data-swot="${key}" placeholder="${esc(draftLine(d.swot_draft[draftKey]))}">${esc(swot[key] || '')}</textarea></div>`;
+    const hasBudget = d.budget && (d.budget.income_totals.budget.total || d.budget.expense_totals.budget.total);
     return `
       <div class="pres-slide pres-cover">
         <h1>🏢 ${esc(d.building)}</h1>
-        <h2>عرض تقديمي مالي وتشغيلي — سنة ${d.year}</h2>
+        <h2>عرض تقديمي مالي وتشغيلي — ${periodLbl}</h2>
         <div class="badge">تم الإنشاء بتاريخ ${dateStr(today())}</div>
       </div>
 
       <div class="pres-slide">
         <div class="pres-h">📊 أبرز الأرقام</div>
         <div class="kpi-grid">
-          ${presKpi('🏠', pct(occPct), 'نسبة الإشغال', occPct >= 80 ? 'good' : occPct >= 50 ? 'warn' : 'bad')}
+          ${presKpi('🏦', money(d.bank.total), 'رصيد البنوك')}
+          ${presKpi('🏠', pct(occPct), 'نسبة الإشغال', occCls)}
           ${presKpi('💰', money(d.income.total_income), 'إجمالي الإيرادات')}
           ${presKpi('📈', money(d.income.net), 'صافي الربح', netCls)}
           ${presKpi('📐', pct(d.ratios.net_margin), 'هامش الربح الصافي', marginCls)}
-          ${presKpi('🏦', money(d.liquidity.cash), 'النقد وما يعادله')}
+          ${presKpi('💧', money(d.liquidity.cash), 'النقد وما يعادله')}
           ${presKpi('⚖️', d.ratios.current_ratio, 'نسبة التداول')}
           ${presKpi('🧮', money(d.liquidity.working_capital), 'رأس المال العامل')}
           ${presKpi('⏰', money(d.aging.grand_total), 'ذمم متأخرة على العملاء', d.aging.grand_total > 0 ? 'warn' : 'good')}
@@ -936,16 +1054,23 @@ Object.assign(Pages, (() => {
 
       <div class="pres-slide">
         <div class="pres-h">🏠 الإشغال والوحدات</div>
-        <div class="kpi-grid" style="margin-bottom:14px">
-          ${presKpi('✅', d.occupancy.occupied, 'وحدات مؤجّرة')}
-          ${presKpi('⬜', d.occupancy.vacant, 'وحدات شاغرة')}
-          ${presKpi('🏢', d.occupancy.total, 'إجمالي الوحدات')}
+        <div class="donut-wrap">
+          ${presDonut(occPct, occCls)}
+          <div class="kpi-grid" style="flex:1">
+            ${presKpi('✅', d.occupancy.occupied, 'وحدات مؤجّرة')}
+            ${presKpi('⬜', d.occupancy.vacant, 'وحدات شاغرة')}
+            ${presKpi('🏢', d.occupancy.total, 'إجمالي الوحدات')}
+          </div>
         </div>
-        <div class="pres-bar-track"><div class="pres-bar-fill" style="width:${occPct}%"></div></div>
       </div>
 
       <div class="pres-slide">
-        <div class="pres-h">💵 قائمة الدخل — ${d.year}</div>
+        <div class="pres-h">📈 التطور الشهري خلال الفترة</div>
+        ${presTrend(d.monthly_trend)}
+      </div>
+
+      <div class="pres-slide">
+        <div class="pres-h">💵 قائمة الدخل — ${periodLbl}</div>
         <table class="pres-table"><thead><tr><th>البند</th><th class="num">القيمة</th></tr></thead><tbody>
           ${d.income.income.map((x) => `<tr><td>${esc(x.name)}</td><td class="num">${money(x.amt)}</td></tr>`).join('')}
           <tr class="tot"><td>إجمالي الإيرادات</td><td class="num">${money(d.income.total_income)}</td></tr>
@@ -967,14 +1092,12 @@ Object.assign(Pages, (() => {
         </div>
       </div>
 
-      ${d.budget && (d.budget.income_totals.budget.total || d.budget.expense_totals.budget.total) ? `
+      ${hasBudget ? `
       <div class="pres-slide">
-        <div class="pres-h">🎯 الموازنة مقابل الفعلي</div>
-        <table class="pres-table"><thead><tr><th></th><th class="num">الموازنة</th><th class="num">الفعلي</th><th class="num">الفرق</th></tr></thead><tbody>
-          <tr><td>الإيرادات</td><td class="num">${money(d.budget.income_totals.budget.total)}</td><td class="num">${money(d.budget.income_totals.actual.total)}</td><td class="num">${money(d.budget.income_totals.variance.total)}</td></tr>
-          <tr><td>المصروفات</td><td class="num">${money(d.budget.expense_totals.budget.total)}</td><td class="num">${money(d.budget.expense_totals.actual.total)}</td><td class="num">${money(d.budget.expense_totals.variance.total)}</td></tr>
-          <tr class="tot"><td>صافي الربح</td><td class="num">${money(d.budget.net_budget.total)}</td><td class="num">${money(d.budget.net_actual.total)}</td><td class="num">${money(d.budget.net_variance.total)}</td></tr>
-        </tbody></table>
+        <div class="pres-h">🎯 الموازنة مقابل الفعلي — ${periodLbl}</div>
+        ${presCmp('الإيرادات', d.budget.income_totals.budget.total, d.budget.income_totals.actual.total, false)}
+        ${presCmp('المصروفات', d.budget.expense_totals.budget.total, d.budget.expense_totals.actual.total, true)}
+        ${presCmp('صافي الربح', d.budget.net_budget.total, d.budget.net_actual.total, false)}
       </div>` : ''}
 
       <div class="pres-slide">
@@ -992,36 +1115,39 @@ Object.assign(Pages, (() => {
         <div class="plan-box"><textarea data-swot="development_plan" placeholder="اكتب خطة التطوير هنا...">${esc(swot.development_plan || '')}</textarea></div>
       </div>
 
-      <div class="pres-foot">United Tower — ${esc(d.building)} — تقرير ${d.year}</div>`;
+      <div class="pres-foot">United Tower — ${esc(d.building)} — ${periodLbl}</div>`;
   }
   async function presentation(c) {
-    const year = c._pyear || String(new Date().getFullYear());
+    const to = c._pto || today();
+    const from = c._pfrom || `${to.slice(0, 4)}-01-01`;
     const bl = await ref('buildings');
     reportShell(c, 'm_presentation',
-      `<div class="field" style="margin:0"><label>${t('year')}</label><input type="number" id="pyr" value="${year}" style="width:100px"></div>
+      `<div class="field" style="margin:0"><label>${t('from')}</label><input type="date" id="pfrom" value="${from}"></div>
+       <div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="pto" value="${to}"></div>
        <div class="field" style="margin:0"><label>${t('building')}</label><select id="pbld"><option value="">كل البنايات (موحّد)</option>${bl.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></div>
        <button class="btn primary" id="presSave">💾 حفظ SWOT/الخطة</button>
        <button class="btn" id="presExport">⬇ تصدير HTML</button>`, null);
     const bid = c._pbld || '';
     c.querySelector('#pbld').value = bid;
-    const d = await API.get(`/presentation?year=${year}${bid ? '&building_id=' + bid : ''}`);
+    const d = await API.get(`/presentation?from=${from}&to=${to}${bid ? '&building_id=' + bid : ''}`);
     c.querySelector('#rbody').innerHTML = `<div class="pres-wrap">${presBuildSlides(d)}</div><style>${PRES_CSS}</style>`;
-    c.querySelector('#pyr').onchange = (e) => { c._pyear = e.target.value; presentation(c); };
+    c.querySelector('#pfrom').onchange = (e) => { c._pfrom = e.target.value; presentation(c); };
+    c.querySelector('#pto').onchange = (e) => { c._pto = e.target.value; presentation(c); };
     c.querySelector('#pbld').onchange = (e) => { c._pbld = e.target.value; presentation(c); };
     c.querySelector('#presSave').onclick = async () => {
       const notes = {}; c.querySelectorAll('[data-swot]').forEach((el) => notes[el.dataset.swot] = el.value);
-      try { await API.put('/presentation/notes', { year, building_id: bid || 0, ...notes }); toast(t('saved')); } catch (e) { toast(e.message, 'err'); }
+      try { await API.put('/presentation/notes', { year: d.year, building_id: bid || 0, ...notes }); toast(t('saved')); } catch (e) { toast(e.message, 'err'); }
     };
     c.querySelector('#presExport').onclick = () => {
       const notesLive = {}; c.querySelectorAll('[data-swot]').forEach((el) => notesLive[el.dataset.swot] = el.value);
       const slidesHtml = presBuildSlides(d, notesLive).replace(/<textarea[^>]*data-swot="([^"]+)"[^>]*>([\s\S]*?)<\/textarea>/g,
         (m, key, val) => `<div style="white-space:pre-wrap;background:rgba(0,0,0,.2);border-radius:8px;padding:10px;min-height:60px">${val || '<span style=\"opacity:.5\">—</span>'}</div>`);
-      const full = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>United Tower — عرض تقديمي ${year}</title>
-        <style>body{margin:0;background:#0b1220;font-family:'Segoe UI',Tahoma,Arial,sans-serif}${PRES_CSS}</style></head>
+      const full = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>United Tower — عرض تقديمي ${from}_${to}</title>
+        <style>body{margin:0;background:#0e1521;font-family:'Segoe UI',Tahoma,Arial,sans-serif}${PRES_CSS}</style></head>
         <body><div class="pres-wrap">${slidesHtml}</div></body></html>`;
       const blob = new Blob([full], { type: 'text/html;charset=utf-8' });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = `United-Tower-Presentation-${d.building.replace(/\s+/g, '_')}-${year}.html`;
+      const a = document.createElement('a'); a.href = url; a.download = `United-Tower-Presentation-${d.building.replace(/\s+/g, '_')}-${from}_${to}.html`;
       document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
     };
   }
