@@ -868,6 +868,164 @@ Object.assign(Pages, (() => {
     bindPrint(c, t('m_budget_report'));
   }
 
+  // ---- Building Presentation (البرزنتيشن) ------------------------------------
+  const PRES_CSS = `
+    .pres-wrap { direction:rtl; font-family:inherit; background:#0b1220; color:#e8ecf6; border-radius:14px; overflow:hidden; }
+    .pres-slide { padding:32px 36px; border-bottom:1px solid rgba(255,255,255,.08); page-break-after:always; }
+    .pres-slide:last-child { border-bottom:none; }
+    .pres-cover { background:linear-gradient(135deg,#0f2540,#1b3a63 40%,#2f6fb0); text-align:center; padding:70px 30px; }
+    .pres-cover h1 { font-size:34px; margin:0 0 6px; font-weight:800; }
+    .pres-cover h2 { font-size:18px; margin:0 0 18px; font-weight:500; opacity:.9; }
+    .pres-cover .badge { display:inline-block; background:rgba(255,255,255,.14); padding:8px 18px; border-radius:999px; font-size:13px; }
+    .pres-h { font-size:20px; font-weight:800; margin:0 0 18px; color:#7fc7ff; display:flex; align-items:center; gap:8px; }
+    .kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:14px; }
+    .kpi-card { background:linear-gradient(160deg,#152640,#0e1a2e); border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:16px; }
+    .kpi-card .ico { font-size:22px; }
+    .kpi-card .val { font-size:24px; font-weight:800; margin:6px 0 2px; color:#fff; }
+    .kpi-card .lbl { font-size:12px; opacity:.75; }
+    .kpi-card.good .val { color:#5fe0a5; } .kpi-card.bad .val { color:#ff8383; } .kpi-card.warn .val { color:#ffcf6b; }
+    .pres-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .pres-table th, .pres-table td { padding:8px 10px; text-align:right; border-bottom:1px solid rgba(255,255,255,.08); }
+    .pres-table th { color:#8fb3e0; font-weight:700; }
+    .pres-table tr.tot td { font-weight:800; color:#fff; border-top:2px solid rgba(255,255,255,.2); }
+    .swot-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .swot-box { border-radius:12px; padding:14px 16px; }
+    .swot-box h3 { margin:0 0 8px; font-size:15px; }
+    .swot-box textarea { width:100%; min-height:110px; background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.15); border-radius:8px; color:#fff; padding:8px; font-size:13px; font-family:inherit; resize:vertical; }
+    .swot-box.s { background:rgba(95,224,165,.08); border:1px solid rgba(95,224,165,.3); } .swot-box.s h3 { color:#5fe0a5; }
+    .swot-box.w { background:rgba(255,131,131,.08); border:1px solid rgba(255,131,131,.3); } .swot-box.w h3 { color:#ff8383; }
+    .swot-box.o { background:rgba(127,199,255,.08); border:1px solid rgba(127,199,255,.3); } .swot-box.o h3 { color:#7fc7ff; }
+    .swot-box.t { background:rgba(255,207,107,.08); border:1px solid rgba(255,207,107,.3); } .swot-box.t h3 { color:#ffcf6b; }
+    .plan-box textarea { width:100%; min-height:140px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.15); border-radius:10px; color:#fff; padding:12px; font-size:14px; font-family:inherit; resize:vertical; }
+    .pres-bar-track { background:rgba(255,255,255,.1); border-radius:8px; height:14px; overflow:hidden; }
+    .pres-bar-fill { height:100%; background:linear-gradient(90deg,#5fe0a5,#7fc7ff); }
+    .pres-foot { text-align:center; padding:26px; opacity:.6; font-size:12px; }
+    @media print { .pres-slide { page-break-after:always; } }
+  `;
+  function presKpi(ico, val, lbl, cls) { return `<div class="kpi-card ${cls || ''}"><div class="ico">${ico}</div><div class="val">${val}</div><div class="lbl">${lbl}</div></div>`; }
+  function presBuildSlides(d, notesLive) {
+    const pct = (v) => `${r2(v)}%`;
+    const occPct = d.occupancy.total ? r2((d.occupancy.occupied / d.occupancy.total) * 100) : 0;
+    const netCls = d.income.net >= 0 ? 'good' : 'bad';
+    const marginCls = d.ratios.net_margin >= 20 ? 'good' : (d.ratios.net_margin >= 0 ? 'warn' : 'bad');
+    const swot = notesLive || d.notes;
+    const draftLine = (arr) => (arr || []).map((x) => `• ${esc(x)}`).join('\n');
+    const swotBox = (cls, icon, title, key, draftKey) => `
+      <div class="swot-box ${cls}"><h3>${icon} ${title}</h3>
+        <textarea data-swot="${key}" placeholder="${esc(draftLine(d.swot_draft[draftKey]))}">${esc(swot[key] || '')}</textarea></div>`;
+    return `
+      <div class="pres-slide pres-cover">
+        <h1>🏢 ${esc(d.building)}</h1>
+        <h2>عرض تقديمي مالي وتشغيلي — سنة ${d.year}</h2>
+        <div class="badge">تم الإنشاء بتاريخ ${dateStr(today())}</div>
+      </div>
+
+      <div class="pres-slide">
+        <div class="pres-h">📊 أبرز الأرقام</div>
+        <div class="kpi-grid">
+          ${presKpi('🏠', pct(occPct), 'نسبة الإشغال', occPct >= 80 ? 'good' : occPct >= 50 ? 'warn' : 'bad')}
+          ${presKpi('💰', money(d.income.total_income), 'إجمالي الإيرادات')}
+          ${presKpi('📈', money(d.income.net), 'صافي الربح', netCls)}
+          ${presKpi('📐', pct(d.ratios.net_margin), 'هامش الربح الصافي', marginCls)}
+          ${presKpi('🏦', money(d.liquidity.cash), 'النقد وما يعادله')}
+          ${presKpi('⚖️', d.ratios.current_ratio, 'نسبة التداول')}
+          ${presKpi('🧮', money(d.liquidity.working_capital), 'رأس المال العامل')}
+          ${presKpi('⏰', money(d.aging.grand_total), 'ذمم متأخرة على العملاء', d.aging.grand_total > 0 ? 'warn' : 'good')}
+        </div>
+      </div>
+
+      <div class="pres-slide">
+        <div class="pres-h">🏠 الإشغال والوحدات</div>
+        <div class="kpi-grid" style="margin-bottom:14px">
+          ${presKpi('✅', d.occupancy.occupied, 'وحدات مؤجّرة')}
+          ${presKpi('⬜', d.occupancy.vacant, 'وحدات شاغرة')}
+          ${presKpi('🏢', d.occupancy.total, 'إجمالي الوحدات')}
+        </div>
+        <div class="pres-bar-track"><div class="pres-bar-fill" style="width:${occPct}%"></div></div>
+      </div>
+
+      <div class="pres-slide">
+        <div class="pres-h">💵 قائمة الدخل — ${d.year}</div>
+        <table class="pres-table"><thead><tr><th>البند</th><th class="num">القيمة</th></tr></thead><tbody>
+          ${d.income.income.map((x) => `<tr><td>${esc(x.name)}</td><td class="num">${money(x.amt)}</td></tr>`).join('')}
+          <tr class="tot"><td>إجمالي الإيرادات</td><td class="num">${money(d.income.total_income)}</td></tr>
+          ${d.income.expense.map((x) => `<tr><td>${esc(x.name)}</td><td class="num">${money(x.amt)}</td></tr>`).join('')}
+          <tr class="tot"><td>إجمالي المصروفات</td><td class="num">${money(d.income.total_expense)}</td></tr>
+          <tr class="tot"><td>صافي الربح</td><td class="num">${money(d.income.net)}</td></tr>
+        </tbody></table>
+      </div>
+
+      <div class="pres-slide">
+        <div class="pres-h">📐 مؤشرات مالية</div>
+        <div class="kpi-grid">
+          ${presKpi('🏦', money(d.balance_sheet.total_assets), 'إجمالي الأصول')}
+          ${presKpi('📄', money(d.balance_sheet.total_liabilities), 'إجمالي الالتزامات')}
+          ${presKpi('👛', money(d.balance_sheet.total_equity), 'حقوق الملكية')}
+          ${presKpi('🔁', pct(d.ratios.roa), 'العائد على الأصول ROA')}
+          ${presKpi('💹', pct(d.ratios.roe), 'العائد على حقوق الملكية ROE')}
+          ${presKpi('💧', d.ratios.quick_ratio, 'السيولة السريعة')}
+        </div>
+      </div>
+
+      ${d.budget && (d.budget.income_totals.budget.total || d.budget.expense_totals.budget.total) ? `
+      <div class="pres-slide">
+        <div class="pres-h">🎯 الموازنة مقابل الفعلي</div>
+        <table class="pres-table"><thead><tr><th></th><th class="num">الموازنة</th><th class="num">الفعلي</th><th class="num">الفرق</th></tr></thead><tbody>
+          <tr><td>الإيرادات</td><td class="num">${money(d.budget.income_totals.budget.total)}</td><td class="num">${money(d.budget.income_totals.actual.total)}</td><td class="num">${money(d.budget.income_totals.variance.total)}</td></tr>
+          <tr><td>المصروفات</td><td class="num">${money(d.budget.expense_totals.budget.total)}</td><td class="num">${money(d.budget.expense_totals.actual.total)}</td><td class="num">${money(d.budget.expense_totals.variance.total)}</td></tr>
+          <tr class="tot"><td>صافي الربح</td><td class="num">${money(d.budget.net_budget.total)}</td><td class="num">${money(d.budget.net_actual.total)}</td><td class="num">${money(d.budget.net_variance.total)}</td></tr>
+        </tbody></table>
+      </div>` : ''}
+
+      <div class="pres-slide">
+        <div class="pres-h">🧭 تحليل SWOT</div>
+        <div class="swot-grid">
+          ${swotBox('s', '💪', 'نقاط القوة', 'strengths', 'strengths')}
+          ${swotBox('w', '⚠️', 'نقاط الضعف', 'weaknesses', 'weaknesses')}
+          ${swotBox('o', '🚀', 'الفرص', 'opportunities', 'opportunities')}
+          ${swotBox('t', '🌩️', 'المخاطر', 'threats', 'threats')}
+        </div>
+      </div>
+
+      <div class="pres-slide">
+        <div class="pres-h">🗺️ خطة التطوير المقترحة</div>
+        <div class="plan-box"><textarea data-swot="development_plan" placeholder="اكتب خطة التطوير هنا...">${esc(swot.development_plan || '')}</textarea></div>
+      </div>
+
+      <div class="pres-foot">United Tower — ${esc(d.building)} — تقرير ${d.year}</div>`;
+  }
+  async function presentation(c) {
+    const year = c._pyear || String(new Date().getFullYear());
+    const bl = await ref('buildings');
+    reportShell(c, 'm_presentation',
+      `<div class="field" style="margin:0"><label>${t('year')}</label><input type="number" id="pyr" value="${year}" style="width:100px"></div>
+       <div class="field" style="margin:0"><label>${t('building')}</label><select id="pbld"><option value="">كل البنايات (موحّد)</option>${bl.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></div>
+       <button class="btn primary" id="presSave">💾 حفظ SWOT/الخطة</button>
+       <button class="btn" id="presExport">⬇ تصدير HTML</button>`, null);
+    const bid = c._pbld || '';
+    c.querySelector('#pbld').value = bid;
+    const d = await API.get(`/presentation?year=${year}${bid ? '&building_id=' + bid : ''}`);
+    c.querySelector('#rbody').innerHTML = `<div class="pres-wrap">${presBuildSlides(d)}</div><style>${PRES_CSS}</style>`;
+    c.querySelector('#pyr').onchange = (e) => { c._pyear = e.target.value; presentation(c); };
+    c.querySelector('#pbld').onchange = (e) => { c._pbld = e.target.value; presentation(c); };
+    c.querySelector('#presSave').onclick = async () => {
+      const notes = {}; c.querySelectorAll('[data-swot]').forEach((el) => notes[el.dataset.swot] = el.value);
+      try { await API.put('/presentation/notes', { year, building_id: bid || 0, ...notes }); toast(t('saved')); } catch (e) { toast(e.message, 'err'); }
+    };
+    c.querySelector('#presExport').onclick = () => {
+      const notesLive = {}; c.querySelectorAll('[data-swot]').forEach((el) => notesLive[el.dataset.swot] = el.value);
+      const slidesHtml = presBuildSlides(d, notesLive).replace(/<textarea[^>]*data-swot="([^"]+)"[^>]*>([\s\S]*?)<\/textarea>/g,
+        (m, key, val) => `<div style="white-space:pre-wrap;background:rgba(0,0,0,.2);border-radius:8px;padding:10px;min-height:60px">${val || '<span style=\"opacity:.5\">—</span>'}</div>`);
+      const full = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>United Tower — عرض تقديمي ${year}</title>
+        <style>body{margin:0;background:#0b1220;font-family:'Segoe UI',Tahoma,Arial,sans-serif}${PRES_CSS}</style></head>
+        <body><div class="pres-wrap">${slidesHtml}</div></body></html>`;
+      const blob = new Blob([full], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = `United-Tower-Presentation-${d.building.replace(/\s+/g, '_')}-${year}.html`;
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    };
+  }
+
   async function vat(c) {
     const from = c._from || '', to = c._to || today();
     const ac = await ref('accounts');
@@ -1423,5 +1581,5 @@ Object.assign(Pages, (() => {
 
   return { customers, vendors, buildings, units, categories, paymethods, banks, employees, coa,
     vendorBills, vendorPayments, trialBalance, incomeStatement, incomeStatementConsolidated, generalLedger, balanceSheet, arAging, apAging,
-    statement, vendorStatement, advances, propertyPL, roi, cashflow, comparison, vat, vatStatement, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, moneyPosition, vatReturn, activityLog, companyDocuments, budgetEntry, budgetReport };
+    statement, vendorStatement, advances, propertyPL, roi, cashflow, comparison, vat, vatStatement, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, moneyPosition, vatReturn, activityLog, companyDocuments, budgetEntry, budgetReport, presentation };
 })());

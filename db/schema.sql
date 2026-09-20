@@ -396,3 +396,15 @@ CREATE TABLE IF NOT EXISTS budgets (
   updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(building_id, year, month, account_code)
 );
+
+-- ---------- Presentation notes (SWOT + development plan, per year/building) -
+CREATE TABLE IF NOT EXISTS presentation_notes (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  building_id INTEGER NOT NULL DEFAULT 0,     -- 0 = whole company (see budgets)
+  year        INTEGER NOT NULL,
+  strengths TEXT, weaknesses TEXT, opportunities TEXT, threats TEXT,
+  development_plan TEXT,
+  updated_by  INTEGER REFERENCES users(id),
+  updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(building_id, year)
+);

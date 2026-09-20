@@ -85,6 +85,7 @@
     ] },
     { id: 'admin', icon: '⚙️', label: 'm_admin', items: [
       { path: 'company', label: 'm_company', page: 'company', mod: 'settings' },
+      { path: 'presentation', label: 'm_presentation', page: 'presentation', mod: 'settings' },
       { path: 'documents', label: 'm_docs', page: 'companyDocuments', mod: 'settings' },
       { path: 'config', label: 'm_config', page: 'configuration', admin: true, mod: 'settings' },
       { path: 'categories', label: 'm_categories', page: 'categories', mod: 'settings' },
