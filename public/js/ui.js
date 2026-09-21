@@ -187,6 +187,21 @@ const UI = (() => {
         th,td{padding:7px 10px;border-bottom:1px solid #e3e9f2;text-align:${dir === 'rtl' ? 'right' : 'left'}}
         th{background:#f4f7fb;color:#41506b;font-weight:600}
         td.num,th.num{text-align:${dir === 'rtl' ? 'left' : 'right'};font-variant-numeric:tabular-nums}
+        /* KPI cards + grid — the print window has no access to the app's own
+           stylesheet, so a report that includes kpi()/grid cards (dashboard,
+           budget report, liquidity, cheques dashboard, reconciliation...)
+           needs this mirrored here or those cards print as unstyled text. */
+        .grid{display:grid;gap:14px} .g-4{grid-template-columns:repeat(4,1fr)} .g-3{grid-template-columns:repeat(3,1fr)} .g-2{grid-template-columns:repeat(2,1fr)}
+        .card{background:#fff;border:1px solid #e3e9f2;border-radius:10px;break-inside:avoid}
+        .card .hd{padding:10px 14px;border-bottom:1px solid #eef2f8;font-weight:700;font-size:13px}
+        .card .bd{padding:12px 14px}
+        .kpi{padding:14px;position:relative;overflow:hidden}
+        .kpi::before{content:"";position:absolute;inset-block-start:0;inset-inline:0;height:4px;background:#2563eb}
+        .kpi.k-green::before{background:#16a34a} .kpi.k-amber::before{background:#d97706} .kpi.k-red::before{background:#e11d48} .kpi.k-teal::before,.kpi.k-blue::before{background:#0ea5a4}
+        .kpi .lbl{color:#64748b;font-size:11.5px;margin-bottom:5px;font-weight:600}
+        .kpi .val{font-size:19px;font-weight:800}
+        .kpi .sub{font-size:10.5px;color:#64748b;margin-top:4px}
+        @media print{.g-4{grid-template-columns:repeat(4,1fr)}.g-3{grid-template-columns:repeat(3,1fr)}}
         tfoot td{font-weight:700;border-top:2px solid #c9d6ea;background:#f7f9fc}
         .krow{display:flex;gap:22px;margin:10px 0}
         h3{margin:16px 0 6px;font-size:14px}
