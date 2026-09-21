@@ -271,7 +271,9 @@ Object.assign(Pages, (() => {
     const head = `<tr><th>${t('code')}</th><th>${t('account')}</th>${MONTHS_AR.map((m) => `<th class="num">${m}</th>`).join('')}<th class="num">${t('total')}</th></tr>`;
     const cell = (v, acc, m) => `<td class="num">${v ? drillA(money(v), `data-acc="${acc}" data-mo="${m}"`) : ''}</td>`;
     const dataRow = (x) => `<tr><td>${esc(x.code)}</td><td>${esc(x.name)}</td>${x.months.map((v, i) => cell(v, x.code, i)).join('')}<td class="num">${x.total ? drillA(`<b>${money(x.total)}</b>`, `data-acc="${x.code}"`) : ''}</td></tr>`;
-    const totRow = (lbl, tot, cls) => `<tr class="tot"><td></td><td><b>${lbl}</b></td>${tot.months.map((v) => `<td class="num ${cls}">${money(v)}</td>`).join('')}<td class="num ${cls}"><b>${money(tot.total)}</b></td></tr>`;
+    // acc: when the total maps to exactly one account (e.g. depreciation, tax),
+    // make the months + grand total clickable just like a normal account row.
+    const totRow = (lbl, tot, cls, acc) => `<tr class="tot"><td></td><td><b>${lbl}</b></td>${tot.months.map((v, i) => acc ? cell(v, acc, i) : `<td class="num ${cls}">${money(v)}</td>`).join('')}<td class="num ${cls}">${acc && tot.total ? drillA(`<b>${money(tot.total)}</b>`, `data-acc="${acc}"`) : `<b>${money(tot.total)}</b>`}</td></tr>`;
     c.querySelector('#rbody').innerHTML = `<div class="table-wrap"><table>
       <thead>${head}</thead>
       <tbody>
@@ -282,8 +284,8 @@ Object.assign(Pages, (() => {
         ${r.expense.map(dataRow).join('') || `<tr><td colspan="${MONTHS_AR.length + 3}" class="muted">${t('no_data')}</td></tr>`}
         ${totRow(t('total_expense'), r.total_expense, 'neg')}
         ${totRow(t('ebitda'), r.ebitda, '')}
-        ${totRow(t('depreciation'), r.depreciation, 'neg')}
-        ${totRow(t('income_tax'), r.income_tax, 'neg')}
+        ${totRow(t('depreciation'), r.depreciation, 'neg', r.depreciation_code)}
+        ${totRow(t('income_tax'), r.income_tax, 'neg', r.income_tax_code)}
         ${totRow(t('net_after_dep_tax'), r.net, '')}
       </tbody></table></div>`;
     // click a month cell or account total -> movements for that account
@@ -901,6 +903,44 @@ Object.assign(Pages, (() => {
          ${MONTHS_AR.map((m, i) => `<option value="${i + 1}"${month == i + 1 ? ' selected' : ''}>${m}</option>`).join('')}
        </select></div>` : ''}`, null);
     c.querySelector('#brbld').value = String(bid);
+    const kpi = (lbl, val, sub, cls, ico) => `<div class="card kpi ${cls}"><div class="ico">${ico}</div><div class="lbl">${lbl}</div><div class="val mono">${val}</div><div class="sub">${sub}</div></div>`;
+    const kpiRow = (incomeBudget, incomeActual, expenseBudget, expenseActual, netBudget, netActual) => {
+      const gap = r2(netActual - netBudget);
+      const achievedPct = incomeBudget ? r2((incomeActual / incomeBudget) * 100) : 0;
+      return `<div class="grid g-4" style="margin-bottom:16px">
+        ${kpi(`${t('variance')} (${t('actual')} − ${t('budget')})`, money(gap), incomeBudget ? `${t('income')}: ${achievedPct}% ${t('bud_achieved')}` : '', gap >= 0 ? 'k-green' : 'k-red', '⚖️')}
+        ${kpi(`${t('total_expense')} (${t('actual')})`, money(expenseActual), `${t('budget')}: ${money(expenseBudget)}`, 'k-red', '📉')}
+        ${kpi(`${t('total_income')} (${t('actual')})`, money(incomeActual), `${t('budget')}: ${money(incomeBudget)}`, 'k-green', '📈')}
+        ${kpi(`${t('total_income')} (${t('budget')})`, money(incomeBudget), t('bud_full_year'), 'k-blue', '🎯')}
+      </div>`;
+    };
+    // a simple two-series bar chart (budget vs actual, net profit per month) —
+    // only meaningful in monthly mode, where there's a month axis to plot.
+    const budgetChart = (months, budgetArr, actualArr) => {
+      const max = Math.max(...budgetArr.map(Math.abs), ...actualArr.map(Math.abs), 1);
+      return `<div class="card" style="margin-bottom:16px"><div class="hd"><h3>📊 ${t('net_profit')} — ${t('budget')} / ${t('actual')}</h3></div>
+        <div class="bd"><div class="bud-chart-legend"><span><i style="background:var(--line-2);border:1px solid #c9d6ea"></i> ${t('budget')}</span><span><i style="background:var(--teal)"></i> ${t('actual')}</span></div>
+        <div class="bud-chart">${months.map((m, i) => `
+          <div class="bud-chart-col">
+            <div class="bud-chart-bars">
+              <div class="bcb budget" style="height:${Math.round((Math.abs(budgetArr[i]) / max) * 100)}%" title="${money(budgetArr[i])}"></div>
+              <div class="bcb actual ${actualArr[i] < budgetArr[i] ? 'neg' : ''}" style="height:${Math.round((Math.abs(actualArr[i]) / max) * 100)}%" title="${money(actualArr[i])}"></div>
+            </div>
+            <div class="bud-chart-lbl">${m.slice(0, 3)}</div>
+          </div>`).join('')}</div></div></div>
+        <style>
+          .bud-chart-legend{display:flex;gap:16px;font-size:12px;color:var(--muted);margin-bottom:10px}
+          .bud-chart-legend span{display:inline-flex;align-items:center;gap:5px}
+          .bud-chart-legend i{width:10px;height:10px;border-radius:2px;display:inline-block}
+          .bud-chart{display:flex;align-items:flex-end;gap:8px;height:140px}
+          .bud-chart-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
+          .bud-chart-bars{display:flex;align-items:flex-end;gap:3px;height:110px;width:100%;justify-content:center}
+          .bcb{width:11px;border-radius:2px 2px 0 0;min-height:2px}
+          .bcb.budget{background:#c9d6ea}
+          .bcb.actual{background:var(--teal)} .bcb.actual.neg{background:var(--red)}
+          .bud-chart-lbl{font-size:10.5px;color:var(--muted);margin-top:6px}
+        </style>`;
+    };
 
     if (mode === 'flat') {
       const r = await API.get(`/reports/budget-vs-actual-flat?year=${year}&building_id=${bid}&version=${ver}${month ? '&month=' + month : ''}`);
@@ -909,7 +949,9 @@ Object.assign(Pages, (() => {
           <td class="num muted">${money(x.budget)}</td><td class="num"><b>${money(x.actual)}</b></td>
           <td class="num ${x.variance < 0 ? 'neg' : 'pos'}">${money(x.variance)}</td></tr>`).join('');
       const totalRow = (lbl, obj, cls) => `<tr class="tot"><td colspan="2"><b>${lbl}</b></td><td class="num muted">${money(obj.budget)}</td><td class="num ${cls || ''}"><b>${money(obj.actual)}</b></td><td class="num ${obj.variance < 0 ? 'neg' : 'pos'}">${money(obj.variance)}</td></tr>`;
-      c.querySelector('#rbody').innerHTML = `<div class="table-wrap"><table>
+      c.querySelector('#rbody').innerHTML = `<div class="bd">
+        ${kpiRow(r.income_totals.budget, r.income_totals.actual, r.expense_totals.budget, r.expense_totals.actual, r.net.budget, r.net.actual)}
+        <div class="table-wrap"><table>
         <thead><tr><th>${t('code')}</th><th>${t('account')}</th><th class="num">${t('budget')}</th><th class="num">${t('actual')}</th><th class="num">${t('variance')}</th></tr></thead>
         <tbody>
           <tr class="sec"><td colspan="5"><b>${t('income')}</b></td></tr>
@@ -919,7 +961,7 @@ Object.assign(Pages, (() => {
           ${r.expense.length ? rowsFor(r.expense) : `<tr><td colspan="5" class="muted">${t('no_data')}</td></tr>`}
           ${totalRow(`${t('total_expense')}`, r.expense_totals, 'neg')}
           <tr class="tot"><td colspan="2"><b>${t('net_profit')}</b></td><td class="num muted">${money(r.net.budget)}</td><td class="num"><b>${money(r.net.actual)}</b></td><td class="num ${r.net.variance < 0 ? 'neg' : 'pos'}">${money(r.net.variance)}</td></tr>
-        </tbody></table></div>`;
+        </tbody></table></div></div>`;
     } else {
       const r = await API.get(`/reports/budget-vs-actual?year=${year}&building_id=${bid}&version=${ver}`);
       const head = `<tr><th>${t('code')}</th><th>${t('account')}</th><th>${t('item')}</th>${MONTHS_AR.map((m) => `<th class="num">${m}</th>`).join('')}<th class="num">${t('total')}</th></tr>`;
@@ -928,7 +970,10 @@ Object.assign(Pages, (() => {
         <tr><td>${t('actual')}</td>${x.actual.map((v) => `<td class="num">${money(v)}</td>`).join('')}<td class="num"><b>${money(x.actual_total)}</b></td></tr>
         <tr class="tot"><td>${t('variance')}</td>${x.variance.map((v) => `<td class="num ${v < 0 ? 'neg' : 'pos'}">${money(v)}</td>`).join('')}<td class="num ${x.variance_total < 0 ? 'neg' : 'pos'}">${money(x.variance_total)}</td></tr>`).join('');
       const totalRow = (lbl, obj, cls) => `<tr class="tot"><td colspan="3"><b>${lbl}</b></td>${obj.months.map((v) => `<td class="num ${cls || ''}">${money(v)}</td>`).join('')}<td class="num ${cls || ''}"><b>${money(obj.total)}</b></td></tr>`;
-      c.querySelector('#rbody').innerHTML = `<div class="table-wrap"><table>
+      c.querySelector('#rbody').innerHTML = `<div class="bd">
+        ${kpiRow(r.income_totals.budget.total, r.income_totals.actual.total, r.expense_totals.budget.total, r.expense_totals.actual.total, r.net_budget.total, r.net_actual.total)}
+        ${budgetChart(MONTHS_AR, r.net_budget.months, r.net_actual.months)}
+        <div class="table-wrap"><table>
         <thead>${head}</thead>
         <tbody>
           <tr class="sec"><td colspan="${MONTHS_AR.length + 3}"><b>${t('income')}</b></td></tr>
@@ -942,7 +987,7 @@ Object.assign(Pages, (() => {
           ${totalRow(`${t('net_profit')} (${t('budget')})`, r.net_budget, 'muted')}
           ${totalRow(`${t('net_profit')} (${t('actual')})`, r.net_actual, '')}
           ${totalRow(`${t('variance')} (${t('actual')} − ${t('budget')})`, r.net_variance, r.net_variance.total < 0 ? 'neg' : 'pos')}
-        </tbody></table></div>`;
+        </tbody></table></div></div>`;
     }
     c.querySelector('#bryr').onchange = (e) => { c._bryear = e.target.value; budgetReport(c); };
     c.querySelector('#brbld').onchange = (e) => { c._brbld = e.target.value; budgetReport(c); };
@@ -959,17 +1004,9 @@ Object.assign(Pages, (() => {
       --pg-muted:rgba(231,235,240,.58); --pg-accent:#38c2c0; --pg-accent2:#4f8fe0;
       --pg-good:#3ecf8e; --pg-bad:#ef5b5b; --pg-warn:#e0a340;
       direction:rtl; font-family:inherit; background:var(--pg-bg); color:var(--pg-text); border-radius:14px; overflow:hidden; position:relative; }
-    .pres-navbar { display:flex; align-items:center; gap:12px; padding:10px 16px; background:var(--pg-card); border-bottom:1px solid var(--pg-border); position:sticky; top:0; z-index:5; }
-    .pres-nav-btn { background:rgba(255,255,255,.06); border:1px solid var(--pg-border); color:var(--pg-text); border-radius:8px; padding:6px 14px; font-size:13px; cursor:pointer; }
-    .pres-nav-btn:hover { background:rgba(255,255,255,.12); }
-    .pres-nav-btn:disabled { opacity:.35; cursor:default; }
-    .pres-dots { display:flex; gap:6px; flex:1; justify-content:center; overflow-x:auto; }
-    .pres-dot { width:8px; height:8px; border-radius:50%; background:rgba(255,255,255,.18); cursor:pointer; flex:none; }
-    .pres-dot.active { background:var(--pg-accent); width:20px; border-radius:5px; }
-    .pres-counter { font-size:12px; color:var(--pg-muted); white-space:nowrap; }
-    .pres-slides { }
-    .pres-slide { padding:30px 34px; border-bottom:1px solid var(--pg-border); page-break-after:always; min-height:320px; }
+    .pres-slide { padding:30px 34px; border-bottom:1px solid var(--pg-border); }
     .pres-slide:last-child { border-bottom:none; }
+    @media print { .pres-slide { border-bottom:none; page-break-after:always; } }
     .pres-cover { background:linear-gradient(160deg,#0e1620,#0b0f14 65%); text-align:center; padding:64px 30px; position:relative; min-height:auto; }
     .pres-cover::before { content:''; position:absolute; inset:0 0 auto 0; height:3px; background:linear-gradient(90deg,var(--pg-accent),var(--pg-accent2)); }
     .pres-cover .pres-mark { width:56px; height:56px; margin:0 auto 18px; border-radius:14px; background:rgba(56,194,192,.12); border:1px solid rgba(56,194,192,.3); display:flex; align-items:center; justify-content:center; font-size:26px; }
@@ -1036,7 +1073,6 @@ Object.assign(Pages, (() => {
     .pres-fb-thanks .ico { font-size:40px; margin-bottom:10px; }
     .fb-summary-row { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--pg-border); font-size:13px; }
     .fb-summary-row:last-child { border-bottom:none; }
-    @media print { .pres-navbar { display:none; } .pres-slide { display:block !important; page-break-after:always; } }
   `;
   function presKpi(ico, val, lbl, cls) { return `<div class="kpi-card ${cls || ''}"><div class="ico">${ico}</div><div class="val">${val}</div><div class="lbl">${esc(lbl)}</div></div>`; }
   // Budget-vs-actual bar: neutral (teal) within a 5% tolerance band, green when
@@ -1074,37 +1110,6 @@ Object.assign(Pages, (() => {
   }
   // Slide navigation: shown one at a time in-app and in the public/exported
   // view, but the print stylesheet forces every slide visible again.
-  function presNavBar(count) {
-    const dots = Array.from({ length: count }, (_, i) => `<span class="pres-dot${i === 0 ? ' active' : ''}" data-dot="${i}"></span>`).join('');
-    return `<div class="pres-navbar">
-      <button class="pres-nav-btn" data-nav="prev" disabled>‹ ${t('pres_prev')}</button>
-      <div class="pres-dots">${dots}</div>
-      <span class="pres-counter">1 / ${count}</span>
-      <button class="pres-nav-btn" data-nav="next">${t('pres_next')} ›</button>
-    </div>`;
-  }
-  function presNavScript(rootId) {
-    return `(function(){
-      var root = document.getElementById(${JSON.stringify(rootId)}); if(!root) return;
-      var slides=[].slice.call(root.querySelectorAll('.pres-slides > .pres-slide')); var idx=0;
-      function render(){
-        slides.forEach(function(s,i){ s.style.display = (i===idx)?'':'none'; });
-        var counter=root.querySelector('.pres-counter'); if(counter) counter.textContent=(idx+1)+' / '+slides.length;
-        root.querySelectorAll('.pres-dot').forEach(function(d,i){ d.classList.toggle('active', i===idx); });
-        var prevBtn=root.querySelector('[data-nav="prev"]'), nextBtn=root.querySelector('[data-nav="next"]');
-        if(prevBtn) prevBtn.disabled = idx===0; if(nextBtn) nextBtn.disabled = idx===slides.length-1;
-      }
-      root.querySelectorAll('[data-nav="prev"]').forEach(function(b){ b.addEventListener('click', function(){ idx=Math.max(0,idx-1); render(); }); });
-      root.querySelectorAll('[data-nav="next"]').forEach(function(b){ b.addEventListener('click', function(){ idx=Math.min(slides.length-1,idx+1); render(); }); });
-      root.querySelectorAll('.pres-dot').forEach(function(d){ d.addEventListener('click', function(){ idx=Number(d.dataset.dot); render(); }); });
-      root.tabIndex=0;
-      root.addEventListener('keydown', function(e){
-        if(e.key==='ArrowLeft'){ idx=Math.min(slides.length-1,idx+1); render(); }
-        if(e.key==='ArrowRight'){ idx=Math.max(0,idx-1); render(); }
-      });
-      render();
-    })();`;
-  }
   function presSlideList(d, notesLive, opts) {
     opts = opts || {};
     const pct = (v) => `${r2(v)}%`;
@@ -1253,10 +1258,9 @@ Object.assign(Pages, (() => {
     const slides = presSlideList(d, notesLive, opts);
     const periodLbl = d.from === `${d.year}-01-01` && d.to === `${d.year}-12-31` ? `${d.year}` : `${dateStr(d.from)} — ${dateStr(d.to)}`;
     return `<div class="pres-wrap" id="${esc(rootId)}">
-      ${presNavBar(slides.length)}
       <div class="pres-slides">${slides.join('')}</div>
       <div class="pres-foot">United Tower — ${esc(d.building)} — ${esc(periodLbl)}</div>
-    </div><style>${PRES_CSS}</style><script>${presNavScript(rootId)}</script>`;
+    </div><style>${PRES_CSS}</style>`;
   }
   async function presentation(c) {
     const to = c._pto || today();
@@ -1273,8 +1277,6 @@ Object.assign(Pages, (() => {
     c.querySelector('#pbld').value = bid;
     const d = await API.get(`/presentation?from=${from}&to=${to}${bid ? '&building_id=' + bid : ''}`);
     c.querySelector('#rbody').innerHTML = presBuildSlides(d) + '<div id="fbSummary" style="margin-top:14px"></div>';
-    // run the slide-nav script (script tags set via innerHTML don't auto-execute)
-    (new Function(presNavScript('presDeck')))();
     API.get(`/presentation/feedback?from=${from}&to=${to}${bid ? '&building_id=' + bid : ''}`).then((fb) => {
       const box = c.querySelector('#fbSummary'); if (!box) return;
       if (!fb.count) { box.innerHTML = `<div class="card"><div class="bd muted">${t('pres_feedback_view')}: ${t('pres_feedback_none')}</div></div>`; return; }
@@ -1325,7 +1327,6 @@ Object.assign(Pages, (() => {
       return;
     }
     container.innerHTML = `<div style="max-width:900px;margin:24px auto;padding:0 16px">${presBuildSlides(d, null, { readOnly: true, rootId: 'presDeckPublic', feedbackToken: token })}</div>`;
-    (new Function(presNavScript('presDeckPublic')))();
     wirePresFeedbackForm(container, (payload) => fetch(`/api/public/presentation/${encodeURIComponent(token)}/feedback`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
     }).then((res) => { if (!res.ok) throw new Error('failed'); }));

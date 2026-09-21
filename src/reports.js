@@ -85,7 +85,7 @@ function incomeStatementConsolidated(year, lang = 'en', building_id) {
   const depreciation = sumMonths(depreciation_rows), income_tax = sumMonths(tax_rows);
   const ebitda = { months: ti.months.map((v, i) => r2(v - te.months[i])), total: r2(ti.total - te.total) };
   const net = { months: ebitda.months.map((v, i) => r2(v - depreciation.months[i] - income_tax.months[i])), total: r2(ebitda.total - depreciation.total - income_tax.total) };
-  return { year, income, expense, total_income: ti, total_expense: te, ebitda, depreciation, income_tax, net };
+  return { year, income, expense, total_income: ti, total_expense: te, ebitda, depreciation, income_tax, net, depreciation_code: depCode, income_tax_code: taxCode };
 }
 
 // ---- General Ledger / account drill-down (movements on an account) --------

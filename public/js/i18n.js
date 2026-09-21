@@ -72,7 +72,7 @@ const I18N = (() => {
       pres_feedback_none: 'لسه مفيش تقييمات', bud_version: 'الموازنة', bud_new_version: 'موازنة جديدة', bud_rename: 'تسمية',
       bud_edit_selected: 'تعديل المحدد', bud_clear_selected: 'مسح المحدد', bud_clear_all: 'مسح الكل',
       bud_shape: 'الشكل', bud_shape_monthly: 'شهري (12 عمود)', bud_shape_flat: 'أفقي (شهر أو سنة واحدة)',
-      bud_full_year: 'السنة كاملة', bud_period: 'الفترة',
+      bud_full_year: 'السنة كاملة', bud_period: 'الفترة', bud_achieved: 'محقق',
     },
     en: {
       app_name: 'United Tower', app_sub: 'Real-Estate & Accounting System',
@@ -140,7 +140,7 @@ const I18N = (() => {
       pres_feedback_none: 'No feedback yet', bud_version: 'Budget Scenario', bud_new_version: 'New Scenario', bud_rename: 'Rename',
       bud_edit_selected: 'Edit Selected', bud_clear_selected: 'Clear Selected', bud_clear_all: 'Clear All',
       bud_shape: 'Layout', bud_shape_monthly: 'Monthly (12 columns)', bud_shape_flat: 'Flat (single month/year)',
-      bud_full_year: 'Whole Year', bud_period: 'Period',
+      bud_full_year: 'Whole Year', bud_period: 'Period', bud_achieved: 'achieved',
     },
     hi: {
       app_name: 'यूनाइटेड टावर', app_sub: 'रियल एस्टेट और अकाउंटिंग सिस्टम',
@@ -214,7 +214,7 @@ const I18N = (() => {
       pres_feedback_none: 'अभी तक कोई प्रतिक्रिया नहीं', bud_version: 'बजट परिदृश्य', bud_new_version: 'नया परिदृश्य', bud_rename: 'नाम बदलें',
       bud_edit_selected: 'चयनित संपादित करें', bud_clear_selected: 'चयनित साफ़ करें', bud_clear_all: 'सभी साफ़ करें',
       bud_shape: 'दृश्य', bud_shape_monthly: 'मासिक (12 कॉलम)', bud_shape_flat: 'क्षैतिज (एक माह/वर्ष)',
-      bud_full_year: 'पूरा वर्ष', bud_period: 'अवधि',
+      bud_full_year: 'पूरा वर्ष', bud_period: 'अवधि', bud_achieved: 'हासिल',
     },
   };
   let lang = localStorage.getItem('ut_lang') || 'ar';
