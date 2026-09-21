@@ -203,9 +203,19 @@
   }
 
   async function route() {
+    const { path, params } = parseHash();
+    // public presentation share link — bypasses login entirely, whoever holds
+    // the token can view this one snapshot and leave a rating, nothing else.
+    // The AI assistant widget mounts on <body> (outside #app) and survives a
+    // hash-only navigation, so it must be torn down explicitly here — a public
+    // viewer must never see or reach the internal, data-connected AI panel.
+    if (path === 'public-presentation') {
+      if (typeof AIWidget !== 'undefined') AIWidget.unmount();
+      Pages.publicPresentation(document.getElementById('app'), params.token);
+      return;
+    }
     if (!API.isAuthed()) { loginView(); return; }
     if (!document.querySelector('.layout')) layout();
-    const { path, params } = parseHash();
     if (path === 'login') { location.hash = '#/dashboard'; return; }
     const item = findItem(path);
     UT.mod = item ? item.path : null;

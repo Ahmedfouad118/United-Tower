@@ -419,3 +419,25 @@ CREATE TABLE IF NOT EXISTS presentation_notes (
   updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(building_id, year)
 );
+
+-- ---------- Presentation share links (public, unlisted-by-token) + feedback -
+CREATE TABLE IF NOT EXISTS presentation_shares (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  token       TEXT UNIQUE NOT NULL,
+  building_id INTEGER,                        -- NULL = all buildings (consolidated)
+  from_date   TEXT NOT NULL,
+  to_date     TEXT NOT NULL,
+  version     INTEGER NOT NULL DEFAULT 1,
+  created_by  INTEGER REFERENCES users(id),
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS presentation_feedback (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  share_token    TEXT NOT NULL REFERENCES presentation_shares(token),
+  rating_overall INTEGER,
+  rating_clarity INTEGER,
+  rating_design  INTEGER,
+  notes          TEXT,
+  name           TEXT,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);

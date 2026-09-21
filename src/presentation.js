@@ -43,6 +43,41 @@ function draftSwot(data) {
 }
 function money0(v) { return r2(v).toLocaleString('en-US', { minimumFractionDigits: 3 }); }
 
+// Narrative performance insights — a plain-language reading of the same
+// numbers already on the KPI slide, so a non-accountant reviewer gets a
+// sentence of context instead of just a raw figure.
+function buildInsights(data) {
+  const out = [];
+  const occ = data.occupancy.total ? r2((data.occupancy.occupied / data.occupancy.total) * 100) : 0;
+  if (occ >= 90) out.push(`نسبة الإشغال ${occ}% — إشغال شبه كامل، فرصة محدودة لزيادة الإيراد إلا برفع الإيجارات أو وحدات جديدة.`);
+  else if (occ >= 70) out.push(`نسبة الإشغال ${occ}% — مستوى جيد، مع وجود وحدات شاغرة تستحق حملة تسويقية مركّزة.`);
+  else out.push(`نسبة الإشغال ${occ}% — أقل من المتوسط المعتاد للقطاع العقاري (80%+)، وده بيأثر مباشرة على الإيراد المحتمل.`);
+
+  const nm = data.ratios.net_margin;
+  if (nm >= 30) out.push(`هامش الربح الصافي ${nm}% — أعلى من متوسط قطاع العقارات التجارية (عادة 20-30%)، أداء مالي قوي.`);
+  else if (nm >= 15) out.push(`هامش الربح الصافي ${nm}% — ضمن النطاق المعتاد للقطاع، لكن فيه مساحة لتحسين ضبط المصروفات.`);
+  else out.push(`هامش الربح الصافي ${nm}% — أقل من المعتاد للقطاع، يستحق مراجعة بنود المصروفات الأكبر.`);
+
+  const cr = data.ratios.current_ratio;
+  if (cr >= 2) out.push(`نسبة التداول ${cr} — سيولة قصيرة الأجل مريحة جدًا، تغطي الالتزامات المتداولة براحة.`);
+  else if (cr >= 1) out.push(`نسبة التداول ${cr} — سيولة كافية لتغطية الالتزامات المتداولة، بدون فائض كبير.`);
+  else out.push(`نسبة التداول ${cr} — أقل من 1، ما يعني ضغط محتمل على السيولة قصيرة الأجل يستحق المتابعة.`);
+
+  if (data.aging.grand_total > 0) {
+    const pctOfRev = data.income.total_income ? r2((data.aging.grand_total / data.income.total_income) * 100) : 0;
+    out.push(`الذمم المتأخرة على العملاء ${money0(data.aging.grand_total)} — ما يعادل ${pctOfRev}% من إيراد الفترة، يستحق خطة تحصيل واضحة.`);
+  } else {
+    out.push('لا توجد ذمم متأخرة على العملاء في نهاية الفترة — تحصيل جيد.');
+  }
+
+  if (data.budget && data.budget.income_totals.budget.total) {
+    const varPct = r2((data.budget.income_totals.variance.total / data.budget.income_totals.budget.total) * 100);
+    if (varPct >= 0) out.push(`الإيراد الفعلي تجاوز الموازنة بنسبة ${varPct}%.`);
+    else out.push(`الإيراد الفعلي أقل من الموازنة بنسبة ${Math.abs(varPct)}%.`);
+  }
+  return out;
+}
+
 // Bank balances as of a date — each bank's own GL account balance, plus the
 // total, so the presentation can show "رصيد البنك" without the user having to
 // open the bank report separately.
@@ -96,7 +131,52 @@ function getPresentationData(from, to, building_id, version) {
     income, monthly_trend, balance_sheet, liquidity, ratios, occupancy, aging, bank, budget, notes,
   };
   data.swot_draft = draftSwot(data);
+  data.insights = buildInsights(data);
   return data;
 }
 
-module.exports = { getPresentationData, getNotes, saveNotes };
+// ---- Share links (public, unlisted-by-token) + viewer feedback ------------
+function getOrCreateShare(from, to, building_id, version, created_by) {
+  const bid = building_id ? Number(building_id) : null;
+  const ver = Number(version) || 1;
+  const existing = bid == null
+    ? db.prepare('SELECT * FROM presentation_shares WHERE building_id IS NULL AND from_date=? AND to_date=? AND version=?').get(from, to, ver)
+    : db.prepare('SELECT * FROM presentation_shares WHERE building_id=? AND from_date=? AND to_date=? AND version=?').get(bid, from, to, ver);
+  if (existing) return existing;
+  const token = require('crypto').randomBytes(16).toString('hex');
+  db.prepare('INSERT INTO presentation_shares (token,building_id,from_date,to_date,version,created_by) VALUES (?,?,?,?,?,?)')
+    .run(token, bid, from, to, ver, created_by || null);
+  return db.prepare('SELECT * FROM presentation_shares WHERE token=?').get(token);
+}
+function getShare(token) {
+  return db.prepare('SELECT * FROM presentation_shares WHERE token=?').get(token);
+}
+function saveFeedback(token, data) {
+  const share = getShare(token);
+  if (!share) throw new Error('رابط غير صالح');
+  const clamp = (v) => { v = Number(v); return v >= 1 && v <= 5 ? v : null; };
+  db.prepare(
+    `INSERT INTO presentation_feedback (share_token,rating_overall,rating_clarity,rating_design,notes,name)
+     VALUES (?,?,?,?,?,?)`)
+    .run(token, clamp(data.rating_overall), clamp(data.rating_clarity), clamp(data.rating_design),
+      (data.notes || '').slice(0, 2000) || null, (data.name || '').slice(0, 100) || null);
+  return { ok: true };
+}
+function listFeedback(from, to, building_id, version) {
+  const bid = building_id ? Number(building_id) : null;
+  const ver = Number(version) || 1;
+  const shares = bid == null
+    ? db.prepare('SELECT token FROM presentation_shares WHERE building_id IS NULL AND from_date=? AND to_date=? AND version=?').all(from, to, ver)
+    : db.prepare('SELECT token FROM presentation_shares WHERE building_id=? AND from_date=? AND to_date=? AND version=?').all(bid, from, to, ver);
+  if (!shares.length) return { rows: [], count: 0, avg_overall: 0, avg_clarity: 0, avg_design: 0 };
+  const tokens = shares.map((s) => s.token);
+  const rows = db.prepare(
+    `SELECT * FROM presentation_feedback WHERE share_token IN (${tokens.map(() => '?').join(',')}) ORDER BY created_at DESC`).all(...tokens);
+  const avg = (key) => { const v = rows.filter((r) => r[key] != null); return v.length ? r2(v.reduce((s, r) => s + r[key], 0) / v.length) : 0; };
+  return { rows, count: rows.length, avg_overall: avg('rating_overall'), avg_clarity: avg('rating_clarity'), avg_design: avg('rating_design') };
+}
+
+module.exports = {
+  getPresentationData, getNotes, saveNotes,
+  getOrCreateShare, getShare, saveFeedback, listFeedback,
+};

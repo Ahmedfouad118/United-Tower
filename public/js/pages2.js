@@ -782,10 +782,10 @@ Object.assign(Pages, (() => {
     const { versions, html: verOpts } = await versionOptsHtml(year, bid, ver);
     reportShell(c, 'm_budget_entry',
       `<div class="field" style="margin:0"><label>${t('year')}</label><input type="number" id="byr" value="${year}" style="width:100px"></div>
-       <div class="field" style="margin:0"><label>${t('building')}</label><select id="bbld"><option value="0">كل البنايات (موحّد)</option>${bl.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></div>
-       <div class="field" style="margin:0"><label>الموازنة</label><select id="bver">${verOpts}</select></div>
-       <button class="btn" id="bverNew" title="موازنة جديدة (سيناريو إضافي)">➕ موازنة جديدة</button>
-       <button class="btn" id="bverLabel" title="إعادة تسمية">✏️ تسمية</button>`, null);
+       <div class="field" style="margin:0"><label>${t('building')}</label><select id="bbld"><option value="0">${t('all_buildings_consolidated')}</option>${bl.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></div>
+       <div class="field" style="margin:0"><label>${t('bud_version')}</label><select id="bver">${verOpts}</select></div>
+       <button class="btn" id="bverNew" title="${t('bud_new_version')}">➕ ${t('bud_new_version')}</button>
+       <button class="btn" id="bverLabel" title="${t('bud_rename')}">✏️ ${t('bud_rename')}</button>`, null);
     c.querySelector('#bbld').value = String(bid);
     const r = await API.get(`/budget?year=${year}&building_id=${bid}&version=${ver}`);
     const byCode = {}; for (const row of r) byCode[row.code] = row.months;
@@ -797,16 +797,16 @@ Object.assign(Pages, (() => {
     c.querySelector('#rbody').innerHTML = `<div class="bd">
       <div class="toolbar" style="margin:0 0 10px;align-items:flex-end">
         <div class="field" style="margin:0"><label>${t('occupancy')}</label><input type="number" id="occ" value="90" style="width:80px"></div>
-        <button class="btn" id="sugRev">💡 اقتراح إيراد الإيجار</button>
-        <button class="btn" id="sugExp">💡 اقتراح المصاريف (متوسط الشهور المُدخلة)</button>
+        <button class="btn" id="sugRev">💡 ${t('suggest')} (${t('income')})</button>
+        <button class="btn" id="sugExp">💡 ${t('suggest')} (${t('expense')})</button>
         <div class="spacer"></div>
-        <button class="btn" id="editSel">✏️ تعديل المحدد</button>
-        <button class="btn" id="clearSel">🧹 مسح المحدد</button>
-        <button class="btn" id="clearAll">🗑️ مسح الكل</button>
+        <button class="btn" id="editSel">✏️ ${t('bud_edit_selected')}</button>
+        <button class="btn" id="clearSel">🧹 ${t('bud_clear_selected')}</button>
+        <button class="btn" id="clearAll">🗑️ ${t('bud_clear_all')}</button>
         <button class="btn primary" id="saveBudget">💾 ${t('save')}</button>
       </div>
       <div class="table-wrap"><table>
-        <thead><tr><th><input type="checkbox" id="selAll" title="تحديد الكل"></th><th>${t('code')}</th><th>${t('account')}</th>${MONTHS_AR.map((m) => `<th class="num">${m}</th>`).join('')}<th class="num">${t('total')}</th></tr></thead>
+        <thead><tr><th><input type="checkbox" id="selAll"></th><th>${t('code')}</th><th>${t('account')}</th>${MONTHS_AR.map((m) => `<th class="num">${m}</th>`).join('')}<th class="num">${t('total')}</th></tr></thead>
         <tbody>${rowsHtml}</tbody>
       </table></div>
       <p class="muted" style="font-size:11px;margin-top:8px">اقتراح الإيراد بيتطبق على حساب إيراد الإيجار (40000) على مدار الـ12 شهر. اقتراح المصاريف بياخد متوسط كل حساب على الشهور اللي فيها بيانات فعلية بالسنة دي (أو آخر 12 شهر لو السنة لسة مفيهاش بيانات) — مش تقسيم ثابت على 12. حدد صفوف بالمربعات على اليسار عشان تعدّل أو تمسح مجموعة منها، وبعدها اضغط حفظ.</p></div>`;
@@ -890,14 +890,14 @@ Object.assign(Pages, (() => {
     const { html: verOpts } = await versionOptsHtml(year, bid, ver);
     reportShell(c, 'm_budget_report',
       `<div class="field" style="margin:0"><label>${t('year')}</label><input type="number" id="bryr" value="${year}" style="width:100px"></div>
-       <div class="field" style="margin:0"><label>${t('building')}</label><select id="brbld"><option value="0">كل البنايات (موحّد)</option>${bl.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></div>
-       <div class="field" style="margin:0"><label>الموازنة</label><select id="brver">${verOpts}</select></div>
-       <div class="field" style="margin:0"><label>الشكل</label><select id="brmode">
-         <option value="monthly"${mode === 'monthly' ? ' selected' : ''}>شهري (12 عمود)</option>
-         <option value="flat"${mode === 'flat' ? ' selected' : ''}>أفقي (شهر أو سنة واحدة)</option>
+       <div class="field" style="margin:0"><label>${t('building')}</label><select id="brbld"><option value="0">${t('all_buildings_consolidated')}</option>${bl.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></div>
+       <div class="field" style="margin:0"><label>${t('bud_version')}</label><select id="brver">${verOpts}</select></div>
+       <div class="field" style="margin:0"><label>${t('bud_shape')}</label><select id="brmode">
+         <option value="monthly"${mode === 'monthly' ? ' selected' : ''}>${t('bud_shape_monthly')}</option>
+         <option value="flat"${mode === 'flat' ? ' selected' : ''}>${t('bud_shape_flat')}</option>
        </select></div>
-       ${mode === 'flat' ? `<div class="field" style="margin:0"><label>الفترة</label><select id="brmonth">
-         <option value=""${!month ? ' selected' : ''}>السنة كاملة</option>
+       ${mode === 'flat' ? `<div class="field" style="margin:0"><label>${t('bud_period')}</label><select id="brmonth">
+         <option value=""${!month ? ' selected' : ''}>${t('bud_full_year')}</option>
          ${MONTHS_AR.map((m, i) => `<option value="${i + 1}"${month == i + 1 ? ' selected' : ''}>${m}</option>`).join('')}
        </select></div>` : ''}`, null);
     c.querySelector('#brbld').value = String(bid);
@@ -914,15 +914,15 @@ Object.assign(Pages, (() => {
         <tbody>
           <tr class="sec"><td colspan="5"><b>${t('income')}</b></td></tr>
           ${r.income.length ? rowsFor(r.income) : `<tr><td colspan="5" class="muted">${t('no_data')}</td></tr>`}
-          ${totalRow('إجمالي الإيرادات', r.income_totals, 'pos')}
+          ${totalRow(`${t('total_income')}`, r.income_totals, 'pos')}
           <tr class="sec"><td colspan="5"><b>${t('expense')}</b></td></tr>
           ${r.expense.length ? rowsFor(r.expense) : `<tr><td colspan="5" class="muted">${t('no_data')}</td></tr>`}
-          ${totalRow('إجمالي المصروفات', r.expense_totals, 'neg')}
-          <tr class="tot"><td colspan="2"><b>صافي الربح</b></td><td class="num muted">${money(r.net.budget)}</td><td class="num"><b>${money(r.net.actual)}</b></td><td class="num ${r.net.variance < 0 ? 'neg' : 'pos'}">${money(r.net.variance)}</td></tr>
+          ${totalRow(`${t('total_expense')}`, r.expense_totals, 'neg')}
+          <tr class="tot"><td colspan="2"><b>${t('net_profit')}</b></td><td class="num muted">${money(r.net.budget)}</td><td class="num"><b>${money(r.net.actual)}</b></td><td class="num ${r.net.variance < 0 ? 'neg' : 'pos'}">${money(r.net.variance)}</td></tr>
         </tbody></table></div>`;
     } else {
       const r = await API.get(`/reports/budget-vs-actual?year=${year}&building_id=${bid}&version=${ver}`);
-      const head = `<tr><th>${t('code')}</th><th>${t('account')}</th><th>البند</th>${MONTHS_AR.map((m) => `<th class="num">${m}</th>`).join('')}<th class="num">${t('total')}</th></tr>`;
+      const head = `<tr><th>${t('code')}</th><th>${t('account')}</th><th>${t('item')}</th>${MONTHS_AR.map((m) => `<th class="num">${m}</th>`).join('')}<th class="num">${t('total')}</th></tr>`;
       const rowsFor = (list) => list.map((x) => `
         <tr><td rowspan="3">${x.code}</td><td rowspan="3">${esc(x.name)}</td><td class="muted">${t('budget')}</td>${x.budget.map((v) => `<td class="num muted">${money(v)}</td>`).join('')}<td class="num muted">${money(x.budget_total)}</td></tr>
         <tr><td>${t('actual')}</td>${x.actual.map((v) => `<td class="num">${money(v)}</td>`).join('')}<td class="num"><b>${money(x.actual_total)}</b></td></tr>
@@ -933,15 +933,15 @@ Object.assign(Pages, (() => {
         <tbody>
           <tr class="sec"><td colspan="${MONTHS_AR.length + 3}"><b>${t('income')}</b></td></tr>
           ${r.income.length ? rowsFor(r.income) : `<tr><td colspan="${MONTHS_AR.length + 3}" class="muted">${t('no_data')}</td></tr>`}
-          ${totalRow('إجمالي الإيرادات (الفعلي)', r.income_totals.actual, 'pos')}
-          ${totalRow('إجمالي الإيرادات (الموازنة)', r.income_totals.budget, 'muted')}
+          ${totalRow(`${t('total_income')} (${t('actual')})`, r.income_totals.actual, 'pos')}
+          ${totalRow(`${t('total_income')} (${t('budget')})`, r.income_totals.budget, 'muted')}
           <tr class="sec"><td colspan="${MONTHS_AR.length + 3}"><b>${t('expense')}</b></td></tr>
           ${r.expense.length ? rowsFor(r.expense) : `<tr><td colspan="${MONTHS_AR.length + 3}" class="muted">${t('no_data')}</td></tr>`}
-          ${totalRow('إجمالي المصروفات (الفعلي)', r.expense_totals.actual, 'neg')}
-          ${totalRow('إجمالي المصروفات (الموازنة)', r.expense_totals.budget, 'muted')}
-          ${totalRow('صافي الربح (الموازنة)', r.net_budget, 'muted')}
-          ${totalRow('صافي الربح (الفعلي)', r.net_actual, '')}
-          ${totalRow('الفرق (فعلي − موازنة)', r.net_variance, r.net_variance.total < 0 ? 'neg' : 'pos')}
+          ${totalRow(`${t('total_expense')} (${t('actual')})`, r.expense_totals.actual, 'neg')}
+          ${totalRow(`${t('total_expense')} (${t('budget')})`, r.expense_totals.budget, 'muted')}
+          ${totalRow(`${t('net_profit')} (${t('budget')})`, r.net_budget, 'muted')}
+          ${totalRow(`${t('net_profit')} (${t('actual')})`, r.net_actual, '')}
+          ${totalRow(`${t('variance')} (${t('actual')} − ${t('budget')})`, r.net_variance, r.net_variance.total < 0 ? 'neg' : 'pos')}
         </tbody></table></div>`;
     }
     c.querySelector('#bryr').onchange = (e) => { c._bryear = e.target.value; budgetReport(c); };
@@ -955,51 +955,61 @@ Object.assign(Pages, (() => {
 
   // ---- Building Presentation (البرزنتيشن) ------------------------------------
   const PRES_CSS = `
-    .pres-wrap { --pg-bg:#0e1521; --pg-card:#161f30; --pg-border:rgba(255,255,255,.08); --pg-text:#eef1f6;
-      --pg-muted:rgba(238,241,246,.6); --pg-accent:#c7a15a; --pg-accent2:#5b8fc7;
-      --pg-good:#4fae83; --pg-bad:#d9695f; --pg-warn:#cf9c3f;
-      direction:rtl; font-family:inherit; background:var(--pg-bg); color:var(--pg-text); border-radius:14px; overflow:hidden; }
-    .pres-slide { padding:30px 34px; border-bottom:1px solid var(--pg-border); page-break-after:always; }
+    .pres-wrap { --pg-bg:#0b0f14; --pg-card:#121821; --pg-border:rgba(255,255,255,.08); --pg-text:#e7ebf0;
+      --pg-muted:rgba(231,235,240,.58); --pg-accent:#38c2c0; --pg-accent2:#4f8fe0;
+      --pg-good:#3ecf8e; --pg-bad:#ef5b5b; --pg-warn:#e0a340;
+      direction:rtl; font-family:inherit; background:var(--pg-bg); color:var(--pg-text); border-radius:14px; overflow:hidden; position:relative; }
+    .pres-navbar { display:flex; align-items:center; gap:12px; padding:10px 16px; background:var(--pg-card); border-bottom:1px solid var(--pg-border); position:sticky; top:0; z-index:5; }
+    .pres-nav-btn { background:rgba(255,255,255,.06); border:1px solid var(--pg-border); color:var(--pg-text); border-radius:8px; padding:6px 14px; font-size:13px; cursor:pointer; }
+    .pres-nav-btn:hover { background:rgba(255,255,255,.12); }
+    .pres-nav-btn:disabled { opacity:.35; cursor:default; }
+    .pres-dots { display:flex; gap:6px; flex:1; justify-content:center; overflow-x:auto; }
+    .pres-dot { width:8px; height:8px; border-radius:50%; background:rgba(255,255,255,.18); cursor:pointer; flex:none; }
+    .pres-dot.active { background:var(--pg-accent); width:20px; border-radius:5px; }
+    .pres-counter { font-size:12px; color:var(--pg-muted); white-space:nowrap; }
+    .pres-slides { }
+    .pres-slide { padding:30px 34px; border-bottom:1px solid var(--pg-border); page-break-after:always; min-height:320px; }
     .pres-slide:last-child { border-bottom:none; }
-    .pres-cover { background:linear-gradient(180deg,#101a2c,#0c1420); text-align:center; padding:60px 30px; position:relative; }
-    .pres-cover::after { content:''; position:absolute; left:50%; bottom:34px; transform:translateX(50%); width:64px; height:3px; background:var(--pg-accent); border-radius:2px; }
-    .pres-cover h1 { font-size:30px; margin:0 0 8px; font-weight:700; letter-spacing:.3px; }
-    .pres-cover h2 { font-size:15px; margin:0 0 20px; font-weight:400; color:var(--pg-muted); }
+    .pres-cover { background:linear-gradient(160deg,#0e1620,#0b0f14 65%); text-align:center; padding:64px 30px; position:relative; min-height:auto; }
+    .pres-cover::before { content:''; position:absolute; inset:0 0 auto 0; height:3px; background:linear-gradient(90deg,var(--pg-accent),var(--pg-accent2)); }
+    .pres-cover .pres-mark { width:56px; height:56px; margin:0 auto 18px; border-radius:14px; background:rgba(56,194,192,.12); border:1px solid rgba(56,194,192,.3); display:flex; align-items:center; justify-content:center; font-size:26px; }
+    .pres-cover h1 { font-size:28px; margin:0 0 8px; font-weight:700; letter-spacing:.2px; }
+    .pres-cover h2 { font-size:14px; margin:0 0 20px; font-weight:400; color:var(--pg-muted); }
     .pres-cover .badge { display:inline-block; border:1px solid var(--pg-border); color:var(--pg-muted); padding:6px 16px; border-radius:999px; font-size:12px; }
-    .pres-h { font-size:17px; font-weight:700; margin:0 0 16px; color:var(--pg-accent); display:flex; align-items:center; gap:8px; }
+    .pres-h { font-size:16px; font-weight:700; margin:0 0 16px; color:var(--pg-accent); display:flex; align-items:center; gap:8px; }
     .kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(165px,1fr)); gap:12px; }
     .kpi-card { background:var(--pg-card); border:1px solid var(--pg-border); border-radius:10px; padding:14px 16px; }
-    .kpi-card .ico { font-size:18px; opacity:.85; }
-    .kpi-card .val { font-size:21px; font-weight:700; margin:6px 0 2px; color:var(--pg-text); }
+    .kpi-card .ico { font-size:17px; opacity:.8; }
+    .kpi-card .val { font-size:20px; font-weight:700; margin:6px 0 2px; color:var(--pg-text); }
     .kpi-card .lbl { font-size:11.5px; color:var(--pg-muted); }
     .kpi-card.good .val { color:var(--pg-good); } .kpi-card.bad .val { color:var(--pg-bad); } .kpi-card.warn .val { color:var(--pg-warn); }
     .pres-table { width:100%; border-collapse:collapse; font-size:13px; background:transparent; }
     .pres-table th, .pres-table td { padding:8px 10px; text-align:right; border-bottom:1px solid var(--pg-border); background:transparent; color:var(--pg-text); }
     .pres-table th { color:var(--pg-muted); font-weight:600; font-size:12px; }
-    .pres-wrap .pres-table tbody tr:nth-child(even) td { background:rgba(255,255,255,.035); }
+    .pres-wrap .pres-table tbody tr:nth-child(even) td { background:rgba(255,255,255,.03); }
     .pres-wrap .pres-table tbody tr:hover td { background:rgba(255,255,255,.06); color:var(--pg-text); box-shadow:none; }
     .pres-wrap .pres-table tbody tr:hover { box-shadow:none; }
     .pres-table tr.tot td { font-weight:700; color:var(--pg-text); border-top:1px solid var(--pg-border); background:transparent; }
     .pres-table td.num, .pres-table th.num { font-variant-numeric:tabular-nums; }
+    .pres-insights { display:flex; flex-direction:column; gap:10px; }
+    .pres-insight { background:var(--pg-card); border:1px solid var(--pg-border); border-right:3px solid var(--pg-accent); border-radius:8px; padding:12px 14px; font-size:13.5px; line-height:1.7; }
     .swot-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     .swot-box { border-radius:10px; padding:14px 16px; background:var(--pg-card); border:1px solid var(--pg-border); border-right:3px solid var(--pg-border); }
     .swot-box h3 { margin:0 0 8px; font-size:14px; font-weight:600; }
-    .swot-box textarea { width:100%; min-height:100px; background:rgba(0,0,0,.2); border:1px solid var(--pg-border); border-radius:8px; color:var(--pg-text); padding:8px; font-size:13px; font-family:inherit; resize:vertical; }
+    .swot-box textarea, .swot-box .ro-text { width:100%; min-height:100px; background:rgba(0,0,0,.2); border:1px solid var(--pg-border); border-radius:8px; color:var(--pg-text); padding:8px; font-size:13px; font-family:inherit; resize:vertical; white-space:pre-wrap; box-sizing:border-box; }
     .swot-box.s { border-right-color:var(--pg-good); } .swot-box.s h3 { color:var(--pg-good); }
     .swot-box.w { border-right-color:var(--pg-bad); } .swot-box.w h3 { color:var(--pg-bad); }
     .swot-box.o { border-right-color:var(--pg-accent2); } .swot-box.o h3 { color:var(--pg-accent2); }
     .swot-box.t { border-right-color:var(--pg-warn); } .swot-box.t h3 { color:var(--pg-warn); }
-    .plan-box textarea { width:100%; min-height:130px; background:var(--pg-card); border:1px solid var(--pg-border); border-radius:10px; color:var(--pg-text); padding:12px; font-size:13.5px; font-family:inherit; resize:vertical; }
-    .pres-bar-track { background:rgba(255,255,255,.08); border-radius:6px; height:12px; overflow:hidden; }
-    .pres-bar-fill { height:100%; background:var(--pg-accent2); border-radius:6px; }
+    .plan-box textarea, .plan-box .ro-text { width:100%; min-height:130px; background:var(--pg-card); border:1px solid var(--pg-border); border-radius:10px; color:var(--pg-text); padding:12px; font-size:13.5px; font-family:inherit; resize:vertical; white-space:pre-wrap; box-sizing:border-box; }
     .pres-foot { text-align:center; padding:22px; color:var(--pg-muted); font-size:11.5px; }
     .cmp-item { margin-bottom:16px; }
     .cmp-head { display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:5px; color:var(--pg-muted); }
     .cmp-head b { color:var(--pg-text); font-weight:600; }
     .cmp-track { background:rgba(255,255,255,.07); border-radius:5px; height:9px; margin-bottom:3px; overflow:hidden; }
-    .cmp-track .fill { height:100%; border-radius:5px; }
-    .cmp-track.budget .fill { background:rgba(255,255,255,.34); }
-    .cmp-track.actual .fill { background:var(--pg-accent2); }
+    .cmp-track .fill { height:100%; border-radius:5px; background:var(--pg-accent2); }
+    .cmp-track.budget .fill { background:rgba(255,255,255,.3); }
+    .cmp-track.actual .fill.good { background:var(--pg-good); }
     .cmp-track.actual .fill.bad { background:var(--pg-bad); }
     .trend-chart { display:flex; align-items:flex-end; gap:8px; height:150px; padding-top:10px; }
     .trend-col { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%; }
@@ -1015,27 +1025,44 @@ Object.assign(Pages, (() => {
     .donut { width:110px; height:110px; border-radius:50%; flex:none; }
     .donut-inner { width:78px; height:78px; margin:16px; border-radius:50%; background:var(--pg-bg); display:flex; align-items:center; justify-content:center; flex-direction:column; }
     .donut-inner b { font-size:17px; } .donut-inner span { font-size:10px; color:var(--pg-muted); }
-    @media print { .pres-slide { page-break-after:always; } }
+    .pres-fb-form { max-width:480px; margin:0 auto; }
+    .pres-fb-stars { display:flex; gap:6px; font-size:26px; cursor:pointer; justify-content:center; margin:6px 0 18px; }
+    .pres-fb-stars span { opacity:.3; transition:opacity .1s; }
+    .pres-fb-stars span.on { opacity:1; }
+    .pres-fb-form label { display:block; font-size:12.5px; color:var(--pg-muted); margin:14px 0 6px; text-align:center; }
+    .pres-fb-form input[type=text], .pres-fb-form textarea { width:100%; background:rgba(255,255,255,.06); border:1px solid var(--pg-border); border-radius:8px; color:var(--pg-text); padding:9px 11px; font-size:13.5px; font-family:inherit; box-sizing:border-box; }
+    .pres-fb-form textarea { min-height:80px; resize:vertical; }
+    .pres-fb-thanks { text-align:center; padding:40px 20px; }
+    .pres-fb-thanks .ico { font-size:40px; margin-bottom:10px; }
+    .fb-summary-row { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--pg-border); font-size:13px; }
+    .fb-summary-row:last-child { border-bottom:none; }
+    @media print { .pres-navbar { display:none; } .pres-slide { display:block !important; page-break-after:always; } }
   `;
-  function presKpi(ico, val, lbl, cls) { return `<div class="kpi-card ${cls || ''}"><div class="ico">${ico}</div><div class="val">${val}</div><div class="lbl">${lbl}</div></div>`; }
+  function presKpi(ico, val, lbl, cls) { return `<div class="kpi-card ${cls || ''}"><div class="ico">${ico}</div><div class="val">${val}</div><div class="lbl">${esc(lbl)}</div></div>`; }
+  // Budget-vs-actual bar: neutral (teal) within a 5% tolerance band, green when
+  // favorable beyond that, red when unfavorable beyond it — so a near-target
+  // month doesn't read as visually "bad" just for missing budget by a hair.
   function presCmp(label, budgetVal, actualVal, badWhenOver) {
     const max = Math.max(Math.abs(budgetVal), Math.abs(actualVal), 1) * 1.05;
     const bw = Math.round((Math.abs(budgetVal) / max) * 100), aw = Math.round((Math.abs(actualVal) / max) * 100);
-    const over = badWhenOver ? actualVal > budgetVal : actualVal < budgetVal;
+    const diffPct = budgetVal ? ((actualVal - budgetVal) / Math.abs(budgetVal)) * 100 : 0;
+    const unfavorable = badWhenOver ? diffPct > 0 : diffPct < 0;
+    let cls = '';
+    if (Math.abs(diffPct) > 5) cls = unfavorable ? 'bad' : 'good';
     return `<div class="cmp-item">
-      <div class="cmp-head"><span>${label}</span><span>الموازنة <b>${money(budgetVal)}</b> · الفعلي <b>${money(actualVal)}</b></span></div>
+      <div class="cmp-head"><span>${esc(label)}</span><span>${t('budget')} <b>${money(budgetVal)}</b> · ${t('actual')} <b>${money(actualVal)}</b></span></div>
       <div class="cmp-track budget"><div class="fill" style="width:${bw}%"></div></div>
-      <div class="cmp-track actual"><div class="fill${over ? ' bad' : ''}" style="width:${aw}%"></div></div>
+      <div class="cmp-track actual"><div class="fill ${cls}" style="width:${aw}%"></div></div>
     </div>`;
   }
   function presDonut(pct, cls) {
     const color = cls === 'bad' ? 'var(--pg-bad)' : cls === 'warn' ? 'var(--pg-warn)' : 'var(--pg-good)';
-    return `<div class="donut" style="background:conic-gradient(${color} ${pct}%, rgba(255,255,255,.08) ${pct}% 100%)"><div class="donut-inner"><b>${r2(pct)}%</b><span>إشغال</span></div></div>`;
+    return `<div class="donut" style="background:conic-gradient(${color} ${pct}%, rgba(255,255,255,.08) ${pct}% 100%)"><div class="donut-inner"><b>${r2(pct)}%</b><span>${esc(t('occupancy'))}</span></div></div>`;
   }
   function presTrend(monthly) {
     if (!monthly || !monthly.length) return `<div class="empty">${t('no_data')}</div>`;
     const max = Math.max(...monthly.map((m) => Math.max(m.income, m.expense)), 1);
-    return `<div class="trend-legend"><span><i style="background:var(--pg-accent2)"></i> الإيرادات</span><span><i style="background:var(--pg-bad)"></i> المصروفات</span></div>
+    return `<div class="trend-legend"><span><i style="background:var(--pg-accent2)"></i> ${t('pres_income_lbl')}</span><span><i style="background:var(--pg-bad)"></i> ${t('pres_expense_lbl')}</span></div>
       <div class="trend-chart">${monthly.map((m) => `
         <div class="trend-col">
           <div class="trend-bars">
@@ -1045,105 +1072,191 @@ Object.assign(Pages, (() => {
           <div class="trend-lbl">${MONTHS_AR[m.mo - 1].slice(0, 3)}</div>
         </div>`).join('')}</div>`;
   }
-  function presBuildSlides(d, notesLive) {
+  // Slide navigation: shown one at a time in-app and in the public/exported
+  // view, but the print stylesheet forces every slide visible again.
+  function presNavBar(count) {
+    const dots = Array.from({ length: count }, (_, i) => `<span class="pres-dot${i === 0 ? ' active' : ''}" data-dot="${i}"></span>`).join('');
+    return `<div class="pres-navbar">
+      <button class="pres-nav-btn" data-nav="prev" disabled>‹ ${t('pres_prev')}</button>
+      <div class="pres-dots">${dots}</div>
+      <span class="pres-counter">1 / ${count}</span>
+      <button class="pres-nav-btn" data-nav="next">${t('pres_next')} ›</button>
+    </div>`;
+  }
+  function presNavScript(rootId) {
+    return `(function(){
+      var root = document.getElementById(${JSON.stringify(rootId)}); if(!root) return;
+      var slides=[].slice.call(root.querySelectorAll('.pres-slides > .pres-slide')); var idx=0;
+      function render(){
+        slides.forEach(function(s,i){ s.style.display = (i===idx)?'':'none'; });
+        var counter=root.querySelector('.pres-counter'); if(counter) counter.textContent=(idx+1)+' / '+slides.length;
+        root.querySelectorAll('.pres-dot').forEach(function(d,i){ d.classList.toggle('active', i===idx); });
+        var prevBtn=root.querySelector('[data-nav="prev"]'), nextBtn=root.querySelector('[data-nav="next"]');
+        if(prevBtn) prevBtn.disabled = idx===0; if(nextBtn) nextBtn.disabled = idx===slides.length-1;
+      }
+      root.querySelectorAll('[data-nav="prev"]').forEach(function(b){ b.addEventListener('click', function(){ idx=Math.max(0,idx-1); render(); }); });
+      root.querySelectorAll('[data-nav="next"]').forEach(function(b){ b.addEventListener('click', function(){ idx=Math.min(slides.length-1,idx+1); render(); }); });
+      root.querySelectorAll('.pres-dot').forEach(function(d){ d.addEventListener('click', function(){ idx=Number(d.dataset.dot); render(); }); });
+      root.tabIndex=0;
+      root.addEventListener('keydown', function(e){
+        if(e.key==='ArrowLeft'){ idx=Math.min(slides.length-1,idx+1); render(); }
+        if(e.key==='ArrowRight'){ idx=Math.max(0,idx-1); render(); }
+      });
+      render();
+    })();`;
+  }
+  function presSlideList(d, notesLive, opts) {
+    opts = opts || {};
     const pct = (v) => `${r2(v)}%`;
     const occPct = d.occupancy.total ? r2((d.occupancy.occupied / d.occupancy.total) * 100) : 0;
     const occCls = occPct >= 80 ? 'good' : occPct >= 50 ? 'warn' : 'bad';
     const netCls = d.income.net >= 0 ? 'good' : 'bad';
     const marginCls = d.ratios.net_margin >= 20 ? 'good' : (d.ratios.net_margin >= 0 ? 'warn' : 'bad');
     const swot = notesLive || d.notes;
-    const periodLbl = d.from === `${d.year}-01-01` && d.to === `${d.year}-12-31` ? `سنة ${d.year}` : `${dateStr(d.from)} — ${dateStr(d.to)}`;
+    const periodLbl = d.from === `${d.year}-01-01` && d.to === `${d.year}-12-31` ? `${d.year}` : `${dateStr(d.from)} — ${dateStr(d.to)}`;
     const draftLine = (arr) => (arr || []).map((x) => `• ${esc(x)}`).join('\n');
     const swotBox = (cls, icon, title, key, draftKey) => `
       <div class="swot-box ${cls}"><h3>${icon} ${title}</h3>
-        <textarea data-swot="${key}" placeholder="${esc(draftLine(d.swot_draft[draftKey]))}">${esc(swot[key] || '')}</textarea></div>`;
+        ${opts.readOnly
+          ? `<div class="ro-text">${esc(swot[key] || '') || `<span style="opacity:.5">${draftLine(d.swot_draft[draftKey])}</span>`}</div>`
+          : `<textarea data-swot="${key}" placeholder="${esc(draftLine(d.swot_draft[draftKey]))}">${esc(swot[key] || '')}</textarea>`}</div>`;
     const hasBudget = d.budget && (d.budget.income_totals.budget.total || d.budget.expense_totals.budget.total);
-    return `
-      <div class="pres-slide pres-cover">
-        <h1>🏢 ${esc(d.building)}</h1>
-        <h2>عرض تقديمي مالي وتشغيلي — ${periodLbl}</h2>
-        <div class="badge">تم الإنشاء بتاريخ ${dateStr(today())}</div>
-      </div>
-
-      <div class="pres-slide">
-        <div class="pres-h">📊 أبرز الأرقام</div>
+    const slides = [
+      `<div class="pres-slide pres-cover">
+        <div class="pres-mark">🏢</div>
+        <h1>${esc(d.building)}</h1>
+        <h2>${t('pres_period')} — ${esc(periodLbl)}</h2>
+        <div class="badge">${t('pres_generated_on')} ${dateStr(today())}</div>
+      </div>`,
+      `<div class="pres-slide">
+        <div class="pres-h">📊 ${t('pres_top_numbers')}</div>
         <div class="kpi-grid">
-          ${presKpi('🏦', money(d.bank.total), 'رصيد البنوك')}
-          ${presKpi('🏠', pct(occPct), 'نسبة الإشغال', occCls)}
-          ${presKpi('💰', money(d.income.total_income), 'إجمالي الإيرادات')}
-          ${presKpi('📈', money(d.income.net), 'صافي الربح', netCls)}
-          ${presKpi('📐', pct(d.ratios.net_margin), 'هامش الربح الصافي', marginCls)}
-          ${presKpi('💧', money(d.liquidity.cash), 'النقد وما يعادله')}
-          ${presKpi('⚖️', d.ratios.current_ratio, 'نسبة التداول')}
-          ${presKpi('🧮', money(d.liquidity.working_capital), 'رأس المال العامل')}
-          ${presKpi('⏰', money(d.aging.grand_total), 'ذمم متأخرة على العملاء', d.aging.grand_total > 0 ? 'warn' : 'good')}
+          ${presKpi('🏦', money(d.bank.total), t('pres_bank_balance'))}
+          ${presKpi('🏠', pct(occPct), t('occupancy_rate'), occCls)}
+          ${presKpi('💰', money(d.income.total_income), t('total_income'))}
+          ${presKpi('📈', money(d.income.net), t('net_profit'), netCls)}
+          ${presKpi('📐', pct(d.ratios.net_margin), t('pres_net_margin'), marginCls)}
+          ${presKpi('💧', money(d.liquidity.cash), t('pres_cash_equiv'))}
+          ${presKpi('⚖️', d.ratios.current_ratio, t('pres_current_ratio'))}
+          ${presKpi('🧮', money(d.liquidity.working_capital), t('pres_working_capital'))}
+          ${presKpi('⏰', money(d.aging.grand_total), t('pres_overdue_ar'), d.aging.grand_total > 0 ? 'warn' : 'good')}
         </div>
-      </div>
-
-      <div class="pres-slide">
-        <div class="pres-h">🏠 الإشغال والوحدات</div>
+      </div>`,
+      `<div class="pres-slide">
+        <div class="pres-h">💡 ${t('pres_insights')}</div>
+        <div class="pres-insights">${(d.insights || []).map((x) => `<div class="pres-insight">${esc(x)}</div>`).join('')}</div>
+      </div>`,
+      `<div class="pres-slide">
+        <div class="pres-h">🏠 ${t('pres_occupancy_units')}</div>
         <div class="donut-wrap">
           ${presDonut(occPct, occCls)}
           <div class="kpi-grid" style="flex:1">
-            ${presKpi('✅', d.occupancy.occupied, 'وحدات مؤجّرة')}
-            ${presKpi('⬜', d.occupancy.vacant, 'وحدات شاغرة')}
-            ${presKpi('🏢', d.occupancy.total, 'إجمالي الوحدات')}
+            ${presKpi('✅', d.occupancy.occupied, t('pres_occupied_units'))}
+            ${presKpi('⬜', d.occupancy.vacant, t('pres_vacant_units'))}
+            ${presKpi('🏢', d.occupancy.total, t('pres_total_units'))}
           </div>
         </div>
-      </div>
-
-      <div class="pres-slide">
-        <div class="pres-h">📈 التطور الشهري خلال الفترة</div>
+      </div>`,
+      `<div class="pres-slide">
+        <div class="pres-h">📈 ${t('pres_monthly_trend')}</div>
         ${presTrend(d.monthly_trend)}
-      </div>
-
-      <div class="pres-slide">
-        <div class="pres-h">💵 قائمة الدخل — ${periodLbl}</div>
-        <table class="pres-table"><thead><tr><th>البند</th><th class="num">القيمة</th></tr></thead><tbody>
+      </div>`,
+      `<div class="pres-slide">
+        <div class="pres-h">💵 ${t('pres_income_statement')} — ${esc(periodLbl)}</div>
+        <table class="pres-table"><thead><tr><th>${t('item')}</th><th class="num">${t('value')}</th></tr></thead><tbody>
           ${d.income.income.map((x) => `<tr><td>${esc(x.name)}</td><td class="num">${money(x.amt)}</td></tr>`).join('')}
-          <tr class="tot"><td>إجمالي الإيرادات</td><td class="num">${money(d.income.total_income)}</td></tr>
+          <tr class="tot"><td>${t('total_income')}</td><td class="num">${money(d.income.total_income)}</td></tr>
           ${d.income.expense.map((x) => `<tr><td>${esc(x.name)}</td><td class="num">${money(x.amt)}</td></tr>`).join('')}
-          <tr class="tot"><td>إجمالي المصروفات</td><td class="num">${money(d.income.total_expense)}</td></tr>
-          <tr class="tot"><td>صافي الربح</td><td class="num">${money(d.income.net)}</td></tr>
+          <tr class="tot"><td>${t('total_expense')}</td><td class="num">${money(d.income.total_expense)}</td></tr>
+          <tr class="tot"><td>${t('net_profit')}</td><td class="num">${money(d.income.net)}</td></tr>
         </tbody></table>
-      </div>
-
-      <div class="pres-slide">
-        <div class="pres-h">📐 مؤشرات مالية</div>
+      </div>`,
+      `<div class="pres-slide">
+        <div class="pres-h">📐 ${t('pres_financial_ratios')}</div>
         <div class="kpi-grid">
-          ${presKpi('🏦', money(d.balance_sheet.total_assets), 'إجمالي الأصول')}
-          ${presKpi('📄', money(d.balance_sheet.total_liabilities), 'إجمالي الالتزامات')}
-          ${presKpi('👛', money(d.balance_sheet.total_equity), 'حقوق الملكية')}
-          ${presKpi('🔁', pct(d.ratios.roa), 'العائد على الأصول ROA')}
-          ${presKpi('💹', pct(d.ratios.roe), 'العائد على حقوق الملكية ROE')}
-          ${presKpi('💧', d.ratios.quick_ratio, 'السيولة السريعة')}
+          ${presKpi('🏦', money(d.balance_sheet.total_assets), t('pres_total_assets'))}
+          ${presKpi('📄', money(d.balance_sheet.total_liabilities), t('pres_total_liabilities'))}
+          ${presKpi('👛', money(d.balance_sheet.total_equity), t('pres_total_equity'))}
+          ${presKpi('🔁', pct(d.ratios.roa), t('pres_roa'))}
+          ${presKpi('💹', pct(d.ratios.roe), t('pres_roe'))}
+          ${presKpi('💧', d.ratios.quick_ratio, t('pres_quick_ratio'))}
         </div>
-      </div>
-
-      ${hasBudget ? `
-      <div class="pres-slide">
-        <div class="pres-h">🎯 الموازنة مقابل الفعلي — ${periodLbl}</div>
-        ${presCmp('الإيرادات', d.budget.income_totals.budget.total, d.budget.income_totals.actual.total, false)}
-        ${presCmp('المصروفات', d.budget.expense_totals.budget.total, d.budget.expense_totals.actual.total, true)}
-        ${presCmp('صافي الربح', d.budget.net_budget.total, d.budget.net_actual.total, false)}
-      </div>` : ''}
-
-      <div class="pres-slide">
-        <div class="pres-h">🧭 تحليل SWOT</div>
+      </div>`,
+      hasBudget ? `<div class="pres-slide">
+        <div class="pres-h">🎯 ${t('pres_budget_vs_actual')} — ${esc(periodLbl)}</div>
+        ${presCmp(t('income'), d.budget.income_totals.budget.total, d.budget.income_totals.actual.total, false)}
+        ${presCmp(t('expense'), d.budget.expense_totals.budget.total, d.budget.expense_totals.actual.total, true)}
+        ${presCmp(t('net_profit'), d.budget.net_budget.total, d.budget.net_actual.total, false)}
+      </div>` : null,
+      `<div class="pres-slide">
+        <div class="pres-h">🧭 ${t('pres_swot')}</div>
         <div class="swot-grid">
-          ${swotBox('s', '💪', 'نقاط القوة', 'strengths', 'strengths')}
-          ${swotBox('w', '⚠️', 'نقاط الضعف', 'weaknesses', 'weaknesses')}
-          ${swotBox('o', '🚀', 'الفرص', 'opportunities', 'opportunities')}
-          ${swotBox('t', '🌩️', 'المخاطر', 'threats', 'threats')}
+          ${swotBox('s', '💪', t('pres_strengths'), 'strengths', 'strengths')}
+          ${swotBox('w', '⚠️', t('pres_weaknesses'), 'weaknesses', 'weaknesses')}
+          ${swotBox('o', '🚀', t('pres_opportunities'), 'opportunities', 'opportunities')}
+          ${swotBox('t', '🌩️', t('pres_threats'), 'threats', 'threats')}
         </div>
-      </div>
-
-      <div class="pres-slide">
-        <div class="pres-h">🗺️ خطة التطوير المقترحة</div>
-        <div class="plan-box"><textarea data-swot="development_plan" placeholder="اكتب خطة التطوير هنا...">${esc(swot.development_plan || '')}</textarea></div>
-      </div>
-
-      <div class="pres-foot">United Tower — ${esc(d.building)} — ${periodLbl}</div>`;
+      </div>`,
+      `<div class="pres-slide">
+        <div class="pres-h">🗺️ ${t('pres_dev_plan')}</div>
+        ${opts.readOnly
+          ? `<div class="plan-box"><div class="ro-text">${esc(swot.development_plan || '') || `<span style="opacity:.5">${t('pres_dev_plan_ph')}</span>`}</div></div>`
+          : `<div class="plan-box"><textarea data-swot="development_plan" placeholder="${t('pres_dev_plan_ph')}">${esc(swot.development_plan || '')}</textarea></div>`}
+      </div>`,
+    ].filter(Boolean);
+    if (opts.feedbackToken) slides.push(presFeedbackSlide());
+    return slides;
+  }
+  function presFeedbackSlide() {
+    return `<div class="pres-slide">
+      <div class="pres-h">⭐ ${t('pres_feedback_title')}</div>
+      <div id="fbArea"><form class="pres-fb-form" id="fbForm">
+        <p class="muted" style="text-align:center;margin-top:0">${t('pres_feedback_sub')}</p>
+        <label>${t('pres_feedback_overall')}</label>
+        <div class="pres-fb-stars" data-star="rating_overall">${[1, 2, 3, 4, 5].map((i) => `<span data-v="${i}">★</span>`).join('')}</div>
+        <label>${t('pres_feedback_clarity')}</label>
+        <div class="pres-fb-stars" data-star="rating_clarity">${[1, 2, 3, 4, 5].map((i) => `<span data-v="${i}">★</span>`).join('')}</div>
+        <label>${t('pres_feedback_design')}</label>
+        <div class="pres-fb-stars" data-star="rating_design">${[1, 2, 3, 4, 5].map((i) => `<span data-v="${i}">★</span>`).join('')}</div>
+        <label>${t('pres_feedback_name')}</label>
+        <input type="text" id="fbName">
+        <label>${t('pres_feedback_notes')}</label>
+        <textarea id="fbNotes"></textarea>
+        <div style="text-align:center;margin-top:18px"><button type="submit" class="btn primary">${t('pres_feedback_submit')}</button></div>
+      </form></div>
+    </div>`;
+  }
+  function wirePresFeedbackForm(root, submitFn) {
+    const form = root.querySelector('#fbForm'); if (!form) return;
+    const stars = {};
+    form.querySelectorAll('[data-star]').forEach((grp) => {
+      const key = grp.dataset.star; stars[key] = 0;
+      grp.querySelectorAll('span').forEach((s) => s.onclick = () => {
+        stars[key] = Number(s.dataset.v);
+        grp.querySelectorAll('span').forEach((s2) => s2.classList.toggle('on', Number(s2.dataset.v) <= stars[key]));
+      });
+    });
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        await submitFn({
+          rating_overall: stars.rating_overall, rating_clarity: stars.rating_clarity, rating_design: stars.rating_design,
+          name: form.querySelector('#fbName').value, notes: form.querySelector('#fbNotes').value,
+        });
+        root.querySelector('#fbArea').innerHTML = `<div class="pres-fb-thanks"><div class="ico">🙏</div><div>${t('pres_feedback_thanks')}</div></div>`;
+      } catch (err) { toast(err.message, 'err'); }
+    };
+  }
+  function presBuildSlides(d, notesLive, opts) {
+    opts = opts || {};
+    const rootId = opts.rootId || 'presDeck';
+    const slides = presSlideList(d, notesLive, opts);
+    const periodLbl = d.from === `${d.year}-01-01` && d.to === `${d.year}-12-31` ? `${d.year}` : `${dateStr(d.from)} — ${dateStr(d.to)}`;
+    return `<div class="pres-wrap" id="${esc(rootId)}">
+      ${presNavBar(slides.length)}
+      <div class="pres-slides">${slides.join('')}</div>
+      <div class="pres-foot">United Tower — ${esc(d.building)} — ${esc(periodLbl)}</div>
+    </div><style>${PRES_CSS}</style><script>${presNavScript(rootId)}</script>`;
   }
   async function presentation(c) {
     const to = c._pto || today();
@@ -1152,13 +1265,24 @@ Object.assign(Pages, (() => {
     reportShell(c, 'm_presentation',
       `<div class="field" style="margin:0"><label>${t('from')}</label><input type="date" id="pfrom" value="${from}"></div>
        <div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="pto" value="${to}"></div>
-       <div class="field" style="margin:0"><label>${t('building')}</label><select id="pbld"><option value="">كل البنايات (موحّد)</option>${bl.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></div>
-       <button class="btn primary" id="presSave">💾 حفظ SWOT/الخطة</button>
-       <button class="btn" id="presExport">⬇ تصدير HTML</button>`, null);
+       <div class="field" style="margin:0"><label>${t('building')}</label><select id="pbld"><option value="">${t('all_buildings_consolidated')}</option>${bl.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></div>
+       <button class="btn primary" id="presSave">💾 ${t('pres_save_swot')}</button>
+       <button class="btn" id="presShare">🔗 ${t('pres_rating_link')}</button>
+       <button class="btn" id="presExport">⬇ ${t('pres_export_html')}</button>`, null);
     const bid = c._pbld || '';
     c.querySelector('#pbld').value = bid;
     const d = await API.get(`/presentation?from=${from}&to=${to}${bid ? '&building_id=' + bid : ''}`);
-    c.querySelector('#rbody').innerHTML = `<div class="pres-wrap">${presBuildSlides(d)}</div><style>${PRES_CSS}</style>`;
+    c.querySelector('#rbody').innerHTML = presBuildSlides(d) + '<div id="fbSummary" style="margin-top:14px"></div>';
+    // run the slide-nav script (script tags set via innerHTML don't auto-execute)
+    (new Function(presNavScript('presDeck')))();
+    API.get(`/presentation/feedback?from=${from}&to=${to}${bid ? '&building_id=' + bid : ''}`).then((fb) => {
+      const box = c.querySelector('#fbSummary'); if (!box) return;
+      if (!fb.count) { box.innerHTML = `<div class="card"><div class="bd muted">${t('pres_feedback_view')}: ${t('pres_feedback_none')}</div></div>`; return; }
+      box.innerHTML = `<div class="card"><div class="hd"><h3>⭐ ${t('pres_feedback_view')} (${fb.count})</h3></div><div class="bd">
+        <div class="fb-summary-row"><b>${'★'.repeat(Math.round(fb.avg_overall))}${'☆'.repeat(5 - Math.round(fb.avg_overall))}</b> ${t('pres_feedback_overall')}: ${fb.avg_overall}/5</div>
+        ${fb.rows.slice(0, 20).map((r) => `<div class="fb-summary-row"><span style="flex:1">${esc(r.notes || '—')}</span><span class="muted" style="font-size:11px">${esc(r.name || '')} · ${'★'.repeat(r.rating_overall || 0)}</span></div>`).join('')}
+      </div></div>`;
+    }).catch(() => {});
     c.querySelector('#pfrom').onchange = (e) => { c._pfrom = e.target.value; presentation(c); };
     c.querySelector('#pto').onchange = (e) => { c._pto = e.target.value; presentation(c); };
     c.querySelector('#pbld').onchange = (e) => { c._pbld = e.target.value; presentation(c); };
@@ -1166,19 +1290,47 @@ Object.assign(Pages, (() => {
       const notes = {}; c.querySelectorAll('[data-swot]').forEach((el) => notes[el.dataset.swot] = el.value);
       try { await API.put('/presentation/notes', { year: d.year, building_id: bid || 0, ...notes }); toast(t('saved')); } catch (e) { toast(e.message, 'err'); }
     };
+    c.querySelector('#presShare').onclick = async () => {
+      try {
+        const s = await API.post('/presentation/share', { from, to, building_id: bid || null, version: 1 });
+        const url = location.origin + s.path;
+        await navigator.clipboard.writeText(url).catch(() => {});
+        prompt(t('pres_rating_link_copied') + ':', url);
+      } catch (e) { toast(e.message, 'err'); }
+    };
     c.querySelector('#presExport').onclick = () => {
       const notesLive = {}; c.querySelectorAll('[data-swot]').forEach((el) => notesLive[el.dataset.swot] = el.value);
-      const slidesHtml = presBuildSlides(d, notesLive).replace(/<textarea[^>]*data-swot="([^"]+)"[^>]*>([\s\S]*?)<\/textarea>/g,
-        (m, key, val) => `<div style="white-space:pre-wrap;background:rgba(0,0,0,.2);border-radius:8px;padding:10px;min-height:60px">${val || '<span style=\"opacity:.5\">—</span>'}</div>`);
-      const full = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>United Tower — عرض تقديمي ${from}_${to}</title>
-        <style>body{margin:0;background:#0e1521;font-family:'Segoe UI',Tahoma,Arial,sans-serif}${PRES_CSS}</style></head>
-        <body><div class="pres-wrap">${slidesHtml}</div></body></html>`;
+      const deckHtml = presBuildSlides(d, notesLive, { readOnly: true, rootId: 'presDeckExport' });
+      const full = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>United Tower — ${esc(d.building)} ${from}_${to}</title>
+        <style>body{margin:0;background:#0b0f14;font-family:'Segoe UI',Tahoma,Arial,sans-serif}</style></head>
+        <body>${deckHtml}</body></html>`;
       const blob = new Blob([full], { type: 'text/html;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = `United-Tower-Presentation-${d.building.replace(/\s+/g, '_')}-${from}_${to}.html`;
       document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
     };
   }
+  // Public, unauthenticated view of a shared presentation link — reused by
+  // app.js's router before the login gate, so anyone with the token can view
+  // this one snapshot (read-only) and leave a rating, nothing else.
+  async function publicPresentation(container, token) {
+    container.innerHTML = `<div class="login-wrap" style="align-items:flex-start;padding:24px 0"><div style="width:100%;max-width:900px;margin:0 auto"><div class="spinner"></div></div></div>`;
+    let d;
+    try {
+      const res = await fetch('/api/public/presentation/' + encodeURIComponent(token));
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'not found');
+      d = await res.json();
+    } catch (e) {
+      container.innerHTML = `<div class="login-wrap"><div class="login-card" style="text-align:center">⚠️ الرابط غير صحيح أو منتهي</div></div>`;
+      return;
+    }
+    container.innerHTML = `<div style="max-width:900px;margin:24px auto;padding:0 16px">${presBuildSlides(d, null, { readOnly: true, rootId: 'presDeckPublic', feedbackToken: token })}</div>`;
+    (new Function(presNavScript('presDeckPublic')))();
+    wirePresFeedbackForm(container, (payload) => fetch(`/api/public/presentation/${encodeURIComponent(token)}/feedback`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    }).then((res) => { if (!res.ok) throw new Error('failed'); }));
+  }
+  Pages.publicPresentation = publicPresentation;
 
   async function vat(c) {
     const from = c._from || '', to = c._to || today();

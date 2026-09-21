@@ -71,6 +71,20 @@ router.post('/login', (req, res) => {
   if (!r) return res.status(401).json({ error: 'اسم المستخدم أو كلمة المرور غير صحيحة' });
   res.json(r);
 });
+
+// ---- Public presentation share link (no auth) — a viewer with the link can
+// see this ONE presentation snapshot and leave a rating, nothing else.
+router.get('/public/presentation/:token', (req, res) => {
+  const share = PRES.getShare(req.params.token);
+  if (!share) return res.status(404).json({ error: 'الرابط غير صحيح أو منتهي' });
+  try { res.json(PRES.getPresentationData(share.from_date, share.to_date, share.building_id, share.version)); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.post('/public/presentation/:token/feedback', (req, res) => {
+  try { res.json(PRES.saveFeedback(req.params.token, req.body || {})); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+
 router.use(authMiddleware);
 // log every write action (POST/PUT/DELETE) with the user + outcome
 router.use((req, res, next) => {
@@ -701,6 +715,16 @@ router.get('/reports/budget-vs-actual-flat', (req, res) => res.json(BUD.budgetVs
 router.get('/presentation', (req, res) => res.json(PRES.getPresentationData(req.query.from, req.query.to, req.query.building_id, Number(req.query.version) || 1)));
 router.put('/presentation/notes', writers, (req, res) => {
   try { res.json(PRES.saveNotes(Number(req.body.year), Number(req.body.building_id) || 0, req.body, req.user.id)); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.post('/presentation/share', writers, (req, res) => {
+  try {
+    const s = PRES.getOrCreateShare(req.body.from, req.body.to, req.body.building_id, req.body.version, req.user.id);
+    res.json({ token: s.token, path: `/#/public-presentation?token=${s.token}` });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.get('/presentation/feedback', (req, res) => {
+  try { res.json(PRES.listFeedback(req.query.from, req.query.to, req.query.building_id, Number(req.query.version) || 1)); }
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.get('/reports/financial-ratios', (req, res) => res.json(R.financialRatios(req.query.from, req.query.to, effBuilding(req) && effBuilding(req) > 0 ? effBuilding(req) : null)));
