@@ -36,11 +36,19 @@ function schemaHint() {
 Account balance = SUM(debit)-SUM(credit) over journal_lines for that account_code. Chart of accounts: ${accts}. Currency OMR (3 decimals). Today is ${new Date().toISOString().slice(0, 10)}.`;
 }
 
+// Tables the assistant must never read, regardless of role: password hashes
+// and secrets (API keys) that other users/roles have no business seeing, and
+// that a low-privilege user could otherwise exfiltrate just by asking the
+// chat to "run this SQL".
+const FORBIDDEN_TABLES = ['users', 'settings'];
 function runTool(name, input, user) {
   if (name === 'query_db') {
+    if (!['admin', 'accountant'].includes(user.role)) return { error: 'no permission to query the database' };
     const sql = String(input.sql || '').trim();
     if (!/^select/i.test(sql) || /[;]\s*\S/.test(sql) || /\b(insert|update|delete|drop|alter|create|attach|pragma)\b/i.test(sql))
       return { error: 'only a single read-only SELECT is allowed' };
+    if (FORBIDDEN_TABLES.some((t) => new RegExp(`\\b${t}\\b`, 'i').test(sql)))
+      return { error: 'access to this table is not allowed' };
     try { return { rows: db.prepare(sql).all().slice(0, 200) }; } catch (e) { return { error: e.message }; }
   }
   if (!['admin', 'accountant'].includes(user.role)) return { error: 'no permission to modify data' };

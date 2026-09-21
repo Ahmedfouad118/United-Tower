@@ -73,6 +73,13 @@ const I18N = (() => {
       bud_edit_selected: 'تعديل المحدد', bud_clear_selected: 'مسح المحدد', bud_clear_all: 'مسح الكل',
       bud_shape: 'الشكل', bud_shape_monthly: 'شهري (12 عمود)', bud_shape_flat: 'أفقي (شهر أو سنة واحدة)',
       bud_full_year: 'السنة كاملة', bud_period: 'الفترة', bud_achieved: 'محقق',
+      // 2FA
+      twofa_prompt: 'أدخل الكود من تطبيق المصادقة', twofa_code: 'كود التحقق (6 أرقام)', twofa_back: 'رجوع لتسجيل الدخول',
+      m_security: 'الأمان (2FA)', twofa_title: 'التحقق بخطوتين', twofa_enabled_msg: 'مفعّل على حسابك ✅',
+      twofa_disabled_msg: 'غير مفعّل على حسابك', twofa_setup_btn: 'تفعيل التحقق بخطوتين', twofa_disable_btn: 'تعطيل',
+      twofa_step1: '١) افتح تطبيق مصادقة (Google Authenticator أو Authy أو Microsoft Authenticator) وأضف حساب جديد بإدخال الكود ده يدويًا:',
+      twofa_step2: '٢) اكتب الكود المكوّن من 6 أرقام اللي ظهرلك في التطبيق عشان تأكيد التفعيل:',
+      twofa_confirm_btn: 'تأكيد التفعيل', twofa_enabled_ok: 'تم تفعيل التحقق بخطوتين', twofa_disable_confirm: 'متأكد إنك عايز تعطّل التحقق بخطوتين؟',
     },
     en: {
       app_name: 'United Tower', app_sub: 'Real-Estate & Accounting System',
@@ -141,6 +148,13 @@ const I18N = (() => {
       bud_edit_selected: 'Edit Selected', bud_clear_selected: 'Clear Selected', bud_clear_all: 'Clear All',
       bud_shape: 'Layout', bud_shape_monthly: 'Monthly (12 columns)', bud_shape_flat: 'Flat (single month/year)',
       bud_full_year: 'Whole Year', bud_period: 'Period', bud_achieved: 'achieved',
+      // 2FA
+      twofa_prompt: 'Enter the code from your authenticator app', twofa_code: 'Verification code (6 digits)', twofa_back: 'Back to login',
+      m_security: 'Security (2FA)', twofa_title: 'Two-Factor Authentication', twofa_enabled_msg: 'Enabled on your account ✅',
+      twofa_disabled_msg: 'Not enabled on your account', twofa_setup_btn: 'Enable two-factor authentication', twofa_disable_btn: 'Disable',
+      twofa_step1: '1) Open an authenticator app (Google Authenticator, Authy, Microsoft Authenticator) and add a new account by entering this key manually:',
+      twofa_step2: '2) Enter the 6-digit code shown in the app to confirm setup:',
+      twofa_confirm_btn: 'Confirm setup', twofa_enabled_ok: 'Two-factor authentication enabled', twofa_disable_confirm: 'Are you sure you want to disable two-factor authentication?',
     },
     hi: {
       app_name: 'यूनाइटेड टावर', app_sub: 'रियल एस्टेट और अकाउंटिंग सिस्टम',
@@ -215,6 +229,13 @@ const I18N = (() => {
       bud_edit_selected: 'चयनित संपादित करें', bud_clear_selected: 'चयनित साफ़ करें', bud_clear_all: 'सभी साफ़ करें',
       bud_shape: 'दृश्य', bud_shape_monthly: 'मासिक (12 कॉलम)', bud_shape_flat: 'क्षैतिज (एक माह/वर्ष)',
       bud_full_year: 'पूरा वर्ष', bud_period: 'अवधि', bud_achieved: 'हासिल',
+      // 2FA
+      twofa_prompt: 'अपने ऑथेंटिकेटर ऐप से कोड डालें', twofa_code: 'सत्यापन कोड (6 अंक)', twofa_back: 'लॉगिन पर वापस जाएँ',
+      m_security: 'सुरक्षा (2FA)', twofa_title: 'दो-चरण सत्यापन', twofa_enabled_msg: 'आपके खाते पर सक्रिय ✅',
+      twofa_disabled_msg: 'आपके खाते पर सक्रिय नहीं है', twofa_setup_btn: 'दो-चरण सत्यापन सक्रिय करें', twofa_disable_btn: 'निष्क्रिय करें',
+      twofa_step1: '१) एक ऑथेंटिकेटर ऐप खोलें (Google Authenticator, Authy, Microsoft Authenticator) और यह कोड मैन्युअली डालकर नया खाता जोड़ें:',
+      twofa_step2: '२) सेटअप की पुष्टि के लिए ऐप में दिखने वाला 6-अंकीय कोड डालें:',
+      twofa_confirm_btn: 'सेटअप की पुष्टि करें', twofa_enabled_ok: 'दो-चरण सत्यापन सक्रिय हो गया', twofa_disable_confirm: 'क्या आप वाकई दो-चरण सत्यापन निष्क्रिय करना चाहते हैं?',
     },
   };
   let lang = localStorage.getItem('ut_lang') || 'ar';

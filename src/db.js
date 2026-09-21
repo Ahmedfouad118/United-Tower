@@ -20,6 +20,8 @@ function init() {
     "ALTER TABLE contracts ADD COLUMN contract_type TEXT DEFAULT 'residential'",
     'ALTER TABLE contracts ADD COLUMN attachment TEXT',
     'ALTER TABLE vendor_bills ADD COLUMN attachment TEXT',
+    'ALTER TABLE users ADD COLUMN totp_secret TEXT',
+    'ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0',
   ];
   for (const m of migrations) { try { db.exec(m); } catch (e) { /* column exists */ } }
   migrateBudgetVersions();

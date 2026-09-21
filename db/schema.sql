@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS users (
   role          TEXT NOT NULL DEFAULT 'viewer',   -- admin | accountant | viewer
   lang          TEXT NOT NULL DEFAULT 'ar',        -- ar | en | ur
   active        INTEGER NOT NULL DEFAULT 1,
+  totp_secret   TEXT,                              -- base32 TOTP secret (set once, kept even if disabled/re-enabled)
+  totp_enabled  INTEGER NOT NULL DEFAULT 0,         -- 1 = login requires the 6-digit code from an authenticator app
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

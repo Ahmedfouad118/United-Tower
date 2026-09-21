@@ -137,8 +137,13 @@ function budgetVsActual(year, building_id, lang = 'ar', version = 1) {
       variance_total: r2(varianceM.reduce((s, v) => s + v, 0)),
     };
   }).sort((x, y) => x.code.localeCompare(y.code));
-  const income = rows.filter((r) => r.type === 'income');
-  const expense = rows.filter((r) => r.type !== 'income');
+  // an account with neither a budget nor any actual activity all year is just
+  // noise on the report — every postable account gets saved as an explicit
+  // (possibly zero) budget row, so without this most reports would list every
+  // account in the chart, not just the ones that matter this year.
+  const hasData = (r) => Math.abs(r.budget_total) > 0.005 || Math.abs(r.actual_total) > 0.005;
+  const income = rows.filter((r) => r.type === 'income' && hasData(r));
+  const expense = rows.filter((r) => r.type !== 'income' && hasData(r));
   const sumRows = (list, key) => { const m = Array(12).fill(0); for (const r of list) r[key].forEach((v, i) => m[i] = r2(m[i] + v)); return { months: m, total: r2(m.reduce((s, v) => s + v, 0)) }; };
   const totals = (list) => ({ budget: sumRows(list, 'budget'), actual: sumRows(list, 'actual'), variance: sumRows(list, 'variance') });
   const incomeTotals = totals(income), expenseTotals = totals(expense);

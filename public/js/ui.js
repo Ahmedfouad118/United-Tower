@@ -33,8 +33,13 @@ const UI = (() => {
     if (!rows || !rows.length) return `<div class="empty">${empty || t('no_data')}</div>`;
     const head = cols.map((c, i) => { const isHtml = /^\s*</.test(c.label || ''); const sortable = c.label && !isHtml;
       return `<th class="${c.num ? 'num ' : ''}${sortable ? 'th-sort' : ''}" data-ci="${i}">${isHtml ? c.label : esc(c.label)}${sortable ? '<span class="sort-ar"></span>' : ''}</th>`; }).join('');
+    // A column with no `render` prints the raw field value — escape it here
+    // so a tenant/vendor/building name (or any other free-text field) can't
+    // carry HTML/script into every list and dashboard that displays it.
+    // `render` stays unescaped since callers use it to build real markup
+    // (badges, links, checkboxes) or already call esc() themselves.
     const body = rows.map((r) => '<tr>' + cols.map((c) => {
-      const v = c.render ? c.render(r) : r[c.key];
+      const v = c.render ? c.render(r) : esc(r[c.key]);
       return `<td class="${c.num ? 'num' : ''}">${v == null ? '' : v}</td>`;
     }).join('') + '</tr>').join('');
     const footer = foot ? `<tfoot><tr>${foot.map((f) => `<td class="${f.num ? 'num' : ''}">${f.v == null ? '' : f.v}</td>`).join('')}</tr></tfoot>` : '';

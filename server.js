@@ -7,6 +7,15 @@ init();
 const app = express();
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true }));
+// Baseline hardening headers — kept minimal (no CSP) since the app relies on
+// inline <style>/<script> in several generated reports; a strict default CSP
+// would break those without a larger rewrite. These three carry no such risk.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
 
 app.use('/api', require('./src/api'));
 app.use('/api', require('./src/exports'));

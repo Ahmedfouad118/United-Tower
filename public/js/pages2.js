@@ -799,6 +799,8 @@ Object.assign(Pages, (() => {
     c.querySelector('#rbody').innerHTML = `<div class="bd">
       <div class="toolbar" style="margin:0 0 10px;align-items:flex-end">
         <div class="field" style="margin:0"><label>${t('occupancy')}</label><input type="number" id="occ" value="90" style="width:80px"></div>
+        <div class="field" style="margin:0"><label>من شهر</label><select id="fromMo">${MONTHS_AR.map((m, i) => `<option value="${i + 1}">${m}</option>`).join('')}</select></div>
+        <div class="field" style="margin:0"><label>إلى شهر</label><select id="toMo">${MONTHS_AR.map((m, i) => `<option value="${i + 1}"${i === 11 ? ' selected' : ''}>${m}</option>`).join('')}</select></div>
         <button class="btn" id="sugRev">💡 ${t('suggest')} (${t('income')})</button>
         <button class="btn" id="sugExp">💡 ${t('suggest')} (${t('expense')})</button>
         <div class="spacer"></div>
@@ -811,18 +813,32 @@ Object.assign(Pages, (() => {
         <thead><tr><th><input type="checkbox" id="selAll"></th><th>${t('code')}</th><th>${t('account')}</th>${MONTHS_AR.map((m) => `<th class="num">${m}</th>`).join('')}<th class="num">${t('total')}</th></tr></thead>
         <tbody>${rowsHtml}</tbody>
       </table></div>
-      <p class="muted" style="font-size:11px;margin-top:8px">اقتراح الإيراد بيتطبق على حساب إيراد الإيجار (40000) على مدار الـ12 شهر. اقتراح المصاريف بياخد متوسط كل حساب على الشهور اللي فيها بيانات فعلية بالسنة دي (أو آخر 12 شهر لو السنة لسة مفيهاش بيانات) — مش تقسيم ثابت على 12. حدد صفوف بالمربعات على اليسار عشان تعدّل أو تمسح مجموعة منها، وبعدها اضغط حفظ.</p></div>`;
+      <p class="muted" style="font-size:11px;margin-top:8px">اختار "من شهر - إلى شهر" فوق عشان تحدد نطاق الشهور اللي هيتعبّى (افتراضيًا يناير - ديسمبر). اقتراح الإيراد بيتطبق على حساب إيراد الإيجار (40000). اقتراح المصاريف بياخد متوسط كل حساب على الشهور اللي فيها بيانات فعلية بالسنة دي (أو آخر 12 شهر لو السنة لسة مفيهاش بيانات) — مش تقسيم ثابت على 12. حدد صفوف بالمربعات على اليسار عشان تعدّل أو تمسح مجموعة منها، وبعدها اضغط حفظ.</p></div>`;
     c.querySelector('#rbody').addEventListener('input', (e) => {
       const inp = e.target.closest('input[data-code]'); if (!inp) return;
       const tr = inp.closest('tr');
       let sum = 0; tr.querySelectorAll('input[data-code]').forEach((i) => sum += Number(i.value) || 0);
       tr.querySelector('[data-total-for]').textContent = money(sum);
     });
-    const fillRow = (code, val) => {
+    const moRange = () => {
+      let from = Number(c.querySelector('#fromMo').value) || 1, to = Number(c.querySelector('#toMo').value) || 12;
+      if (from > to) [from, to] = [to, from];
+      return { from, to };
+    };
+    // fills only the months inside the selected from/to range, leaving the rest
+    // of the row untouched — so a mid-year rent increase or a partial-year
+    // expense doesn't overwrite months outside that range.
+    const fillRow = (code, val, range) => {
       const tr = [...c.querySelectorAll('#rbody tr')].find((tr2) => tr2.querySelector('input.rowsel') && tr2.querySelector('input.rowsel').dataset.rowcode === code);
       if (!tr) return false;
-      tr.querySelectorAll('input[data-code]').forEach((i) => i.value = val);
-      tr.querySelector('[data-total-for]').textContent = money(val * 12);
+      const { from, to } = range || moRange();
+      let sum = 0;
+      tr.querySelectorAll('input[data-code]').forEach((i) => {
+        const mo = Number(i.dataset.mo);
+        if (mo >= from && mo <= to) i.value = val;
+        sum += Number(i.value) || 0;
+      });
+      tr.querySelector('[data-total-for]').textContent = money(sum);
       return true;
     };
     c.querySelector('#selAll').onchange = (e) => {
@@ -831,7 +847,8 @@ Object.assign(Pages, (() => {
     c.querySelector('#editSel').onclick = () => {
       const selected = [...c.querySelectorAll('input.rowsel:checked')];
       if (!selected.length) return toast('حدد صف واحد على الأقل بالمربعات على اليسار', 'err');
-      const val = prompt(`قيمة شهرية واحدة تُطبّق على كل شهور ${selected.length} حساب محدد:`, '0');
+      const { from, to } = moRange();
+      const val = prompt(`قيمة شهرية واحدة تُطبّق من ${MONTHS_AR[from - 1]} لـ${MONTHS_AR[to - 1]} على ${selected.length} حساب محدد:`, '0');
       if (val == null) return;
       const n = Number(val) || 0;
       selected.forEach((cb) => fillRow(cb.dataset.rowcode, n));
@@ -849,14 +866,16 @@ Object.assign(Pages, (() => {
     };
     c.querySelector('#sugRev').onclick = async () => {
       const occ = Number(c.querySelector('#occ').value) || 0;
+      const { from, to } = moRange();
       const s = await API.get(`/budget/suggest-revenue?occupancy=${occ}${bid ? '&building_id=' + bid : ''}`);
-      if (!confirm(`${s.flats} وحدة — إيجار كامل شهريًا ${money(s.full_monthly_rent)} — بنسبة إشغال ${s.occupancy_percent}% = ${money(s.suggested_monthly)} شهريًا.\nتطبيقه على حساب إيراد الإيجار (40000) لكل الشهور؟`)) return;
+      if (!confirm(`${s.flats} وحدة — إيجار كامل شهريًا ${money(s.full_monthly_rent)} — بنسبة إشغال ${s.occupancy_percent}% = ${money(s.suggested_monthly)} شهريًا.\nتطبيقه على حساب إيراد الإيجار (40000) من ${MONTHS_AR[from - 1]} لـ${MONTHS_AR[to - 1]}؟`)) return;
       if (!fillRow('40000', s.suggested_monthly)) toast('حساب إيراد الإيجار 40000 مش موجود في شجرة الحسابات', 'err');
     };
     c.querySelector('#sugExp').onclick = async () => {
+      const { from, to } = moRange();
       const s = await API.get(`/budget/suggest-expenses?year=${year}${bid ? '&building_id=' + bid : ''}`);
       if (!s.length) return toast('مفيش بيانات فعلية كفاية لاقتراح متوسط', 'err');
-      if (!confirm(`هيتم تعبئة ${s.length} حساب مصروف بمتوسط الشهور اللي فيها بيانات فعلية. متابعة؟`)) return;
+      if (!confirm(`هيتم تعبئة ${s.length} حساب مصروف بمتوسط الشهور اللي فيها بيانات فعلية، من ${MONTHS_AR[from - 1]} لـ${MONTHS_AR[to - 1]}. متابعة؟`)) return;
       s.forEach((row) => fillRow(row.code, row.avg_monthly));
     };
     c.querySelector('#saveBudget').onclick = async () => {
@@ -1759,11 +1778,18 @@ Object.assign(Pages, (() => {
     c.innerHTML = toolbar(tbCfg) + `<div class="card"><div class="hd"><h3>${t('m_users')}</h3></div><div id="ut"></div></div>`;
     const cols = [{ key: 'username', label: t('username') }, { key: 'full_name', label: t('name') },
       { key: 'role', label: t('role'), render: (r) => badge(t(r.role), 'b-blue') }, { key: 'active', label: t('status'), render: (r) => r.active ? badge('نشط', 'b-green') : badge('موقوف', 'b-gray') },
+      { key: 'totp_enabled', label: t('m_security'), render: (r) => r.totp_enabled ? `${badge('2FA ✅', 'b-green')} <button class="ico-btn" data-act="2fareset" data-id="${r.id}" title="${t('twofa_disable_btn')}">🚫</button>` : badge('—', 'b-gray') },
       { key: '_a', label: t('actions'), render: (r) => actions(r.id, ['edit']) + `<button class="ico-btn" data-act="perms" data-id="${r.id}" title="${t('permissions')}">🔐</button>` }];
     c.querySelector('#ut').innerHTML = table(cols, rows);
     wireToolbar(c, tbCfg, () => {}, rows);
-    c.querySelector('#ut').onclick = (e) => { const b = e.target.closest('[data-act]'); if (!b) return; const r = rows.find((x) => x.id === +b.dataset.id);
-      if (b.dataset.act === 'edit') userForm(r, () => users(c)); if (b.dataset.act === 'perms') permsForm(r, () => users(c)); };
+    c.querySelector('#ut').onclick = async (e) => { const b = e.target.closest('[data-act]'); if (!b) return; const r = rows.find((x) => x.id === +b.dataset.id);
+      if (b.dataset.act === 'edit') userForm(r, () => users(c));
+      if (b.dataset.act === 'perms') permsForm(r, () => users(c));
+      if (b.dataset.act === '2fareset') {
+        if (!confirm(`${t('twofa_disable_btn')} — ${r.full_name}؟`)) return;
+        try { await API.post(`/users/${r.id}/2fa/disable`, {}); toast(t('saved')); users(c); } catch (err) { toast(err.message, 'err'); }
+      }
+    };
   }
   function userForm(row, done) {
     formModal({ title: row ? t('edit') : 'مستخدم جديد', fields: [
@@ -1840,6 +1866,45 @@ Object.assign(Pages, (() => {
     };
   }
 
+  // ---- Security: per-user two-factor (TOTP) self-service --------------------
+  async function security(c) {
+    loading(c);
+    const me = await API.get('/me');
+    const renderEnabled = () => {
+      c.innerHTML = `<div class="card" style="max-width:520px"><div class="hd"><h3>🔐 ${t('twofa_title')}</h3></div><div class="bd">
+        <p>${t('twofa_enabled_msg')}</p>
+        <button class="btn" id="secOff">🚫 ${t('twofa_disable_btn')}</button>
+      </div></div>`;
+      c.querySelector('#secOff').onclick = async () => {
+        if (!confirm(t('twofa_disable_confirm'))) return;
+        try { await API.post('/2fa/disable', {}); toast(t('saved')); security(c); } catch (e) { toast(e.message, 'err'); }
+      };
+    };
+    const renderDisabled = () => {
+      c.innerHTML = `<div class="card" style="max-width:520px"><div class="hd"><h3>🔐 ${t('twofa_title')}</h3></div><div class="bd">
+        <p class="muted" style="margin-top:0">${t('twofa_disabled_msg')}</p>
+        <button class="btn primary" id="secOn">🔒 ${t('twofa_setup_btn')}</button>
+      </div></div>`;
+      c.querySelector('#secOn').onclick = async () => {
+        try {
+          const s = await API.post('/2fa/setup', {});
+          c.querySelector('.bd').innerHTML = `
+            <p>${t('twofa_step1')}</p>
+            <p style="font-family:monospace;font-size:16px;letter-spacing:2px;background:var(--bg-2);padding:10px 14px;border-radius:8px;text-align:center;user-select:all">${esc(s.secret)}</p>
+            <p class="muted" style="font-size:11px">${esc(s.otpauth_url)}</p>
+            <p>${t('twofa_step2')}</p>
+            <div class="field"><input id="secCode" inputmode="numeric" maxlength="6" style="letter-spacing:4px;font-size:18px;text-align:center;max-width:160px"></div>
+            <button class="btn primary" id="secConfirm" style="margin-top:10px">✅ ${t('twofa_confirm_btn')}</button>`;
+          c.querySelector('#secConfirm').onclick = async () => {
+            try { await API.post('/2fa/enable', { code: c.querySelector('#secCode').value }); toast(t('twofa_enabled_ok')); security(c); }
+            catch (e) { toast(e.message, 'err'); }
+          };
+        } catch (e) { toast(e.message, 'err'); }
+      };
+    };
+    me.totp_enabled ? renderEnabled() : renderDisabled();
+  }
+
   // ---- CONFIGURATION: GL-account mapping + module (menu) renaming -----------
   const LBL_GROUPS = [
     ['الرئيسية', ['m_dashboard']],
@@ -1888,5 +1953,5 @@ Object.assign(Pages, (() => {
 
   return { customers, vendors, buildings, units, categories, paymethods, banks, employees, coa,
     vendorBills, vendorPayments, trialBalance, incomeStatement, incomeStatementConsolidated, generalLedger, balanceSheet, arAging, apAging,
-    statement, vendorStatement, advances, propertyPL, roi, cashflow, comparison, vat, vatStatement, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, moneyPosition, vatReturn, activityLog, companyDocuments, budgetEntry, budgetReport, presentation };
+    statement, vendorStatement, advances, propertyPL, roi, cashflow, comparison, vat, vatStatement, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, security, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, moneyPosition, vatReturn, activityLog, companyDocuments, budgetEntry, budgetReport, presentation };
 })());

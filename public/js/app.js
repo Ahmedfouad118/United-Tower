@@ -85,6 +85,7 @@
     ] },
     { id: 'admin', icon: '⚙️', label: 'm_admin', items: [
       { path: 'company', label: 'm_company', page: 'company', mod: 'settings' },
+      { path: 'security', label: 'm_security', page: 'security', mod: 'settings' },
       { path: 'presentation', label: 'm_presentation', page: 'presentation', mod: 'settings' },
       { path: 'documents', label: 'm_docs', page: 'companyDocuments', mod: 'settings' },
       { path: 'config', label: 'm_config', page: 'configuration', admin: true, mod: 'settings' },
@@ -120,10 +121,31 @@
       </form></div>`;
     document.getElementById('lf').onsubmit = async (e) => {
       e.preventDefault();
-      try { await API.login(document.getElementById('u').value, document.getElementById('p').value); await loadConfig(); location.hash = '#/dashboard'; layout(); route(); }
-      catch (err) { toast(err.message, 'err'); }
+      try {
+        const r = await API.login(document.getElementById('u').value, document.getElementById('p').value);
+        if (r.needs_2fa) { twoFactorPrompt(r.pending_token); return; }
+        await loadConfig(); location.hash = '#/dashboard'; layout(); route();
+      } catch (err) { toast(err.message, 'err'); }
     };
     wireLang();
+  }
+
+  // Second step: the account has an authenticator app (TOTP) enabled — the
+  // password alone (already verified server-side) isn't enough to log in.
+  function twoFactorPrompt(pending_token) {
+    document.getElementById('app').innerHTML = `
+      <div class="login-wrap"><form class="login-card" id="lf2">
+        <div class="logo">UT</div><h2>${esc(t('app_name'))}</h2><p>🔐 ${t('twofa_prompt')}</p>
+        <div class="field"><label>${t('twofa_code')}</label><input id="code2" inputmode="numeric" autocomplete="one-time-code" maxlength="6" style="letter-spacing:4px;font-size:20px;text-align:center" autofocus></div>
+        <button class="btn primary" style="width:100%;justify-content:center;margin-top:8px">${t('login')}</button>
+        <p class="muted" style="margin-top:14px;font-size:11.5px;text-align:center"><a href="#" id="back2">${t('twofa_back')}</a></p>
+      </form></div>`;
+    document.getElementById('lf2').onsubmit = async (e) => {
+      e.preventDefault();
+      try { await API.verify2fa(pending_token, document.getElementById('code2').value); await loadConfig(); location.hash = '#/dashboard'; layout(); route(); }
+      catch (err) { toast(err.message, 'err'); }
+    };
+    document.getElementById('back2').onclick = (e) => { e.preventDefault(); loginView(); };
   }
 
   function navHTML() {

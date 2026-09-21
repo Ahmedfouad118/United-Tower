@@ -1,6 +1,6 @@
 const express = require('express');
 const { db, DB_PATH } = require('./db');
-const { login, authMiddleware, requireRole, hash } = require('./auth');
+const { login, completeTwoFactorLogin, authMiddleware, requireRole, hash, startTwoFactorSetup, enableTwoFactor, disableTwoFactor } = require('./auth');
 const svc = require('./services');
 const R = require('./reports');
 const BUD = require('./budget');
@@ -15,11 +15,13 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS activity_log (id INTEGER PRIMARY KEY A
 // company documents (licences, CR, contracts, certificates...) with attachments
 try { db.exec(`CREATE TABLE IF NOT EXISTS company_documents (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, doc_type TEXT, doc_no TEXT, issue_date TEXT, expiry_date TEXT, attachment TEXT, notes TEXT, created_by INTEGER, created_at TEXT DEFAULT (datetime('now')))`); } catch (e) {}
 
-// Download a full backup of the live database (admin only).
+// Download a full backup of the live database (admin only). Auth header only
+// — the frontend always fetches this as a blob and never as a plain link, so
+// there's no reason to also accept the token via ?token=, which would risk it
+// being captured in server/proxy access logs or browser history.
 router.get('/backup', (req, res) => {
-  // token can come via header or ?token= (so a plain browser link works)
   const jwt = require('jsonwebtoken'); const { SECRET } = require('./auth');
-  const tok = (req.headers.authorization || '').replace('Bearer ', '') || req.query.token;
+  const tok = (req.headers.authorization || '').replace('Bearer ', '');
   let user; try { user = jwt.verify(tok, SECRET); } catch { return res.status(401).json({ error: 'unauthorized' }); }
   if (user.role !== 'admin') return res.status(403).json({ error: 'forbidden' });
   try {
@@ -69,6 +71,13 @@ router.post('/login', (req, res) => {
   const { username, password } = req.body || {};
   const r = login(username, password);
   if (!r) return res.status(401).json({ error: 'اسم المستخدم أو كلمة المرور غير صحيحة' });
+  if (r.locked) return res.status(429).json({ error: 'محاولات كتير غلط — الحساب مقفول مؤقتًا، حاول بعد شوية' });
+  res.json(r);
+});
+router.post('/login/2fa', (req, res) => {
+  const { pending_token, code } = req.body || {};
+  const r = completeTwoFactorLogin(pending_token, code);
+  if (!r) return res.status(401).json({ error: 'الكود غير صحيح أو الجلسة انتهت' });
   res.json(r);
 });
 
@@ -112,10 +121,34 @@ router.get('/me', (req, res) => {
     ? db.prepare('SELECT id,name,name_ar FROM buildings WHERE active=1 ORDER BY name').all()
     : db.prepare('SELECT b.id,b.name,b.name_ar FROM user_buildings ub JOIN buildings b ON b.id=ub.building_id WHERE ub.user_id=? ORDER BY b.name').all(req.user.id);
   const permissions = db.prepare('SELECT module,can_view,can_add,can_edit,can_delete FROM user_permissions WHERE user_id=?').all(req.user.id);
-  res.json({ ...req.user, buildings, all_buildings: req.user.role === 'admin', permissions });
+  const totp_enabled = !!(db.prepare('SELECT totp_enabled FROM users WHERE id=?').get(req.user.id) || {}).totp_enabled;
+  res.json({ ...req.user, buildings, all_buildings: req.user.role === 'admin', permissions, totp_enabled });
 });
-router.get('/settings', (req, res) =>
-  res.json(Object.fromEntries(db.prepare('SELECT key,value FROM settings').all().map((s) => [s.key, s.value]))));
+
+// ---- Two-factor auth self-service (any logged-in user, for their OWN account)
+router.post('/2fa/setup', (req, res) => {
+  try { res.json(startTwoFactorSetup(req.user.id, ((db.prepare("SELECT value FROM settings WHERE key='company_name'").get() || {}).value) || 'United Tower')); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.post('/2fa/enable', (req, res) => {
+  try { res.json(enableTwoFactor(req.user.id, req.body && req.body.code)); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.post('/2fa/disable', (req, res) => {
+  try { res.json(disableTwoFactor(req.user.id)); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+// Secret-bearing settings keys — every logged-in user (any role) can read
+// /settings for branding (company name/logo), so keys like the AI provider's
+// API key must never ride along in that response for non-admins.
+const SECRET_SETTINGS_KEYS = ['ai_api_key'];
+router.get('/settings', (req, res) => {
+  const all = Object.fromEntries(db.prepare('SELECT key,value FROM settings').all().map((s) => [s.key, s.value]));
+  if (req.user.role !== 'admin') {
+    for (const k of SECRET_SETTINGS_KEYS) if (all[k]) all[k] = '••••••••';
+  }
+  res.json(all);
+});
 router.put('/settings', requireRole('admin'), (req, res) => {
   const set = db.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)');
   for (const [k, v] of Object.entries(req.body || {})) set.run(k, v == null ? '' : String(v));
@@ -135,7 +168,7 @@ router.post('/admin/vat-provision-migrate', requireRole('admin'), (req, res) => 
 
 // ---- Users & permissions --------------------------------------------------
 router.get('/users', requireRole('admin'), (req, res) =>
-  res.json(db.prepare('SELECT id,username,full_name,role,lang,active,created_at FROM users ORDER BY id').all()));
+  res.json(db.prepare('SELECT id,username,full_name,role,lang,active,totp_enabled,created_at FROM users ORDER BY id').all()));
 router.post('/users', requireRole('admin'), (req, res) => {
   const { username, full_name, password, role } = req.body;
   try {
@@ -168,6 +201,11 @@ router.put('/users/:id/permissions', requireRole('admin'), (req, res) => {
   const ins = db.prepare('INSERT INTO user_permissions (user_id,module,can_view,can_add,can_edit,can_delete) VALUES (?,?,?,?,?,?)');
   for (const p of perms) ins.run(req.params.id, p.module, p.can_view ? 1 : 0, p.can_add ? 1 : 0, p.can_edit ? 1 : 0, p.can_delete ? 1 : 0);
   res.json({ ok: true });
+});
+// Recovery path: if a user loses their authenticator device, only an admin
+// can reset it (they must re-enroll and confirm a new code afterward).
+router.post('/users/:id/2fa/disable', requireRole('admin'), (req, res) => {
+  try { res.json(disableTwoFactor(Number(req.params.id))); } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 // ---- Chart of accounts (full CRUD for admin) ------------------------------

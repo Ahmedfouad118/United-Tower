@@ -35,7 +35,15 @@ const API = (() => {
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     },
-    login: async (u, pw) => { const r = await req('POST', '/login', { username: u, password: pw }); setSession(r.token, r.user); return r.user; },
+    login: async (u, pw) => {
+      const r = await req('POST', '/login', { username: u, password: pw });
+      if (r.needs_2fa) return { needs_2fa: true, pending_token: r.pending_token };
+      setSession(r.token, r.user); return { user: r.user };
+    },
+    verify2fa: async (pending_token, code) => {
+      const r = await req('POST', '/login/2fa', { pending_token, code });
+      setSession(r.token, r.user); return r.user;
+    },
     logout,
     user: () => user,
     isAuthed: () => !!token,
