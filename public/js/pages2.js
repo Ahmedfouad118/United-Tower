@@ -1319,9 +1319,15 @@ Object.assign(Pages, (() => {
         prompt(t('pres_rating_link_copied') + ':', url);
       } catch (e) { toast(e.message, 'err'); }
     };
+    bindPrint(c, t('m_presentation'));
+    const liveNotes = () => { const notes = {}; c.querySelectorAll('[data-swot]').forEach((el) => notes[el.dataset.swot] = el.value); return notes; };
+    // Override the generic bindPrint handler: it would print the raw #rbody
+    // markup as-is, which still has the SWOT/plan <textarea> tags showing
+    // their original (placeholder) content instead of whatever was typed —
+    // rebuild a read-only deck with the live values instead, same as export.
+    c.querySelector('#rprint').onclick = () => printReport(t('m_presentation'), presBuildSlides(d, liveNotes(), { readOnly: true, rootId: 'presDeckPrint' }));
     c.querySelector('#presExport').onclick = () => {
-      const notesLive = {}; c.querySelectorAll('[data-swot]').forEach((el) => notesLive[el.dataset.swot] = el.value);
-      const deckHtml = presBuildSlides(d, notesLive, { readOnly: true, rootId: 'presDeckExport' });
+      const deckHtml = presBuildSlides(d, liveNotes(), { readOnly: true, rootId: 'presDeckExport' });
       const full = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>United Tower — ${esc(d.building)} ${from}_${to}</title>
         <style>body{margin:0;background:#0b0f14;font-family:'Segoe UI',Tahoma,Arial,sans-serif}</style></head>
         <body>${deckHtml}</body></html>`;

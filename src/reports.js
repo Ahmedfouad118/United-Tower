@@ -398,7 +398,19 @@ function moneyPosition(upto, lang = 'en') {
   const divRow = bs.equity.find((e) => e.code === '39007') || bs.equity.find((e) => /dividend|توزيع/i.test(e.name));
   const capital_total = sumAmt(bs.equity.filter((e) => e.code !== (retRow && retRow.code) && e.code !== (divRow && divRow.code)));
   const retained_earnings = r2((retRow ? retRow.amt : 0) + bs.net_income); // net_income not yet closed into the RE account
-  const dividends_paid_life = r2(divRow ? -divRow.amt : 0); // dividends are a debit/contra in equity, shown here as a positive "paid out" figure
+  // Dividends actually paid: some setups post them to a dedicated contra
+  // account (39007 above); this one posts them straight against Retained
+  // Earnings itself (a debit, tagged by memo — "... DIVIDEND ..." / "توزيع"),
+  // so a bare divRow balance alone would miss them entirely. Sum both.
+  const dividendMemoDebits = (code) => {
+    if (!code) return 0;
+    const row = db.prepare(
+      `SELECT COALESCE(SUM(l.debit),0) d FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+        WHERE l.account_code=? ${upto ? 'AND j.jdate<=?' : ''} AND (j.memo LIKE '%dividend%' OR j.memo_ar LIKE '%توزيع%')`)
+      .get(...[code, ...(upto ? [upto] : [])]);
+    return r2(row.d);
+  };
+  const dividends_paid_life = r2((divRow ? -divRow.amt : 0) + dividendMemoDebits(retRow && retRow.code)); // dividends are a debit/contra in equity, shown here as a positive "paid out" figure
 
   return {
     upto, cash, receivables, receivables_total, held, held_total, payables, payables_total,
