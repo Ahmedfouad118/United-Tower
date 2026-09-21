@@ -792,7 +792,7 @@ Object.assign(Pages, (() => {
     const rowsHtml = postable.map((a) => {
       const months = byCode[a.code] || Array(12).fill(0);
       const cells = months.map((v, i) => `<td><input type="number" step="0.001" data-code="${a.code}" data-mo="${i + 1}" value="${v || ''}" style="width:72px"></td>`).join('');
-      return `<tr><td class="muted" style="font-size:11px">${a.code}</td><td>${esc(a.name_ar || a.name)}</td>${cells}<td class="num" data-total-for="${a.code}">${money(months.reduce((s, v) => s + v, 0))}</td></tr>`;
+      return `<tr><td><input type="checkbox" class="rowsel" data-rowcode="${a.code}"></td><td class="muted" style="font-size:11px">${a.code}</td><td>${esc(a.name_ar || a.name)}</td>${cells}<td class="num" data-total-for="${a.code}">${money(months.reduce((s, v) => s + v, 0))}</td></tr>`;
     }).join('');
     c.querySelector('#rbody').innerHTML = `<div class="bd">
       <div class="toolbar" style="margin:0 0 10px;align-items:flex-end">
@@ -800,13 +800,16 @@ Object.assign(Pages, (() => {
         <button class="btn" id="sugRev">💡 اقتراح إيراد الإيجار</button>
         <button class="btn" id="sugExp">💡 اقتراح المصاريف (متوسط الشهور المُدخلة)</button>
         <div class="spacer"></div>
+        <button class="btn" id="editSel">✏️ تعديل المحدد</button>
+        <button class="btn" id="clearSel">🧹 مسح المحدد</button>
+        <button class="btn" id="clearAll">🗑️ مسح الكل</button>
         <button class="btn primary" id="saveBudget">💾 ${t('save')}</button>
       </div>
       <div class="table-wrap"><table>
-        <thead><tr><th>${t('code')}</th><th>${t('account')}</th>${MONTHS_AR.map((m) => `<th class="num">${m}</th>`).join('')}<th class="num">${t('total')}</th></tr></thead>
+        <thead><tr><th><input type="checkbox" id="selAll" title="تحديد الكل"></th><th>${t('code')}</th><th>${t('account')}</th>${MONTHS_AR.map((m) => `<th class="num">${m}</th>`).join('')}<th class="num">${t('total')}</th></tr></thead>
         <tbody>${rowsHtml}</tbody>
       </table></div>
-      <p class="muted" style="font-size:11px;margin-top:8px">اقتراح الإيراد بيتطبق على حساب إيراد الإيجار (40000) على مدار الـ12 شهر. اقتراح المصاريف بياخد متوسط كل حساب على الشهور اللي فيها بيانات فعلية بالسنة دي (أو آخر 12 شهر لو السنة لسة مفيهاش بيانات) — مش تقسيم ثابت على 12. تقدر تعدّل أي خانة يدويًا قبل الحفظ.</p></div>`;
+      <p class="muted" style="font-size:11px;margin-top:8px">اقتراح الإيراد بيتطبق على حساب إيراد الإيجار (40000) على مدار الـ12 شهر. اقتراح المصاريف بياخد متوسط كل حساب على الشهور اللي فيها بيانات فعلية بالسنة دي (أو آخر 12 شهر لو السنة لسة مفيهاش بيانات) — مش تقسيم ثابت على 12. حدد صفوف بالمربعات على اليسار عشان تعدّل أو تمسح مجموعة منها، وبعدها اضغط حفظ.</p></div>`;
     c.querySelector('#rbody').addEventListener('input', (e) => {
       const inp = e.target.closest('input[data-code]'); if (!inp) return;
       const tr = inp.closest('tr');
@@ -814,11 +817,33 @@ Object.assign(Pages, (() => {
       tr.querySelector('[data-total-for]').textContent = money(sum);
     });
     const fillRow = (code, val) => {
-      const tr = [...c.querySelectorAll('#rbody tr')].find((tr2) => tr2.querySelector('td') && tr2.querySelector('td').textContent.trim() === code);
+      const tr = [...c.querySelectorAll('#rbody tr')].find((tr2) => tr2.querySelector('input.rowsel') && tr2.querySelector('input.rowsel').dataset.rowcode === code);
       if (!tr) return false;
       tr.querySelectorAll('input[data-code]').forEach((i) => i.value = val);
       tr.querySelector('[data-total-for]').textContent = money(val * 12);
       return true;
+    };
+    c.querySelector('#selAll').onchange = (e) => {
+      c.querySelectorAll('input.rowsel').forEach((cb) => cb.checked = e.target.checked);
+    };
+    c.querySelector('#editSel').onclick = () => {
+      const selected = [...c.querySelectorAll('input.rowsel:checked')];
+      if (!selected.length) return toast('حدد صف واحد على الأقل بالمربعات على اليسار', 'err');
+      const val = prompt(`قيمة شهرية واحدة تُطبّق على كل شهور ${selected.length} حساب محدد:`, '0');
+      if (val == null) return;
+      const n = Number(val) || 0;
+      selected.forEach((cb) => fillRow(cb.dataset.rowcode, n));
+    };
+    c.querySelector('#clearSel').onclick = () => {
+      const selected = [...c.querySelectorAll('input.rowsel:checked')];
+      if (!selected.length) return toast('حدد صف واحد على الأقل بالمربعات على اليسار', 'err');
+      if (!confirm(`مسح كل شهور ${selected.length} حساب محدد؟`)) return;
+      selected.forEach((cb) => fillRow(cb.dataset.rowcode, 0));
+    };
+    c.querySelector('#clearAll').onclick = () => {
+      if (!confirm('مسح كل الموازنة (كل الحسابات وكل الشهور) في هذا العرض؟ هيتحفظ فاضي لو ضغطت حفظ بعد كده.')) return;
+      c.querySelectorAll('input[data-code]').forEach((i) => i.value = '');
+      c.querySelectorAll('[data-total-for]').forEach((el) => el.textContent = money(0));
     };
     c.querySelector('#sugRev').onclick = async () => {
       const occ = Number(c.querySelector('#occ').value) || 0;
@@ -948,10 +973,13 @@ Object.assign(Pages, (() => {
     .kpi-card .val { font-size:21px; font-weight:700; margin:6px 0 2px; color:var(--pg-text); }
     .kpi-card .lbl { font-size:11.5px; color:var(--pg-muted); }
     .kpi-card.good .val { color:var(--pg-good); } .kpi-card.bad .val { color:var(--pg-bad); } .kpi-card.warn .val { color:var(--pg-warn); }
-    .pres-table { width:100%; border-collapse:collapse; font-size:13px; }
-    .pres-table th, .pres-table td { padding:8px 10px; text-align:right; border-bottom:1px solid var(--pg-border); }
+    .pres-table { width:100%; border-collapse:collapse; font-size:13px; background:transparent; }
+    .pres-table th, .pres-table td { padding:8px 10px; text-align:right; border-bottom:1px solid var(--pg-border); background:transparent; color:var(--pg-text); }
     .pres-table th { color:var(--pg-muted); font-weight:600; font-size:12px; }
-    .pres-table tr.tot td { font-weight:700; color:var(--pg-text); border-top:1px solid var(--pg-border); }
+    .pres-wrap .pres-table tbody tr:nth-child(even) td { background:rgba(255,255,255,.035); }
+    .pres-wrap .pres-table tbody tr:hover td { background:rgba(255,255,255,.06); color:var(--pg-text); box-shadow:none; }
+    .pres-wrap .pres-table tbody tr:hover { box-shadow:none; }
+    .pres-table tr.tot td { font-weight:700; color:var(--pg-text); border-top:1px solid var(--pg-border); background:transparent; }
     .pres-table td.num, .pres-table th.num { font-variant-numeric:tabular-nums; }
     .swot-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     .swot-box { border-radius:10px; padding:14px 16px; background:var(--pg-card); border:1px solid var(--pg-border); border-right:3px solid var(--pg-border); }
