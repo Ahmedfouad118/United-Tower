@@ -33,6 +33,7 @@
       { path: 'statement', label: 'm_statement', page: 'statement', mod: 'customers' },
       { path: 'ar_aging', label: 'm_ar_aging', page: 'arAging', mod: 'customers' },
       { path: 'advances', label: 'm_advances', page: 'advances', mod: 'customers' },
+      { path: 'balance_persistence', label: 'm_balance_persistence', page: 'balancePersistence', mod: 'customers' },
     ] },
     { id: 'payable', icon: '🚚', label: 'm_payable', items: [
       { path: 'vendors', label: 'm_vendors', page: 'vendors', mod: 'vendors' },

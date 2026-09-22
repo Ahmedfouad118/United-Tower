@@ -1807,12 +1807,42 @@ Object.assign(Pages, (() => {
     c.querySelector('#rbody').innerHTML = table([
       { key: 'tenant', label: t('tenant'), render: (x) => `<a href="#/statement?tenant=${x.id}">${esc(x.tenant)}</a>` },
       { key: 'phone', label: t('phone') },
-      { key: 'deferred', label: 'دفعات مقدمة (23100)', num: true, render: (x) => x.deferred ? money(x.deferred) : '' },
-      { key: 'legacy', label: 'دفعات قديمة (21500)', num: true, render: (x) => x.legacy ? money(x.legacy) : '' },
-      { key: 'advance', label: 'إجمالي المقدم (دائن)', num: true, render: (x) => `<b>${money(x.advance)}</b>` }],
+      { key: 'deferred', label: 'دفعات مقدمة (23100)', num: true, render: (x) => x.deferred ? drillA(money(x.deferred), `data-tid="${x.id}" data-accs="23100"`) : '' },
+      { key: 'legacy', label: 'دفعات قديمة (21500)', num: true, render: (x) => x.legacy ? drillA(money(x.legacy), `data-tid="${x.id}" data-accs="21500"`) : '' },
+      { key: 'advance', label: 'إجمالي المقدم (دائن)', num: true, render: (x) => `<b>${x.advance ? drillA(money(x.advance), `data-tid="${x.id}" data-accs="21500,23100"`) : money(x.advance)}</b>` }],
       r.rows, { foot: [{ v: t('total') }, { v: '' }, { v: '' }, { v: '' }, { v: money(r.grand_total), num: true }] });
+    c.querySelector('#rbody').onclick = (e) => {
+      const a = e.target.closest('.drill[data-tid]'); if (!a) return; e.preventDefault();
+      const row = r.rows.find((x) => String(x.id) === a.dataset.tid);
+      accountDrill({ title: row ? row.tenant : '', accounts: a.dataset.accs.split(','), tenant_id: a.dataset.tid, to: asOf, building_id: (window.UT && UT.building) || null });
+    };
     c.querySelector('#aof').onchange = (e) => { c._asOf = e.target.value; advances(c); };
     bindPrint(c, t('m_advances'));
+  }
+
+  // ---- Balance persistence ("تاريخ الذمم") — not "how old is each invoice"
+  // but "how long has this customer's balance never dropped below what it is
+  // right now" (or, for a customer sitting on an advance, never come back
+  // above it) — the metric a FIFO-based aging report can't show, since it
+  // pays down the oldest open invoice first even when the same total keeps
+  // rolling forward under a newer one.
+  async function balancePersistence(c) {
+    const asOf = c._asOf || today();
+    reportShell(c, 'm_balance_persistence', `<div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="bpof" value="${asOf}"></div>`, null);
+    c._qs = '?asOf=' + asOf;
+    const r = await API.get('/reports/balance-persistence?asOf=' + asOf + (window.UT ? UT.bq() : ''));
+    const kindLbl = (k) => k === 'receivable' ? badge('مستحق لينا', 'b-red') : badge('مقدم عندنا', 'b-blue');
+    const monthsOf = (d) => d >= 60 ? `${Math.floor(d / 30)} شهر` : `${d} يوم`;
+    c.querySelector('#rbody').innerHTML = table([
+      { key: 'tenant', label: t('tenant'), render: (x) => `<a href="#/statement?tenant=${x.tenant_id}">${esc(x.tenant)}</a>` },
+      { key: 'kind', label: 'النوع', render: (x) => kindLbl(x.kind) },
+      { key: 'balance', label: 'الرصيد الحالي', num: true, render: (x) => `<b>${money(Math.abs(x.balance))}</b>` },
+      { key: 'since', label: 'ثابت منذ', render: (x) => dateStr(x.since) },
+      { key: 'days_persisted', label: 'المدة', num: true, render: (x) => monthsOf(x.days_persisted) },
+    ], r.rows, { empty: 'كل الأرصدة متحرّكة — مفيش رصيد ثابت من غير سداد' });
+    c.querySelector('#rbody').innerHTML += `<p class="muted" style="font-size:11px;margin-top:8px">"ثابت منذ" = أقدم تاريخ رصيد العميل من ساعتها لغاية دلوقتي عمره ما قل عن الرصيد الحالي (لو مستحق لينا) أو ما زاد عنه (لو مقدم عندنا) — يعني ده أقل التزام مستمر منّه من غير انقطاع، حتى لو الفواتير المحدّدة اتغيّرت بالنسبة له بالسداد.</p>`;
+    c.querySelector('#bpof').onchange = (e) => { c._asOf = e.target.value; balancePersistence(c); };
+    bindPrint(c, t('m_balance_persistence'));
   }
 
   // ---- Users & permissions ----
@@ -2011,5 +2041,5 @@ Object.assign(Pages, (() => {
 
   return { customers, vendors, buildings, units, categories, paymethods, banks, employees, coa,
     vendorBills, vendorPayments, trialBalance, incomeStatement, incomeStatementConsolidated, generalLedger, balanceSheet, arAging, apAging,
-    statement, vendorStatement, advances, propertyPL, roi, cashflow, comparison, vat, vatStatement, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, security, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, moneyPosition, vatReturn, activityLog, companyDocuments, budgetEntry, budgetReport, presentation };
+    statement, vendorStatement, advances, balancePersistence, propertyPL, roi, cashflow, comparison, vat, vatStatement, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, security, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, moneyPosition, vatReturn, activityLog, companyDocuments, budgetEntry, budgetReport, presentation };
 })());

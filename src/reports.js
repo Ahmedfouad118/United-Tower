@@ -724,6 +724,58 @@ function advancesReport(asOf) {
     grand_total: r2(rows.reduce((s, r) => s + r.advance, 0)) };
 }
 
+// ---- Balance persistence ("تاريخ الذمم") -----------------------------------
+// A standard aging report answers "which invoices are still open, and how
+// old are THEY" — it can't answer "how long has this customer's balance
+// never dropped below what it is right now", because paying down an old
+// invoice with a new payment (FIFO) makes the SPECIFIC open invoice rotate
+// to a newer one even while the total owed never shrinks. This walks each
+// customer's own running balance (receivable minus advance, same accounts as
+// the tenant statement) backward from `asOf` and finds the earliest date
+// after which the balance never crossed back below its current level (or,
+// for a customer sitting on an advance, never came back above it) — i.e.
+// "stuck at at least this much since day X".
+function receivablesBalancePersistence(asOf, building_id) {
+  const ref = asOf || new Date().toISOString().slice(0, 10);
+  const list = CUSTOMER_ACCOUNTS.map(() => '?').join(',');
+  const bF = building_id ? ' AND l.building_id=' + Number(building_id) : '';
+  const lines = db.prepare(
+    `SELECT l.tenant_id, COALESCE(t.name,'(بدون عميل)') tenant, j.jdate, l.debit, l.credit
+       FROM journal_lines l JOIN journals j ON j.id=l.journal_id LEFT JOIN tenants t ON t.id=l.tenant_id
+      WHERE l.account_code IN (${list}) AND j.jdate<=? ${bF} AND l.tenant_id IS NOT NULL
+      ORDER BY l.tenant_id, j.jdate ASC, j.id ASC`).all(...CUSTOMER_ACCOUNTS, ref);
+  const byT = {};
+  for (const ln of lines) (byT[ln.tenant_id] = byT[ln.tenant_id] || { tenant: ln.tenant, points: [] }).points.push(ln);
+
+  const days = (a, b) => Math.floor((Date.parse(b) - Date.parse(a)) / 86400000);
+  const rows = [];
+  for (const [tid, g] of Object.entries(byT)) {
+    // one running-balance checkpoint per calendar day (last balance that day)
+    let running = 0; const checkpoints = [];
+    for (const p of g.points) {
+      running = r2(running + p.debit - p.credit);
+      const last = checkpoints[checkpoints.length - 1];
+      if (last && last.jdate === p.jdate) last.balance = running; else checkpoints.push({ jdate: p.jdate, balance: running });
+    }
+    const current = checkpoints.length ? checkpoints[checkpoints.length - 1].balance : 0;
+    if (Math.abs(current) <= 0.005) continue; // settled — nothing persisting
+    const positive = current > 0; // true = owes us (receivable), false = we hold an advance
+    let sinceIdx = checkpoints.length - 1;
+    for (let i = checkpoints.length - 2; i >= 0; i--) {
+      const bal = checkpoints[i].balance;
+      const holds = positive ? bal >= current - 0.005 : bal <= current + 0.005;
+      if (holds) sinceIdx = i; else break;
+    }
+    const sinceDate = checkpoints[sinceIdx].jdate;
+    rows.push({
+      tenant_id: Number(tid), tenant: g.tenant, balance: current, kind: positive ? 'receivable' : 'advance',
+      since: sinceDate, days_persisted: days(sinceDate, ref),
+    });
+  }
+  rows.sort((a, b) => b.days_persisted - a.days_persisted);
+  return { asOf: ref, rows };
+}
+
 // ---- Customers summary (all customers, balances) -------------------------
 function customersSummary() {
   const rows = db.prepare(
@@ -1170,7 +1222,7 @@ function buildingComparison(from, to) {
 module.exports = {
   trialBalance, incomeStatement, incomeStatementConsolidated, accountLedger, generalLedgerFull, groupedJournals, legacyJournals, legacyDrill,
   liquidityReport, moneyPosition, financialRatios, balanceSheet, financialStatements, receivablesAging, receivablesAgingDrill, payablesAging,
-  flatStatement, vendorStatement, advancesReport, occupancy, propertyPL, roi, cashFlowForecast, vatReport, vatReturn, vatStatement, vatUncollectedByCustomer, vatInputUnpaidByVendor,
+  flatStatement, vendorStatement, advancesReport, receivablesBalancePersistence, occupancy, propertyPL, roi, cashFlowForecast, vatReport, vatReturn, vatStatement, vatUncollectedByCustomer, vatInputUnpaidByVendor,
   bankReport, chequesReport, chequesDashboard, dashboard, contractExpiry, buildingComparison,
   depreciationReport, customersSummary,
 };

@@ -812,6 +812,7 @@ router.get('/reports/flat-statement', (req, res) => res.json(R.flatStatement({
   from: req.query.from, to: req.query.to }, lang(req))));
 router.get('/reports/vendor-statement', (req, res) => res.json(R.vendorStatement({ vendor_id: req.query.vendor_id ? Number(req.query.vendor_id) : null, from: req.query.from, to: req.query.to }, lang(req))));
 router.get('/reports/advances', (req, res) => res.json(R.advancesReport(req.query.asOf)));
+router.get('/reports/balance-persistence', (req, res) => res.json(R.receivablesBalancePersistence(req.query.asOf, effBuilding(req))));
 router.get('/reports/occupancy', (req, res) => res.json(R.occupancy(req.query.onDate, effBuilding(req))));
 router.get('/reports/property-pl', (req, res) => res.json(scopeRows(req, R.propertyPL(req.query.from, req.query.to))));
 router.get('/reports/roi', (req, res) => res.json(R.roi(req.query.from, req.query.to)));
