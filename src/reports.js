@@ -589,6 +589,41 @@ function receivablesAging(asOf, building_id) {
   return { asOf: ref, rows: listRows, totals, grand_total: r2(listRows.reduce((s, x) => s + x.total, 0)) };
 }
 
+// ---- Drill for one aging cell: which specific charges (invoices/openings) --
+// make up a tenant's outstanding balance, aged the same way receivablesAging
+// buckets them — so clicking any number in that report shows exactly where
+// it came from instead of just a total.
+function receivablesAgingDrill(tenant_id, asOf, building_id) {
+  const ref = asOf || new Date().toISOString().slice(0, 10);
+  const RECV = ['11000', '11100'];
+  const list = RECV.map(() => '?').join(',');
+  const bF = building_id ? ' AND l.building_id=' + Number(building_id) : '';
+  const tf = tenant_id ? 'l.tenant_id=?' : 'l.tenant_id IS NULL';
+  const tp = tenant_id ? [tenant_id] : [];
+  const charges = db.prepare(
+    `SELECT j.id journal_id, j.jdate, j.jtype, j.reference, j.memo_ar, l.debit amt, f.code flat
+       FROM journal_lines l JOIN journals j ON j.id=l.journal_id LEFT JOIN flats f ON f.id=l.flat_id
+      WHERE l.account_code IN (${list}) AND ${tf} AND l.debit>0.005 AND j.jdate<=? ${bF}
+      ORDER BY j.jdate ASC, j.id ASC`).all(...RECV, ...tp, ref);
+  const creditRow = db.prepare(
+    `SELECT COALESCE(SUM(l.credit),0) c FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+      WHERE l.account_code IN (${list}) AND ${tf} AND l.credit>0.005 AND j.jdate<=? ${bF}`).get(...RECV, ...tp, ref);
+  let credit = r2(creditRow.c);
+  const days = (a, b) => Math.floor((Date.parse(b) - Date.parse(a)) / 86400000);
+  const rows = [];
+  for (const ch of charges) {
+    let rem = r2(ch.amt);
+    if (credit > 0) { const used = r2(Math.min(credit, rem)); rem = r2(rem - used); credit = r2(credit - used); }
+    if (rem <= 0.005) continue;
+    const age = days(ch.jdate, ref);
+    let bucket = 'current';
+    if (age > 180) bucket = 'd180p'; else if (age > 90) bucket = 'd180'; else if (age > 60) bucket = 'd90';
+    else if (age > 30) bucket = 'd60'; else if (age > 0) bucket = 'd30';
+    rows.push({ journal_id: ch.journal_id, jdate: ch.jdate, jtype: ch.jtype, reference: ch.reference, memo: ch.memo_ar, flat: ch.flat, amount: rem, bucket, age });
+  }
+  return { tenant_id: tenant_id || null, asOf: ref, rows, total: r2(rows.reduce((s, x) => s + x.amount, 0)) };
+}
+
 // ---- Payables aging (vendor bills) ---------------------------------------
 function payablesAging(asOf) {
   const ref = asOf || new Date().toISOString().slice(0, 10);
@@ -1134,7 +1169,7 @@ function buildingComparison(from, to) {
 
 module.exports = {
   trialBalance, incomeStatement, incomeStatementConsolidated, accountLedger, generalLedgerFull, groupedJournals, legacyJournals, legacyDrill,
-  liquidityReport, moneyPosition, financialRatios, balanceSheet, financialStatements, receivablesAging, payablesAging,
+  liquidityReport, moneyPosition, financialRatios, balanceSheet, financialStatements, receivablesAging, receivablesAgingDrill, payablesAging,
   flatStatement, vendorStatement, advancesReport, occupancy, propertyPL, roi, cashFlowForecast, vatReport, vatReturn, vatStatement, vatUncollectedByCustomer, vatInputUnpaidByVendor,
   bankReport, chequesReport, chequesDashboard, dashboard, contractExpiry, buildingComparison,
   depreciationReport, customersSummary,

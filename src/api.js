@@ -5,7 +5,7 @@ const svc = require('./services');
 const R = require('./reports');
 const BUD = require('./budget');
 const PRES = require('./presentation');
-const { postJournal } = require('./ledger');
+const { postJournal, r2 } = require('./ledger');
 
 const router = express.Router();
 const writers = requireRole('admin', 'accountant');
@@ -209,7 +209,19 @@ router.post('/users/:id/2fa/disable', requireRole('admin'), (req, res) => {
 });
 
 // ---- Chart of accounts (full CRUD for admin) ------------------------------
-router.get('/accounts', (req, res) => res.json(db.prepare('SELECT * FROM accounts ORDER BY code').all()));
+// Balance is shown in each account's own natural sense (a credit-normal
+// account like a liability or income reads positive when it has a credit
+// balance) — all-time, not scoped to a period, matching "الرصيد" elsewhere.
+router.get('/accounts', (req, res) => {
+  const rows = db.prepare('SELECT * FROM accounts ORDER BY code').all();
+  const bal = db.prepare('SELECT account_code, COALESCE(SUM(debit),0) d, COALESCE(SUM(credit),0) c FROM journal_lines GROUP BY account_code').all();
+  const balMap = {}; for (const b of bal) balMap[b.account_code] = b;
+  res.json(rows.map((a) => {
+    const b = balMap[a.code] || { d: 0, c: 0 };
+    const net = r2(b.d - b.c);
+    return { ...a, balance: a.normal_balance === 'C' ? r2(-net) : net };
+  }));
+});
 router.post('/accounts', requireRole('admin'), (req, res) => {
   const { code, name, name_ar, name_ur, type, normal_balance, parent_code, is_group } = req.body;
   try {
@@ -789,6 +801,7 @@ router.get('/presentation/feedback', (req, res) => {
 });
 router.get('/reports/financial-ratios', (req, res) => res.json(R.financialRatios(req.query.from, req.query.to, effBuilding(req) && effBuilding(req) > 0 ? effBuilding(req) : null)));
 router.get('/reports/aging', (req, res) => res.json(R.receivablesAging(req.query.asOf, effBuilding(req))));
+router.get('/reports/aging-drill', (req, res) => res.json(R.receivablesAgingDrill(req.query.tenant_id ? Number(req.query.tenant_id) : null, req.query.asOf, effBuilding(req))));
 router.get('/reports/contract-expiry', (req, res) => res.json(R.contractExpiry(Number(req.query.days) || 60, effBuilding(req))));
 router.get('/reports/building-comparison', (req, res) => res.json(scopeRows(req, R.buildingComparison(req.query.from, req.query.to).map((r) => r))));
 router.get('/reports/payables-aging', (req, res) => res.json(R.payablesAging(req.query.asOf)));

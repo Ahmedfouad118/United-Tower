@@ -115,15 +115,20 @@ Object.assign(Pages, (() => {
 
   // ---- Chart of accounts (admin CRUD) ----
   async function coa(c) {
-    return M(c, { title: t('m_coa'), endpoint: 'accounts', type: 'accounts', template: true, idKey: 'code',
+    await M(c, { title: t('m_coa'), endpoint: 'accounts', type: 'accounts', template: true, idKey: 'code',
       searchFn: (rs, q) => rs.filter((r) => (r.code + ' ' + r.name + ' ' + (r.name_ar || '')).toLowerCase().includes(q)),
       columns: [{ key: 'code', label: t('code') }, { key: 'name', label: 'Name' }, { key: 'name_ar', label: 'عربي' },
-        { key: 'type', label: 'النوع' }, { key: 'normal_balance', label: 'الطبيعة' }],
+        { key: 'type', label: 'النوع' }, { key: 'normal_balance', label: 'الطبيعة' },
+        { key: 'balance', label: t('balance'), num: true, render: (r) => r.balance ? drillA(money(r.balance), `data-acc="${r.code}"`) : money(0) }],
       fields: [{ key: 'code', label: t('code'), required: true }, { key: 'name', label: 'Name (EN)', required: true }, { key: 'name_ar', label: 'الاسم عربي' },
         { key: 'type', label: 'النوع', type: 'select', options: ['asset', 'liability', 'equity', 'income', 'expense'].map((x) => ({ value: x, label: x })) },
         { key: 'normal_balance', label: 'الطبيعة', type: 'select', options: [{ value: 'D', label: 'مدين D' }, { value: 'C', label: 'دائن C' }] }],
       rowActions: isAdmin() ? ['edit', 'delete'] : [],
     });
+    c.querySelector('#mtbl').onclick = (e) => {
+      const a = e.target.closest('.drill[data-acc]'); if (!a) return; e.preventDefault();
+      accountDrill({ title: a.dataset.acc, account: a.dataset.acc, building_id: (window.UT && UT.building) || null });
+    };
   }
   // NOTE: masterScreen uses PUT /accounts/:id; accounts key is `code`. Patch endpoint id.
   // handled by overriding below in vendorBills? -> we special-case in api (PUT /accounts/:code). masterScreen sends id=row.id (undefined). Fix: give accounts rows an id=code alias via view. Simpler: custom coa edit.
@@ -439,17 +444,64 @@ Object.assign(Pages, (() => {
   }
   async function arAging(c) { await agingScreen(c, 'aging', t('m_ar_aging'), t('tenant')); }
   async function apAging(c) { await agingScreen(c, 'payables-aging', t('m_ap_aging'), t('vendor')); }
+  const AGING_BUCKET_LABEL = { current: t('current'), d30: '1-30', d60: '31-60', d90: '61-90', d180: '91-180', d180p: '+180', total: t('total') };
+  async function agingCellDrill(tenantId, tenantName, bucket, asOf, buildingId) {
+    const qp = new URLSearchParams(); qp.set('asOf', asOf);
+    if (tenantId) qp.set('tenant_id', tenantId);
+    if (buildingId) qp.set('building_id', buildingId);
+    let r;
+    try { r = await API.get('/reports/aging-drill?' + qp.toString()); }
+    catch (e) { return toast(e.message, 'err'); }
+    const rows = bucket && bucket !== 'total' ? r.rows.filter((x) => x.bucket === bucket) : r.rows;
+    if (!rows.length) return toast('لا توجد تفاصيل لهذا الرقم', 'err');
+    const total = r2(rows.reduce((s, x) => s + x.amount, 0));
+    const cols = [
+      { key: 'jdate', label: t('date'), render: (x) => dateStr(x.jdate) },
+      { key: 'reference', label: t('reference'), render: (x) => `<a href="#" class="drill" data-jid="${x.journal_id}">${esc(x.reference || ('#' + x.journal_id))}</a>` },
+      { key: 'flat', label: t('unit'), render: (x) => esc(x.flat || '') },
+      { key: 'memo', label: t('description'), render: (x) => esc(x.memo || '') },
+      { key: 'bucket', label: 'الفئة العمرية', render: (x) => AGING_BUCKET_LABEL[x.bucket] || x.bucket },
+      { key: 'amount', label: t('amount'), num: true, render: (x) => money(x.amount) },
+    ];
+    const body = table(cols, rows, { foot: [{ v: '' }, { v: '' }, { v: '' }, { v: '' }, { v: t('total') }, { v: money(total), num: true }] });
+    const title = `${tenantName || ''} — ${bucket ? (AGING_BUCKET_LABEL[bucket] || bucket) : t('total')} (${dateStr(asOf)})`;
+    modal({
+      title, wide: true, bodyHTML: body + `<p class="muted" style="font-size:11px;margin-top:8px">اضغط على «المرجع» لعرض القيد الكامل (جه منين).</p>`,
+      footerHTML: `<button class="btn" id="dprint">🖨 ${t('print')}</button>`,
+      onMount: (bg) => {
+        bg.querySelector('#dprint').onclick = () => printReport(title, body);
+        bg.querySelector('.m-bd').addEventListener('click', (e) => { const a = e.target.closest('.drill[data-jid]'); if (a) { e.preventDefault(); viewJournal(a.dataset.jid); } });
+      },
+    });
+  }
   async function agingScreen(c, endpoint, title, who) {
     const asOf = c._asOf || today();
     reportShell(c, title, `<div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="a" value="${asOf}"></div>`, endpoint === 'aging' ? 'aging' : null);
     c._qs = '?asOf=' + asOf;
     const r = await API.get('/reports/' + endpoint + '?asOf=' + asOf + (endpoint === 'aging' && window.UT ? UT.bq() : ''));
+    const isAr = endpoint === 'aging';
+    // "0" stands in for a null tenant_id ("(بدون عميل)") so it still survives
+    // as a data-attribute and round-trips back through the click handler.
+    const tidKey = (x) => x.tenant_id == null ? '0' : String(x.tenant_id);
+    const cell = (bucketKey) => (x) => {
+      const v = x[bucketKey];
+      if (!isAr || !v) return money(v);
+      return drillA(money(v), `data-tid="${tidKey(x)}" data-bucket="${bucketKey}"`);
+    };
     c.querySelector('#rbody').innerHTML = table([{ key: 'w', label: who, render: (x) => esc(x.tenant || x.vendor) },
-      { key: 'current', label: t('current'), num: true, render: (x) => money(x.current) }, { key: 'd30', label: '1-30', num: true, render: (x) => money(x.d30) },
-      { key: 'd60', label: '31-60', num: true, render: (x) => money(x.d60) }, { key: 'd90', label: '61-90', num: true, render: (x) => money(x.d90) },
-      { key: 'd180', label: '91-180', num: true, render: (x) => money(x.d180) }, { key: 'd180p', label: '+180', num: true, render: (x) => money(x.d180p) },
-      { key: 'total', label: t('total'), num: true, render: (x) => `<b>${money(x.total)}</b>` }], r.rows,
+      { key: 'current', label: t('current'), num: true, render: cell('current') }, { key: 'd30', label: '1-30', num: true, render: cell('d30') },
+      { key: 'd60', label: '31-60', num: true, render: cell('d60') }, { key: 'd90', label: '61-90', num: true, render: cell('d90') },
+      { key: 'd180', label: '91-180', num: true, render: cell('d180') }, { key: 'd180p', label: '+180', num: true, render: cell('d180p') },
+      { key: 'total', label: t('total'), num: true, render: (x) => `<b>${isAr && x.total ? drillA(money(x.total), `data-tid="${tidKey(x)}" data-bucket="total"`) : money(x.total)}</b>` }], r.rows,
       { foot: [{ v: t('total') }, ...(r.totals ? ['current', 'd30', 'd60', 'd90', 'd180', 'd180p'].map((k) => ({ v: money(r.totals[k]), num: true })) : [{}, {}, {}, {}, {}, {}]), { v: money(r.grand_total), num: true }] });
+    if (isAr) {
+      c.querySelector('#rbody').addEventListener('click', (e) => {
+        const a = e.target.closest('.drill[data-tid]'); if (!a) return; e.preventDefault();
+        const row = r.rows.find((x) => tidKey(x) === a.dataset.tid);
+        const tid = a.dataset.tid === '0' ? null : a.dataset.tid;
+        agingCellDrill(tid, row && row.tenant, a.dataset.bucket, asOf, (window.UT && UT.building) || null);
+      });
+    }
     c.querySelector('#a').onchange = (e) => { c._asOf = e.target.value; agingScreen(c, endpoint, title, who); };
     bindPrint(c, title);
   }
