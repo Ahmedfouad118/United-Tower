@@ -146,10 +146,15 @@ const UI = (() => {
       if (f.type === 'textarea') return `<textarea data-k="${f.key}" rows="2">${esc(v)}</textarea>`;
       return `<input data-k="${f.key}" type="${f.type || 'text'}" ${f.step ? `step="${f.step}"` : ''} value="${esc(v)}" ${f.readonly ? 'readonly' : ''}>`;
     };
+    // a plain informational line — no input, nothing submitted — for a field
+    // that just needs to tell the user something (e.g. a constraint) instead
+    // of collecting a value.
+    const fieldHTML = (f) => f.type === 'note'
+      ? `<div class="field ${f.full !== false ? 'full' : ''}" style="margin:0"><p class="muted" style="font-size:12px;margin:4px 0">${esc(f.value)}</p></div>`
+      : `<div class="field ${f.full ? 'full' : ''}"><label>${esc(f.label)}${f.required ? ' *' : ''}</label>${inputHTML(f)}</div>`;
     modal({
       title, wide,
-      bodyHTML: `<div class="form-grid">${fields.map((f) =>
-        `<div class="field ${f.full ? 'full' : ''}"><label>${esc(f.label)}${f.required ? ' *' : ''}</label>${inputHTML(f)}</div>`).join('')}</div>`,
+      bodyHTML: `<div class="form-grid">${fields.map(fieldHTML).join('')}</div>`,
       footerHTML: `<button class="btn primary" id="fm-save">${t('save')}</button><button class="btn" id="fm-cancel">${t('cancel')}</button>`,
       onMount: (bg, close) => {
         bg.querySelector('#fm-cancel').onclick = close;

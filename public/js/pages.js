@@ -290,7 +290,11 @@ const Pages = (() => {
       { key: 'total', label: t('total'), num: true, render: (r) => money(r.total) },
       { key: 'paid_amount', label: t('paid'), num: true, render: (r) => money(r.paid_amount) },
       { key: 'status', label: t('status'), render: (r) => statusBadge(r.status) },
-      { key: '_a', label: t('actions'), render: (r) => actions(r.id, canDo('edit') && r.paid_amount <= 0 ? ['view', 'print', 'email', 'edit', 'delete'] : ['view', 'print', 'email']) },
+      { key: '_a', label: t('actions'), render: (r) => actions(r.id, [
+        'view', 'print', 'email',
+        ...(canDo('edit') ? ['edit'] : []),                 // editable even if paid — the backend only blocks lowering the total below what's already collected
+        ...(canDo('delete') && r.paid_amount <= 0 ? ['delete'] : []),
+      ]) },
     ];
     const draw = (rs) => { c.querySelector('#it').innerHTML = table(cols, rs); UI.makeSortable(c); UI.wireBulk(c, (id) => API.del('/invoices/' + id), () => invoices(c)); };
     draw(rows); wireToolbar(c, tbCfg, draw, rows);
@@ -325,10 +329,15 @@ const Pages = (() => {
   }
   function invoiceEdit(r, done) {
     formModal({ title: 'تعديل فاتورة ' + r.invoice_no, values: r, fields: [
-      { key: 'period', label: t('period'), type: 'month', value: r.period },
+      { key: 'period', label: t('period'), type: 'month', value: r.period, readonly: true },
       { key: 'rent_amount', label: t('rent'), type: 'number', step: '0.001', required: true },
       { key: 'vat_percent', label: t('vat') + ' %', type: 'number', value: r.rent_amount ? Math.round(r.vat_amount / r.rent_amount * 100) : 5 },
-    ], onSave: async (d, close) => { await API.put('/invoices/' + r.id, d); toast(t('saved')); close(); done(); } });
+      ...(r.paid_amount > 0.005 ? [{ key: '_note', label: '', type: 'note',
+        value: `⚠️ اتحصّل منها ${r.paid_amount} فعلاً — الإجمالي الجديد (إيجار + ض.ق.م) لازم يكون ${r.paid_amount} على الأقل.` }] : []),
+    ], onSave: async (d, close) => {
+      try { await API.put('/invoices/' + r.id, d); toast(t('saved')); close(); done(); }
+      catch (e) { toast(e.message, 'err'); }
+    } });
   }
   // Group selected invoices by customer; download one Outlook draft (.eml) each.
   async function emailInvoices(ids) {

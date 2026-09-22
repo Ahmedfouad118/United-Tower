@@ -437,16 +437,38 @@ router.post('/recognition/run', writers, (req, res) => {
   const period = req.body.period || svc.currentMonth();
   res.json(svc.recognizeRevenueForPeriod(period, req.user.id));
 });
+// Edit an invoice's amount in place (same invoice id, so its payment
+// allocations stay valid even if it was already collected), and rebuild its
+// accrual journal to match — otherwise the invoice and the books would drift
+// apart the moment someone corrected a mis-generated (e.g. mid-renewal
+// proration) amount by hand.
 router.put('/invoices/:id', writers, (req, res) => {
   const inv = db.prepare('SELECT * FROM invoices WHERE id=?').get(req.params.id);
   if (!inv) return res.status(404).json({ error: 'not found' });
-  if (inv.paid_amount > 0.005) return res.status(400).json({ error: 'الفاتورة مدفوعة — احذف سند القبض أولاً' });
-  const { deleteJournal } = require('./ledger');
-  for (const j of db.prepare("SELECT id FROM journals WHERE source_table='invoices' AND source_id=?").all(inv.id)) deleteJournal(j.id);
-  db.prepare('DELETE FROM invoices WHERE id=?').run(inv.id);
+  const { deleteJournal, postJournal, ACC, r2 } = require('./ledger');
+  const rent = req.body.rent_amount != null ? r2(Number(req.body.rent_amount)) : r2(inv.rent_amount);
+  const vat = req.body.vat_percent != null ? r2(rent * (Number(req.body.vat_percent) || 0) / 100)
+    : (req.body.vat_amount != null ? r2(Number(req.body.vat_amount)) : r2(inv.vat_amount));
+  const total = r2(rent + vat);
+  if (total < r2(inv.paid_amount) - 0.005)
+    return res.status(400).json({ error: `الفاتورة اتحصّل منها ${inv.paid_amount} — القيمة الجديدة لازم تكون ${inv.paid_amount} أو أكتر. لو عايز تقلّل عن كده، احذف سند القبض أولاً` });
   try {
-    res.json(svc.issueAdHocInvoice({ tenant_id: inv.tenant_id, flat_id: inv.flat_id, building_id: inv.building_id,
-      period: req.body.period || inv.period, rent: req.body.rent_amount ?? inv.rent_amount, vat_percent: req.body.vat_percent ?? 5 }, req.user.id));
+    if (inv.issue_journal) deleteJournal(inv.issue_journal);
+    const tName = (db.prepare('SELECT name FROM tenants WHERE id=?').get(inv.tenant_id) || {}).name || '';
+    const fCode = inv.flat_id ? ((db.prepare('SELECT code FROM flats WHERE id=?').get(inv.flat_id) || {}).code || '') : '';
+    const narr = `إيجار ${inv.period}${fCode ? ' - وحدة ' + fCode : ''}${tName ? ' - ' + tName : ''} (معدّلة)`;
+    const jid = postJournal(
+      { jdate: inv.due_date, jtype: 'invoice', reference: inv.invoice_no, memo: `Rent accrual ${inv.period} (edited)`,
+        memo_ar: narr, source_table: 'invoices', source_id: inv.id, created_by: req.user.id },
+      [
+        { account_code: ACC.TENANT_RECV, debit: total, building_id: inv.building_id, flat_id: inv.flat_id, tenant_id: inv.tenant_id, memo: narr },
+        { account_code: ACC.RENT_INCOME, credit: rent, building_id: inv.building_id, flat_id: inv.flat_id, tenant_id: inv.tenant_id },
+        ...(vat > 0.005 ? [{ account_code: CFG.acct('output_vat'), credit: vat, tenant_id: inv.tenant_id, memo: 'VAT' }] : []),
+      ]);
+    const status = inv.paid_amount >= total - 0.005 ? 'paid' : (inv.paid_amount > 0.005 ? 'partial' : 'issued');
+    db.prepare('UPDATE invoices SET rent_amount=?, vat_amount=?, total=?, recognized_amount=?, status=?, issue_journal=? WHERE id=?')
+      .run(rent, vat, total, rent, status, jid, inv.id);
+    res.json(db.prepare('SELECT * FROM invoices WHERE id=?').get(inv.id));
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.delete('/invoices/:id', writers, (req, res) => {
