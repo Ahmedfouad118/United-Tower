@@ -55,6 +55,32 @@ function tenantReceivableBalance(tenant_id) {
 }
 
 // ---- Issue a monthly rent invoice (deferred revenue) ----------------------
+// Pro-rate the FIRST and LAST (partial) month by days — effective from Apr 2026
+// (Q1 2026 is closed). Grace: entry on day 1-3 counts as a full month. Middle
+// months are always full. Rule: rent × (daysInMonth − entryDay) / daysInMonth
+// for the first month; rent × endDay / daysInMonth for the last month.
+// Exported so any report checking invoices against their contract reuses the
+// exact same rule the generator applied, instead of re-deriving it and drifting.
+const PRORATE_FROM = '2026-04';
+function expectedRentForPeriod(contract, period) {
+  let rent = r2(contract.monthly_rent);
+  if (period >= PRORATE_FROM && contract.start_date && contract.end_date) {
+    const startP = periodOf(contract.start_date), endP = periodOf(contract.end_date);
+    const dim = (p) => new Date(Number(p.slice(0, 4)), Number(p.slice(5, 7)), 0).getDate();
+    const sd = Number(contract.start_date.slice(8, 10)), ed = Number(contract.end_date.slice(8, 10));
+    const d = dim(period), base = r2(contract.monthly_rent);
+    if (period === startP && period === endP) {          // short contract within one month
+      const days = Math.max(0, Math.min(d, ed) - (sd > 3 ? sd : 0));
+      rent = r2(base * days / d);
+    } else if (period === startP && sd > 3) {             // first (partial) month
+      rent = r2(base * (d - sd) / d);
+    } else if (period === endP && ed < d) {               // last (partial) month
+      rent = r2(base * ed / d);
+    }
+  }
+  return rent;
+}
+
 function issueInvoiceForContract(contract, period, created_by) {
   const existing = db.prepare('SELECT id FROM invoices WHERE contract_id=? AND period=?').get(contract.id, period);
   if (existing) return { skipped: true, reason: 'exists', id: existing.id };
@@ -72,26 +98,7 @@ function issueInvoiceForContract(contract, period, created_by) {
     if (period > cut) return { skipped: true, reason: 'after-termination' };
   }
 
-  // Pro-rate the FIRST and LAST (partial) month by days — effective from Apr 2026
-  // (Q1 2026 is closed). Grace: entry on day 1-3 counts as a full month. Middle
-  // months are always full. Rule: rent × (daysInMonth − entryDay) / daysInMonth
-  // for the first month; rent × endDay / daysInMonth for the last month.
-  const PRORATE_FROM = '2026-04';
-  let rent = r2(contract.monthly_rent);
-  if (period >= PRORATE_FROM && contract.start_date && contract.end_date) {
-    const startP = periodOf(contract.start_date), endP = periodOf(contract.end_date);
-    const dim = (p) => new Date(Number(p.slice(0, 4)), Number(p.slice(5, 7)), 0).getDate();
-    const sd = Number(contract.start_date.slice(8, 10)), ed = Number(contract.end_date.slice(8, 10));
-    const d = dim(period), base = r2(contract.monthly_rent);
-    if (period === startP && period === endP) {          // short contract within one month
-      const days = Math.max(0, Math.min(d, ed) - (sd > 3 ? sd : 0));
-      rent = r2(base * days / d);
-    } else if (period === startP && sd > 3) {             // first (partial) month
-      rent = r2(base * (d - sd) / d);
-    } else if (period === endP && ed < d) {               // last (partial) month
-      rent = r2(base * ed / d);
-    }
-  }
+  const rent = expectedRentForPeriod(contract, period);
   const vat = r2((rent * (contract.vat_percent || 0)) / 100);
   const total = r2(rent + vat);
   const invNo = nextInvoiceNo();
@@ -595,6 +602,6 @@ module.exports = {
   recordVendorBill, deleteVendorBill, updateVendorBill, recordVendorPayment, runPayroll, terminateContract, runDepreciation, setTenantOpening, setVendorOpening,
   settleVAT,
   tenantAdvanceBalance, addMonths, periodOf, firstOfMonth, currentMonth, today,
-  CUSTOMER_ADVANCE,
+  CUSTOMER_ADVANCE, expectedRentForPeriod,
 };
 module.exports.migrateVatTo20000 = migrateVatTo20000;

@@ -1845,12 +1845,73 @@ Object.assign(Pages, (() => {
     bindPrint(c, t('m_balance_persistence'));
   }
 
+  // ---- Audit Center: one page an external auditor's prep starts from -------
+  // Automated pass/warn/fail checks (trial balance, journal balance, invoice-vs-
+  // contract drift, aging-vs-GL tie-out, VAT, bank recon, cheques, contract
+  // expiry, fixed-asset integrity) plus a static checklist of what to hand the
+  // auditor. Every check links straight to the existing detailed report.
+  async function auditCenter(c) {
+    const asOf = c._asOf || today();
+    reportShell(c, 'm_audit', `<div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="acof" value="${asOf}"></div>`, null);
+    const r = await API.get('/reports/audit-center?asOf=' + asOf + (window.UT ? UT.bq() : ''));
+    const kpi = (lbl, val, sub, ico, cls) => `<div class="card kpi ${cls}"><div class="ico">${ico}</div>
+      <div class="lbl">${lbl}</div><div class="val mono">${val}</div><div class="sub">${sub}</div></div>`;
+    const statusCls = (s) => s === 'ok' ? 'k-green' : s === 'warn' ? 'k-amber' : 'k-red';
+    const statusIco = (s) => s === 'ok' ? '✅' : s === 'warn' ? '⚠️' : '❌';
+    const checksHTML = r.checks.map((ch) => {
+      const inner = `<div class="ico">${statusIco(ch.status)}</div><div class="lbl">${esc(ch.label)}</div><div class="sub">${esc(ch.detail)}</div>`;
+      if (ch.key === 'invoice_contract') return `<div class="card kpi ${statusCls(ch.status)} audit-ic" style="cursor:pointer">${inner}</div>`;
+      return ch.link ? `<a href="${ch.link}" class="card kpi ${statusCls(ch.status)}" style="text-decoration:none;color:inherit;display:block">${inner}</a>`
+                      : `<div class="card kpi ${statusCls(ch.status)}">${inner}</div>`;
+    }).join('');
+    const CHECKLIST = [
+      ['ميزان المراجعة', '#/tb'], ['القوائم المالية (دخل / مركز مالي / تدفقات نقدية)', '#/finstmts'],
+      ['دفتر الأستاذ العام', '#/gl'], ['تفصيل أعمار الذمم المدينة (العملاء)', '#/ar_aging'],
+      ['تفصيل أعمار الذمم الدائنة (الموردين)', '#/ap_aging'], ['كشوف حسابات البنوك والتسوية البنكية', '#/reconciliation'],
+      ['سجل الأصول الثابتة وجدول الإهلاك', '#/depreciation'], ['كشف ضريبة القيمة المضافة (فواتير مقابل الأستاذ)', '#/vat_statement'],
+      ['العقود سارية المفعول والمنتهية', '#/contracts'], ['سندات القبض وسندات الصرف', '#/receipts'],
+      ['الشيكات تحت التحصيل / تحت الدفع', '#/cheques_dash'], ['كشوف رواتب الموظفين', '#/employees'],
+    ];
+    c.querySelector('#rbody').innerHTML = `
+      <div class="grid g-4">
+        ${kpi('الذمم المدينة (الأستاذ)', money(r.kpis.receivable), 'كل حسابات العملاء', '📈', 'k-blue')}
+        ${kpi('الذمم الدائنة (الموردين)', money(r.kpis.payable), 'فواتير موردين غير مسددة', '📉', 'k-amber')}
+        ${kpi('دفعات العملاء المقدمة', money(r.kpis.advances_held), '', '🔒', 'k-teal')}
+        ${kpi('النقدية والبنوك', money(r.kpis.cash_and_bank), '', '💵', 'k-green')}
+      </div>
+      <div style="margin:16px 0 6px"><b>فحوصات آلية</b> — ${r.ok_count} سليم${r.warn_count ? ' · ' + r.warn_count + ' يحتاج مراجعة' : ''}${r.bad_count ? ' · ' + r.bad_count + ' خطأ' : ''}</div>
+      <div class="grid g-3">${checksHTML}</div>
+      <div class="card" style="margin-top:16px"><div class="hd"><h3>مستندات وتقارير تجهّزها للمدقق</h3></div>
+        <div class="bd"><ul style="margin:0;padding-inline-start:20px;line-height:2.1">
+          ${CHECKLIST.map((x) => `<li><a href="${x[1]}">${esc(x[0])}</a></li>`).join('')}
+        </ul></div></div>`;
+    const icEl = c.querySelector('.audit-ic');
+    if (icEl) icEl.onclick = () => invoiceAuditDetail();
+    c.querySelector('#acof').onchange = (e) => { c._asOf = e.target.value; auditCenter(c); };
+    bindPrint(c, t('m_audit'));
+  }
+
+  async function invoiceAuditDetail() {
+    let r; try { r = await API.get('/reports/invoice-audit' + (window.UT ? UT.bq(true) : '')); } catch (e) { return toast(e.message, 'err'); }
+    const cols = [
+      { key: 'invoice_no', label: 'الفاتورة' }, { key: 'tenant', label: t('tenant') }, { key: 'flat', label: t('unit') },
+      { key: 'period', label: t('period') },
+      { key: 'actual_total', label: 'المسجّل حاليًا', num: true, render: (x) => money(x.actual_total) },
+      { key: 'expected_total', label: 'المفروض حسب العقد', num: true, render: (x) => money(x.expected_total) },
+      { key: 'diff', label: 'الفرق', num: true, render: (x) => `<b style="color:${x.diff > 0 ? '#c0392b' : '#2980b9'}">${money(x.diff)}</b>` },
+      { key: '_a', label: t('actions'), render: (x) => `<a href="#/invoices" class="btn sm">${t('edit')}</a>` },
+    ];
+    modal({ title: `فواتير مختلفة عن شروط عقودها الحالية (${r.count})`, wide: true,
+      bodyHTML: table(cols, r.rows, { empty: 'مفيش فواتير مختلفة عن عقودها' }) +
+        `<p class="muted" style="font-size:11px;margin-top:8px">"المفروض حسب العقد" = إيجار العقد الحالي مطبّق عليه نفس قاعدة التناسب اليومي المستخدمة عند توليد الفاتورة (شهر أول/آخر جزئي). لو العقد اتجدد أو اتعدّل بعد ما الفاتورة اتولدت، القيمة القديمة بتفضل زي ما هي لحد ما تتعدّل الفاتورة يدويًا من شاشة الفواتير الشهرية.</p>` });
+  }
+
   // ---- Users & permissions ----
   // per-screen permissions grouped by category (each screen keyed by its nav path)
   const PGROUPS = [
-    ['الرئيسية', [['dashboard', 'لوحة التحكم']]],
+    ['الرئيسية', [['dashboard', 'لوحة التحكم'], ['audit', 'مركز التدقيق']]],
     ['الأملاك', [['buildings', 'البنايات'], ['units', 'الوحدات'], ['calendar', 'كالندر الإشغال']]],
-    ['العملاء (ذمم مدينة)', [['customers', 'العملاء'], ['contracts', 'العقود'], ['invoices', 'الفواتير الشهرية'], ['receipts', 'سندات القبض'], ['cust_summary', 'ملخص حسابات العملاء'], ['statement', 'كشف حساب'], ['ar_aging', 'أعمار الذمم المدينة'], ['advances', 'الذمم الدائنة (مقدم)']]],
+    ['العملاء (ذمم مدينة)', [['customers', 'العملاء'], ['contracts', 'العقود'], ['invoices', 'الفواتير الشهرية'], ['receipts', 'سندات القبض'], ['cust_summary', 'ملخص حسابات العملاء'], ['statement', 'كشف حساب'], ['ar_aging', 'أعمار الذمم المدينة'], ['advances', 'الذمم الدائنة (مقدم)'], ['balance_persistence', 'تاريخ الذمم']]],
     ['الموردون (ذمم دائنة)', [['vendors', 'الموردون'], ['bills', 'فواتير الموردين'], ['vpayments', 'سندات الصرف'], ['ap_aging', 'أعمار الذمم الدائنة'], ['vstatement', 'كشف حساب مورد']]],
     ['المالية', [['coa', 'شجرة الحسابات'], ['journals', 'القيود اليومية'], ['gjournals', 'القيود المجمعة'], ['legacy', 'قيود النظام القديم'], ['tb', 'ميزان المراجعة'], ['is', 'قائمة الدخل'], ['is_consolidated', 'قائمة الدخل المجمعة'], ['gl', 'دفتر الأستاذ'], ['bs', 'المركز المالي'], ['liquidity', 'تقرير السيولة'], ['cashflow', 'التدفق النقدي'], ['ppl', 'أرباح العقارات'], ['roi', 'العائد ROI'], ['comparison', 'مقارنة أداء البنايات']]],
     ['الخزينة والبنوك', [['banks', 'الحسابات البنكية'], ['cheques', 'الشيكات'], ['cheques_dash', 'متابعة الشيكات'], ['reconciliation', 'التسوية البنكية']]],
@@ -2041,5 +2102,5 @@ Object.assign(Pages, (() => {
 
   return { customers, vendors, buildings, units, categories, paymethods, banks, employees, coa,
     vendorBills, vendorPayments, trialBalance, incomeStatement, incomeStatementConsolidated, generalLedger, balanceSheet, arAging, apAging,
-    statement, vendorStatement, advances, balancePersistence, propertyPL, roi, cashflow, comparison, vat, vatStatement, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, security, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, moneyPosition, vatReturn, activityLog, companyDocuments, budgetEntry, budgetReport, presentation };
+    statement, vendorStatement, advances, balancePersistence, auditCenter, propertyPL, roi, cashflow, comparison, vat, vatStatement, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, security, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, moneyPosition, vatReturn, activityLog, companyDocuments, budgetEntry, budgetReport, presentation };
 })());

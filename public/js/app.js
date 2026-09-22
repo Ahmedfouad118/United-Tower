@@ -19,6 +19,7 @@
   // Navigation: groups with collapsible sub-items. page = Pages fn name.
   const NAV = [
     { single: true, path: 'dashboard', icon: '📊', label: 'm_dashboard', page: 'dashboard', mod: 'dashboard' },
+    { single: true, path: 'audit', icon: '🕵️', label: 'm_audit', page: 'auditCenter', mod: 'audit' },
     { id: 'properties', icon: '🏢', label: 'm_properties', items: [
       { path: 'buildings', label: 'm_buildings', page: 'buildings', mod: 'properties' },
       { path: 'units', label: 'm_units', page: 'units', mod: 'properties' },

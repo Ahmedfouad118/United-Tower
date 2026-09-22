@@ -776,6 +776,124 @@ function receivablesBalancePersistence(asOf, building_id) {
   return { asOf: ref, rows };
 }
 
+// ---- Invoice vs Contract audit --------------------------------------------
+// Recomputes what each invoice's rent/VAT SHOULD be from its OWN contract's
+// current terms (the exact same day-based proration `issueInvoiceForContract`
+// applies), and flags any invoice that drifted from that — e.g. a contract was
+// edited/renewed AFTER its invoices for later months were already issued, so
+// the old rent kept being billed. Catches the class of bug found 2026-09-22
+// (SHOP 2 / MADTHQ ALJOOD: contract renewed 1400→1200 but 3 already-issued
+// invoices kept billing the old amount) automatically instead of by accident.
+function invoiceContractAudit(building_id) {
+  const { expectedRentForPeriod } = require('./services');
+  const rows = db.prepare(
+    `SELECT i.id, i.invoice_no, i.period, i.rent_amount, i.vat_amount, i.total, i.paid_amount, i.status,
+            c.id contract_id, c.contract_no, c.monthly_rent, c.vat_percent, c.start_date, c.end_date,
+            t.name tenant, f.code flat, b.name building
+       FROM invoices i
+       JOIN contracts c ON c.id = i.contract_id
+       JOIN tenants t ON t.id = i.tenant_id
+       LEFT JOIN flats f ON f.id = i.flat_id
+       LEFT JOIN buildings b ON b.id = i.building_id
+      WHERE i.status != 'cancelled' ${building_id ? 'AND i.building_id=' + Number(building_id) : ''}
+      ORDER BY i.period`).all();
+  const out = [];
+  for (const r of rows) {
+    const expectedRent = expectedRentForPeriod(
+      { monthly_rent: r.monthly_rent, start_date: r.start_date, end_date: r.end_date }, r.period);
+    const expectedVat = r2(expectedRent * (r.vat_percent || 0) / 100);
+    const expectedTotal = r2(expectedRent + expectedVat);
+    const diff = r2(r.total - expectedTotal);
+    if (Math.abs(diff) <= 0.5) continue;
+    out.push({
+      id: r.id, invoice_no: r.invoice_no, period: r.period, tenant: r.tenant, flat: r.flat, building: r.building,
+      contract_id: r.contract_id, contract_no: r.contract_no, status: r.status, paid_amount: r.paid_amount,
+      actual_rent: r.rent_amount, actual_vat: r.vat_amount, actual_total: r.total,
+      expected_rent: expectedRent, expected_vat: expectedVat, expected_total: expectedTotal, diff,
+    });
+  }
+  out.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+  return { rows: out, count: out.length, total_diff: r2(out.reduce((s, x) => s + x.diff, 0)) };
+}
+
+// ---- Audit Center: automated integrity checks + KPIs for external audit prep
+function auditCenter(asOf, building_id) {
+  const ref = asOf || new Date().toISOString().slice(0, 10);
+  const yearStart = ref.slice(0, 4) + '-01-01';
+  const checks = [];
+
+  const tb = trialBalance(ref);
+  checks.push({ key: 'trial_balance', label: 'ميزان المراجعة متوازن (مدين = دائن)', status: tb.balanced ? 'ok' : 'bad',
+    detail: `مدين ${tb.total_debit} — دائن ${tb.total_credit}`, link: '#/tb' });
+
+  const unbalanced = db.prepare(
+    `SELECT j.id FROM journals j JOIN journal_lines l ON l.journal_id=j.id
+      GROUP BY j.id HAVING ABS(ROUND(SUM(l.debit)-SUM(l.credit),3)) > 0.005`).all();
+  checks.push({ key: 'journal_balance', label: 'كل قيد متزن (مدين = دائن) لوحده', status: unbalanced.length ? 'bad' : 'ok',
+    detail: unbalanced.length ? `${unbalanced.length} قيد غير متزن` : 'كل القيود متزنة', count: unbalanced.length, link: '#/journals' });
+
+  const audit = invoiceContractAudit(building_id);
+  checks.push({ key: 'invoice_contract', label: 'الفواتير مطابقة لشروط عقودها الحالية', status: audit.count ? 'warn' : 'ok',
+    detail: audit.count ? `${audit.count} فاتورة بفرق إجمالي ${audit.total_diff}` : 'كل الفواتير مطابقة لعقودها',
+    count: audit.count, amount: audit.total_diff });
+
+  const RECV = ['11000', '11100'];
+  const glRecv = r2(db.prepare(
+    `SELECT COALESCE(SUM(l.debit)-SUM(l.credit),0) bal FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+      WHERE l.account_code IN (${RECV.map(() => '?').join(',')}) AND j.jdate<=? ${building_id ? 'AND l.building_id=' + Number(building_id) : ''}`)
+    .get(...RECV, ref).bal);
+  const aging = receivablesAging(ref, building_id);
+  const arGap = r2(aging.grand_total - glRecv);
+  // small gaps can be cumulative rounding from the FIFO oldest-first sweep across
+  // many transactions, not a real data error — only flag 'bad' once it's material.
+  const arStatus = Math.abs(arGap) <= 1 ? 'ok' : (Math.abs(arGap) <= 50 ? 'warn' : 'bad');
+  checks.push({ key: 'ar_tieout', label: 'أعمار الذمم المدينة = رصيد حساب الذمم بالأستاذ', status: arStatus,
+    detail: `الأعمار ${aging.grand_total} — الأستاذ ${glRecv}${Math.abs(arGap) > 1 ? ' — فرق ' + arGap : ''}`, link: '#/ar_aging' });
+
+  const vr = vatReturn(yearStart, ref);
+  const vatDocVsLedger = r2(vr.box1a.vat - vr.box5_output);
+  const vatOk = Math.abs(vatDocVsLedger) <= 0.5 && Math.abs(vr.box6_reconciliation_gap) <= 0.5;
+  checks.push({ key: 'vat', label: 'ضريبة القيمة المضافة (الفواتير مقابل الأستاذ)', status: vatOk ? 'ok' : 'warn',
+    detail: `مخرجات: فواتير ${vr.box1a.vat} / أستاذ ${vr.box5_output} — فجوة مدخلات غير موثّقة: ${vr.box6_reconciliation_gap}`,
+    link: '#/vat_statement' });
+
+  const unrecon = db.prepare(`SELECT COUNT(*) c, COALESCE(SUM(debit+credit),0) amt FROM bank_statement_lines WHERE reconciled=0 AND txn_date<=?`).get(ref);
+  checks.push({ key: 'bank_recon', label: 'التسوية البنكية', status: unrecon.c ? 'warn' : 'ok',
+    detail: unrecon.c ? `${unrecon.c} حركة غير مسواة بقيمة ${r2(unrecon.amt)}` : 'كل الحركات متسواة', count: unrecon.c, link: '#/reconciliation' });
+
+  const cheq = chequesDashboard(ref);
+  const overdueCount = cheq.incoming.overdue.count + cheq.outgoing.overdue.count;
+  checks.push({ key: 'cheques', label: 'الشيكات المعلّقة', status: overdueCount ? 'warn' : 'ok',
+    detail: `متأخرة: ${overdueCount} — تحت التحصيل ${cheq.incoming.pending_total} — تحت الدفع ${cheq.outgoing.pending_total}`, link: '#/cheques_dash' });
+
+  const expiring = contractExpiry(60, building_id);
+  checks.push({ key: 'contract_expiry', label: 'عقود قاربت على الانتهاء (خلال 60 يوم)', status: expiring.length ? 'warn' : 'ok',
+    detail: expiring.length ? `${expiring.length} عقد` : 'لا يوجد', count: expiring.length, link: '#/contracts' });
+
+  const assets = depreciationReport(building_id);
+  const badAssets = assets.filter((a) => a.accum_depreciation > a.depreciable + 0.5);
+  checks.push({ key: 'assets', label: 'سجل الأصول الثابتة سليم', status: badAssets.length ? 'bad' : 'ok',
+    detail: badAssets.length ? `${badAssets.length} أصل مجمّع إهلاكه أكتر من تكلفته` : 'كل الأصول سليمة', count: badAssets.length, link: '#/depreciation' });
+
+  const bankCodes = [...new Set(db.prepare('SELECT gl_account FROM banks').all().map((b) => b.gl_account).filter(Boolean).concat([CFG.acct('cash')]))];
+  const cashBal = r2(db.prepare(
+    `SELECT COALESCE(SUM(l.debit)-SUM(l.credit),0) bal FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+      WHERE l.account_code IN (${bankCodes.map(() => '?').join(',')}) AND j.jdate<=?`).get(...bankCodes, ref).bal);
+  const apTotal = payablesAging(ref).grand_total;
+  const advAccts = ['21500', '23100'];
+  const advBal = r2(db.prepare(
+    `SELECT COALESCE(SUM(l.credit)-SUM(l.debit),0) bal FROM journal_lines l WHERE l.account_code IN (${advAccts.map(() => '?').join(',')}) AND l.tenant_id IS NOT NULL`)
+    .get(...advAccts).bal);
+
+  return {
+    asOf: ref, checks,
+    ok_count: checks.filter((c) => c.status === 'ok').length,
+    warn_count: checks.filter((c) => c.status === 'warn').length,
+    bad_count: checks.filter((c) => c.status === 'bad').length,
+    kpis: { receivable: glRecv, payable: apTotal, advances_held: advBal, cash_and_bank: cashBal },
+  };
+}
+
 // ---- Customers summary (all customers, balances) -------------------------
 function customersSummary() {
   const rows = db.prepare(
@@ -1224,5 +1342,5 @@ module.exports = {
   liquidityReport, moneyPosition, financialRatios, balanceSheet, financialStatements, receivablesAging, receivablesAgingDrill, payablesAging,
   flatStatement, vendorStatement, advancesReport, receivablesBalancePersistence, occupancy, propertyPL, roi, cashFlowForecast, vatReport, vatReturn, vatStatement, vatUncollectedByCustomer, vatInputUnpaidByVendor,
   bankReport, chequesReport, chequesDashboard, dashboard, contractExpiry, buildingComparison,
-  depreciationReport, customersSummary,
+  depreciationReport, customersSummary, invoiceContractAudit, auditCenter,
 };
