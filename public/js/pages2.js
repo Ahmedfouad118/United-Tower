@@ -622,11 +622,12 @@ Object.assign(Pages, (() => {
     const r = await API.get('/reports/customers-summary');
     c.querySelector('#rbody').innerHTML = table([
       { key: 'tenant', label: t('tenant'), render: (x) => `<a href="#/statement?tenant=${x.id}">${esc(x.tenant)}</a>` },
+      { key: 'units', label: t('unit'), render: (x) => esc(x.units || '') },
       { key: 'phone', label: t('phone') },
       { key: 'receivable', label: 'مدين (مستحق)', num: true, render: (x) => x.receivable ? drillA(money(x.receivable), `data-tid="${x.id}" data-kind="recv"`) : money(x.receivable) },
       { key: 'advance', label: 'دفعات مقدمة', num: true, render: (x) => x.advance ? drillA(money(x.advance), `data-tid="${x.id}" data-kind="adv"`) : money(x.advance) },
       { key: 'net', label: 'الصافي', num: true, render: (x) => `<b class="${x.net > 0 ? 'neg' : 'pos'}">${money(x.net)}</b>` }],
-      r, { foot: [{ v: t('total') }, { v: '' }, { v: money(r.reduce((s, x) => s + x.receivable, 0)), num: true }, { v: money(r.reduce((s, x) => s + x.advance, 0)), num: true }, { v: money(r.reduce((s, x) => s + x.net, 0)), num: true }] });
+      r, { foot: [{ v: t('total') }, { v: '' }, { v: '' }, { v: money(r.reduce((s, x) => s + x.receivable, 0)), num: true }, { v: money(r.reduce((s, x) => s + x.advance, 0)), num: true }, { v: money(r.reduce((s, x) => s + x.net, 0)), num: true }] });
     c.querySelector('#rbody').onclick = (e) => {
       const a = e.target.closest('.drill'); if (!a || !a.dataset.tid) return; e.preventDefault();
       const name = (r.find((x) => String(x.id) === a.dataset.tid) || {}).tenant || '';
@@ -1841,31 +1842,28 @@ Object.assign(Pages, (() => {
   // above it) — the metric a FIFO-based aging report can't show, since it
   // pays down the oldest open invoice first even when the same total keeps
   // rolling forward under a newer one.
-  async function balancePersistence(c) {
+  // kind: 'receivable' (تاريخ الذمم المدينة) or 'advance' (تاريخ الذمم الدائنة) —
+  // split into two screens to match how أعمار الذمم المدينة / الذمم الدائنة are
+  // already two separate reports, and given a single "asOf" date like those
+  // (no from/to range — aging-style screens don't have one either).
+  async function balancePersistenceScreen(c, kind, titleKey) {
     const asOf = c._asOf || today();
-    const from = c._from || '';
-    reportShell(c, 'm_balance_persistence',
-      `<div class="field" style="margin:0"><label>${t('from')}</label><input type="date" id="bpfrom" value="${from}"></div>
-       <div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="bpof" value="${asOf}"></div>`, null);
+    reportShell(c, titleKey, `<div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="bpof" value="${asOf}"></div>`, null);
     c._qs = '?asOf=' + asOf;
     const r = await API.get('/reports/balance-persistence?asOf=' + asOf + (window.UT ? UT.bq() : ''));
-    const kindLbl = (k) => k === 'receivable' ? badge('مستحق لينا', 'b-red') : badge('مقدم عندنا', 'b-blue');
-    const monthsOf = (d) => d >= 60 ? `${Math.floor(d / 30)} شهر` : `${d} يوم`;
-    // "من" filters to balances that have been persisting since on/after that date —
-    // matching the from/to range pattern used on statement/aging-style screens.
-    const rows = from ? r.rows.filter((x) => x.since >= from) : r.rows;
+    const rows = r.rows.filter((x) => x.kind === kind);
     c.querySelector('#rbody').innerHTML = table([
       { key: 'tenant', label: t('tenant'), render: (x) => `<a href="#/statement?tenant=${x.tenant_id}">${esc(x.tenant)}</a>` },
-      { key: 'kind', label: 'النوع', render: (x) => kindLbl(x.kind) },
       { key: 'balance', label: 'الرصيد الحالي', num: true, render: (x) => `<b>${money(Math.abs(x.balance))}</b>` },
       { key: 'since', label: 'ثابت منذ', render: (x) => dateStr(x.since) },
-      { key: 'days_persisted', label: 'المدة', num: true, render: (x) => monthsOf(x.days_persisted) },
+      { key: 'days_persisted', label: 'عدد الأيام', num: true, render: (x) => x.days_persisted + ' يوم' },
     ], rows, { empty: 'كل الأرصدة متحرّكة — مفيش رصيد ثابت من غير سداد' });
     c.querySelector('#rbody').innerHTML += `<p class="muted" style="font-size:11px;margin-top:8px">"ثابت منذ" = أقدم تاريخ رصيد العميل من ساعتها لغاية دلوقتي عمره ما قل عن الرصيد الحالي (لو مستحق لينا) أو ما زاد عنه (لو مقدم عندنا) — يعني ده أقل التزام مستمر منّه من غير انقطاع، حتى لو الفواتير المحدّدة اتغيّرت بالنسبة له بالسداد.</p>`;
-    c.querySelector('#bpof').onchange = (e) => { c._asOf = e.target.value; balancePersistence(c); };
-    c.querySelector('#bpfrom').onchange = (e) => { c._from = e.target.value; balancePersistence(c); };
-    bindPrint(c, t('m_balance_persistence'));
+    c.querySelector('#bpof').onchange = (e) => { c._asOf = e.target.value; balancePersistenceScreen(c, kind, titleKey); };
+    bindPrint(c, t(titleKey));
   }
+  async function balancePersistenceAr(c) { return balancePersistenceScreen(c, 'receivable', 'm_balance_persistence_ar'); }
+  async function balancePersistenceAp(c) { return balancePersistenceScreen(c, 'advance', 'm_balance_persistence_ap'); }
 
   // ---- Audit Center: one page an external auditor's prep starts from -------
   // Automated pass/warn/fail checks (trial balance, journal balance, invoice-vs-
@@ -1933,7 +1931,7 @@ Object.assign(Pages, (() => {
   const PGROUPS = [
     ['الرئيسية', [['dashboard', 'لوحة التحكم'], ['audit', 'مركز التدقيق']]],
     ['الأملاك', [['buildings', 'البنايات'], ['units', 'الوحدات'], ['calendar', 'كالندر الإشغال']]],
-    ['العملاء (ذمم مدينة)', [['customers', 'العملاء'], ['contracts', 'العقود'], ['invoices', 'الفواتير الشهرية'], ['receipts', 'سندات القبض'], ['cust_summary', 'ملخص حسابات العملاء'], ['statement', 'كشف حساب'], ['ar_aging', 'أعمار الذمم المدينة'], ['advances', 'الذمم الدائنة (مقدم)'], ['balance_persistence', 'تاريخ الذمم']]],
+    ['العملاء (ذمم مدينة)', [['customers', 'العملاء'], ['contracts', 'العقود'], ['invoices', 'الفواتير الشهرية'], ['receipts', 'سندات القبض'], ['cust_summary', 'ملخص حسابات العملاء'], ['statement', 'كشف حساب'], ['ar_aging', 'أعمار الذمم المدينة'], ['advances', 'الذمم الدائنة (مقدم)'], ['balance_persistence_ar', 'تاريخ الذمم المدينة'], ['balance_persistence_ap', 'تاريخ الذمم الدائنة']]],
     ['الموردون (ذمم دائنة)', [['vendors', 'الموردون'], ['bills', 'فواتير الموردين'], ['vpayments', 'سندات الصرف'], ['ap_aging', 'أعمار الذمم الدائنة'], ['vstatement', 'كشف حساب مورد']]],
     ['المالية', [['coa', 'شجرة الحسابات'], ['journals', 'القيود اليومية'], ['gjournals', 'القيود المجمعة'], ['legacy', 'قيود النظام القديم'], ['tb', 'ميزان المراجعة'], ['is', 'قائمة الدخل'], ['is_consolidated', 'قائمة الدخل المجمعة'], ['gl', 'دفتر الأستاذ'], ['bs', 'المركز المالي'], ['liquidity', 'تقرير السيولة'], ['cashflow', 'التدفق النقدي'], ['ppl', 'أرباح العقارات'], ['roi', 'العائد ROI'], ['comparison', 'مقارنة أداء البنايات']]],
     ['الخزينة والبنوك', [['banks', 'الحسابات البنكية'], ['cheques', 'الشيكات'], ['cheques_dash', 'متابعة الشيكات'], ['reconciliation', 'التسوية البنكية']]],
@@ -2124,5 +2122,5 @@ Object.assign(Pages, (() => {
 
   return { customers, vendors, buildings, units, categories, paymethods, banks, employees, coa,
     vendorBills, vendorPayments, trialBalance, incomeStatement, incomeStatementConsolidated, generalLedger, balanceSheet, arAging, apAging,
-    statement, vendorStatement, advances, balancePersistence, auditCenter, propertyPL, roi, cashflow, comparison, vat, vatStatement, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, security, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, moneyPosition, vatReturn, activityLog, companyDocuments, budgetEntry, budgetReport, presentation };
+    statement, vendorStatement, advances, balancePersistenceAr, balancePersistenceAp, auditCenter, propertyPL, roi, cashflow, comparison, vat, vatStatement, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, security, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, moneyPosition, vatReturn, activityLog, companyDocuments, budgetEntry, budgetReport, presentation };
 })());

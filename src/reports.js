@@ -902,7 +902,14 @@ function customersSummary() {
         COALESCE(SUM(CASE WHEN l.account_code IN ('21500','23100') THEN l.credit-l.debit ELSE 0 END),0) advance
      FROM tenants t LEFT JOIN journal_lines l ON l.tenant_id=t.id
      GROUP BY t.id ORDER BY receivable DESC`).all();
-  return rows.map((r) => ({ ...r, receivable: r2(r.receivable), advance: r2(r.advance), net: r2(r.receivable - r.advance) }))
+  // units are fetched separately (not joined above) so the fan-out from
+  // multiple active contracts per tenant doesn't multiply the SUM() rows
+  const unitsByTenant = {};
+  for (const u of db.prepare(
+    `SELECT c.tenant_id, f.code FROM contracts c JOIN flats f ON f.id=c.flat_id WHERE c.status='active'`).all())
+    (unitsByTenant[u.tenant_id] = unitsByTenant[u.tenant_id] || []).push(u.code);
+  return rows.map((r) => ({ ...r, receivable: r2(r.receivable), advance: r2(r.advance), net: r2(r.receivable - r.advance),
+      units: (unitsByTenant[r.id] || []).join('، ') }))
     .filter((r) => Math.abs(r.receivable) > 0.005 || Math.abs(r.advance) > 0.005);
 }
 
