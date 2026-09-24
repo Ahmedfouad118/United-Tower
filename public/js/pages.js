@@ -373,10 +373,10 @@ const Pages = (() => {
   // =========================================================== RECEIPTS (سند قبض)
   async function receipts(c) {
     loading(c);
-    const [rows, tn, fl, pm] = [await API.get('/payments'), await ref('tenants'), await ref('flats'), await ref('payment_methods', '/payment-methods')];
+    const [rows, tn, fl, pm, ct] = [await API.get('/payments'), await ref('tenants'), await ref('flats'), await ref('payment_methods', '/payment-methods'), await ref('contracts')];
     const tbCfg = { search: true, searchFn: (rs, q) => rs.filter((r) => [r.tenant, r.voucher_no, r.amount, r.pdate, r.method].join(' ').toLowerCase().includes(q)),
       exportType: 'payments', onImport: () => importModal('payments', '', () => receipts(c)), templateType: 'payments',
-      onNew: canWrite() ? () => receiptForm(tn, fl, pm, () => receipts(c)) : null, newLabel: 'سند قبض' };
+      onNew: canWrite() ? () => receiptForm(tn, fl, pm, ct, () => receipts(c)) : null, newLabel: 'سند قبض' };
     const canDel = canDo('delete');
     c.innerHTML = toolbar(tbCfg) + `<div class="card"><div class="hd"><h3>${t('m_receipts')}</h3><div style="display:flex;gap:6px">${canDel ? UI.bulkDelHTML() : ''}<button class="btn sm btn-print">🖨 ${t('print')}</button></div></div><div id="pt"></div></div>`;
     const cols = [
@@ -397,15 +397,25 @@ const Pages = (() => {
       const r = rows.find((x) => x.id === +btn.dataset.id);
       if (btn.dataset.act === 'delete') { if (confirm(t('confirm_delete'))) { await API.del('/payments/' + r.id); toast(t('deleted')); receipts(c); } }
       if (btn.dataset.act === 'print') voucherPrint('سند قبض', r, r.tenant);
-      if (btn.dataset.act === 'edit') receiptForm(tn, fl, pm, () => receipts(c), r);
+      if (btn.dataset.act === 'edit') receiptForm(tn, fl, pm, ct, () => receipts(c), r);
       if (btn.dataset.act === 'view') { if (r.journal_id && Pages.viewJournal) Pages.viewJournal(r.journal_id); else toast('لا يوجد قيد مرتبط', 'err'); }
     };
   }
-  function receiptForm(tn, fl, pm, done, row) {
+  function receiptForm(tn, fl, pm, ct, done, row) {
     const edit = !!row;
+    // Only units the tenant actually holds under an active contract are offered —
+    // the backend enforces this too, but filtering here stops a mismatch before
+    // it's even picked (see recordPayment's active-contract check).
+    const activeFlatsByTenant = {};
+    for (const c of (ct || [])) if (c.status === 'active') (activeFlatsByTenant[c.tenant_id] = activeFlatsByTenant[c.tenant_id] || new Set()).add(c.flat_id);
+    const unitOptions = (tenantId) => {
+      const allowed = tenantId ? (activeFlatsByTenant[tenantId] || new Set()) : null;
+      const list = allowed ? fl.filter((f) => allowed.has(f.id)) : fl;
+      return [{ value: '', label: '—' }].concat(list.map((f) => ({ value: f.id, label: f.code })));
+    };
     formModal({ title: 'سند قبض' + (edit ? ' (تعديل)' : ''), wide: true, values: row || {}, fields: [
       { key: 'tenant_id', label: t('tenant'), type: 'select', options: tn.map((x) => ({ value: x.id, label: x.name })), required: true },
-      { key: 'flat_id', label: t('unit'), type: 'select', options: [{ value: '', label: '—' }].concat(fl.map((f) => ({ value: f.id, label: f.code }))) },
+      { key: 'flat_id', label: t('unit'), type: 'select', options: unitOptions(row ? +row.tenant_id : '') },
       { key: 'amount', label: t('amount'), type: 'number', step: '0.001', required: true },
       { key: 'pdate', label: t('date'), type: 'date', value: today() },
       { key: 'method', label: t('method'), type: 'select', options: [{ value: 'bank', label: 'تحويل بنكي' }, { value: 'cash', label: 'نقدي' }, { value: 'cheque', label: 'شيك' }, { value: 'card', label: 'شبكة' }] },
@@ -416,6 +426,16 @@ const Pages = (() => {
       const r = edit ? await API.put('/payments/' + row.id, d) : await API.post('/payments', d);
       toast(`تم — سداد ${money(r.applied)} · مقدم ${money(r.advance)}`); close(); done();
     } });
+    const tSel = document.querySelector('[data-k="tenant_id"]'), fSel = document.querySelector('[data-k="flat_id"]');
+    if (tSel && fSel) {
+      const syncUnits = () => {
+        const cur = fSel.value;
+        fSel.innerHTML = unitOptions(+tSel.value || '').map((o) => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
+        if ([...fSel.options].some((o) => o.value === cur)) fSel.value = cur;
+      };
+      tSel.onchange = syncUnits;
+      syncUnits(); // the browser auto-selects a first <option> even without an explicit value — filter for it too
+    }
   }
   function voucherPrint(title, r, party) {
     const html = `<div class="krow"><div><b>${t('voucher')}:</b> ${esc(r.voucher_no || '')}</div><div><b>${t('date')}:</b> ${dateStr(r.pdate)}</div></div>

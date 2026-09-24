@@ -510,8 +510,19 @@ router.post('/payments', writers, (req, res) => {
 router.put('/payments/:id', writers, (req, res) => {
   const p = db.prepare('SELECT voucher_no FROM payments WHERE id=?').get(req.params.id);
   if (!p) return res.status(404).json({ error: 'not found' });
-  try { svc.deletePayment(Number(req.params.id)); res.json(svc.recordPayment({ ...req.body, voucher_no: req.body.voucher_no || p.voucher_no }, req.user.id)); }
-  catch (e) { res.status(400).json({ error: e.message }); }
+  // Edit = delete the old receipt + record a fresh one. Wrapped in a transaction
+  // so a rejected edit (e.g. the new unit/tenant combo fails validation) rolls
+  // the delete back too, instead of silently losing the original receipt.
+  db.exec('BEGIN');
+  try {
+    svc.deletePayment(Number(req.params.id));
+    const r = svc.recordPayment({ ...req.body, voucher_no: req.body.voucher_no || p.voucher_no }, req.user.id);
+    db.exec('COMMIT');
+    res.json(r);
+  } catch (e) {
+    try { db.exec('ROLLBACK'); } catch (e2) {}
+    res.status(400).json({ error: e.message });
+  }
 });
 router.delete('/payments/:id', writers, (req, res) => { svc.deletePayment(Number(req.params.id)); res.json({ ok: true }); });
 

@@ -277,6 +277,14 @@ function recordPayment(input, created_by) {
     cash_account = '10400', bank_id, cheque_no, cheque_due, cheque_status, memo, method_id } = input;
   const total = r2(amount);
   if (total <= 0) throw new Error('Amount must be positive');
+  // A receipt tagged with a unit must belong to a tenant who actually holds that
+  // unit under a currently active contract — otherwise the unit shown on the
+  // customer's statement is misleading (money stays on the tenant either way,
+  // since allocation is tenant-based, but the unit tag itself must be real).
+  if (flat_id) {
+    const active = db.prepare("SELECT 1 FROM contracts WHERE tenant_id=? AND flat_id=? AND status='active'").get(tenant_id, flat_id);
+    if (!active) throw new Error('لا يوجد عقد ساري لهذا العميل على هذه الوحدة — راجع الوحدة أو اسم العميل');
+  }
 
   const invoices = db.prepare(
     `SELECT * FROM invoices WHERE tenant_id=? ${contract_id ? 'AND contract_id=?' : ''}
