@@ -80,7 +80,22 @@ Object.assign(Pages, (() => {
     draw(rows); wireToolbar(c, tbCfg, draw, rows);
     c.querySelector('.btn-print').onclick = () => printTable('أوراق الشركة', cols.filter((x) => x.key !== '_a' && x.key !== 'attachment'), rows);
     c.querySelector('#cdt').onclick = async (e) => {
-      const v = e.target.closest('[data-view]'); if (v) { const r = rows.find((x) => String(x.id) === v.dataset.view); const w = window.open(); w.document.write(`<iframe src="${r.attachment}" style="width:100%;height:100%;border:0"></iframe>`); return; }
+      const v = e.target.closest('[data-view]');
+      if (v) {
+        const r = rows.find((x) => String(x.id) === v.dataset.view);
+        // A big base64 data: URI written into a fresh window via document.write is
+        // unreliable in real browsers (can render blank for multi-MB PDFs/images) —
+        // convert to a Blob and navigate to THAT url instead, same as every other
+        // file preview in this app already does. The window opens synchronously
+        // (before the async blob conversion) so popup blockers don't catch it.
+        const w = window.open();
+        try {
+          const res = await fetch(r.attachment);
+          const blob = await res.blob();
+          w.location = URL.createObjectURL(blob);
+        } catch (e2) { w.close(); toast('تعذّر فتح المرفق: ' + e2.message, 'err'); }
+        return;
+      }
       const b = e.target.closest('[data-act]'); if (!b) return;
       const r = rows.find((x) => String(x.id) === b.dataset.id);
       if (b.dataset.act === 'edit') return form(r);
@@ -1828,20 +1843,27 @@ Object.assign(Pages, (() => {
   // rolling forward under a newer one.
   async function balancePersistence(c) {
     const asOf = c._asOf || today();
-    reportShell(c, 'm_balance_persistence', `<div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="bpof" value="${asOf}"></div>`, null);
+    const from = c._from || '';
+    reportShell(c, 'm_balance_persistence',
+      `<div class="field" style="margin:0"><label>${t('from')}</label><input type="date" id="bpfrom" value="${from}"></div>
+       <div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="bpof" value="${asOf}"></div>`, null);
     c._qs = '?asOf=' + asOf;
     const r = await API.get('/reports/balance-persistence?asOf=' + asOf + (window.UT ? UT.bq() : ''));
     const kindLbl = (k) => k === 'receivable' ? badge('مستحق لينا', 'b-red') : badge('مقدم عندنا', 'b-blue');
     const monthsOf = (d) => d >= 60 ? `${Math.floor(d / 30)} شهر` : `${d} يوم`;
+    // "من" filters to balances that have been persisting since on/after that date —
+    // matching the from/to range pattern used on statement/aging-style screens.
+    const rows = from ? r.rows.filter((x) => x.since >= from) : r.rows;
     c.querySelector('#rbody').innerHTML = table([
       { key: 'tenant', label: t('tenant'), render: (x) => `<a href="#/statement?tenant=${x.tenant_id}">${esc(x.tenant)}</a>` },
       { key: 'kind', label: 'النوع', render: (x) => kindLbl(x.kind) },
       { key: 'balance', label: 'الرصيد الحالي', num: true, render: (x) => `<b>${money(Math.abs(x.balance))}</b>` },
       { key: 'since', label: 'ثابت منذ', render: (x) => dateStr(x.since) },
       { key: 'days_persisted', label: 'المدة', num: true, render: (x) => monthsOf(x.days_persisted) },
-    ], r.rows, { empty: 'كل الأرصدة متحرّكة — مفيش رصيد ثابت من غير سداد' });
+    ], rows, { empty: 'كل الأرصدة متحرّكة — مفيش رصيد ثابت من غير سداد' });
     c.querySelector('#rbody').innerHTML += `<p class="muted" style="font-size:11px;margin-top:8px">"ثابت منذ" = أقدم تاريخ رصيد العميل من ساعتها لغاية دلوقتي عمره ما قل عن الرصيد الحالي (لو مستحق لينا) أو ما زاد عنه (لو مقدم عندنا) — يعني ده أقل التزام مستمر منّه من غير انقطاع، حتى لو الفواتير المحدّدة اتغيّرت بالنسبة له بالسداد.</p>`;
     c.querySelector('#bpof').onchange = (e) => { c._asOf = e.target.value; balancePersistence(c); };
+    c.querySelector('#bpfrom').onchange = (e) => { c._from = e.target.value; balancePersistence(c); };
     bindPrint(c, t('m_balance_persistence'));
   }
 
