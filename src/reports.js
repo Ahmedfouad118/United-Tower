@@ -434,22 +434,64 @@ function moneyPosition(upto, lang = 'en') {
 }
 
 // ---- Financial ratios (profitability + liquidity) for the dashboard -------
+// Direct property-operating accounts (maintenance/utilities/cleaning/licenses/
+// insurance/other-taxes) subtracted from revenue to get "gross profit" — this
+// company has no formal cost-of-sales split, so this is the closest analogue.
+const DIRECT_OPEX_CODES = new Set(['70000', '74500', '78000', '68000', '69000', '67000', '73000']);
 function financialRatios(from, to, building_id) {
   const is = incomeStatement(from, to, 'en', building_id);
   const bs = balanceSheet(to, 'en');
   const liq = liquidityReport(to, 'en');
   const rev = is.total_income, net = is.net;
-  const totalAssets = bs.total_assets, equity = bs.total_equity;
+  const totalAssets = bs.total_assets, totalLiab = bs.total_liabilities, equity = bs.total_equity;
   const pct = (n, d) => d ? r2((n / d) * 100) : 0;
+  const ratio = (n, d) => d ? r2(n / d) : 0;
+  const findExp = (code) => r2((is.expense.find((x) => x.code === code) || {}).amt || 0);
+
+  const interestExpense = findExp('67500');
+  const incomeTaxExpense = findExp(CFG.acct('income_tax_expense'));
+  const directOpex = r2(is.expense.filter((x) => DIRECT_OPEX_CODES.has(x.code)).reduce((s, x) => s + x.amt, 0));
+  const grossProfit = r2(rev - directOpex);
+  const ebit = r2(net + interestExpense + incomeTaxExpense); // operating profit, before financing & tax
+
+  const netFixedAssets = r2(bs.assets.filter((a) => FIXED_ASSET_CODES.includes(a.code)).reduce((s, x) => s + x.amt, 0));
+  const recvCodes = new Set([CFG.acct('tenant_recv'), CFG.acct('ar')].filter(Boolean));
+  const receivables = r2(bs.assets.filter((a) => recvCodes.has(a.code)).reduce((s, x) => s + x.amt, 0));
+  const receivablesTurnover = ratio(rev, receivables);
+
+  // Operating cash flow margin needs the indirect cash-flow statement, which is
+  // only computed company-wide per calendar year — skip for a building filter.
+  let ocfMargin = null;
+  if (!building_id) {
+    try {
+      const year = Number((to || from || '').slice(0, 4)) || new Date().getFullYear();
+      const fs = financialStatements(year, 'en');
+      ocfMargin = pct(fs.cash_flow.operating, rev);
+    } catch { ocfMargin = null; }
+  }
+
   return {
-    revenue: rev, net_income: net, total_assets: totalAssets, equity,
+    revenue: rev, net_income: net, total_assets: totalAssets, total_liabilities: totalLiab, equity,
     // profitability
-    gross_margin: pct(net, rev), net_margin: pct(net, rev),
+    gross_profit: grossProfit, gross_margin: pct(grossProfit, rev),
+    operating_profit: ebit, operating_margin: pct(ebit, rev),
+    net_margin: pct(net, rev),
     roa: pct(net, totalAssets), roe: pct(net, equity),
-    asset_turnover: pct(rev, totalAssets), // expressed as a percentage
+    asset_turnover: pct(rev, totalAssets), // expressed as a percentage (kept for the dashboard cards)
+    asset_turnover_x: ratio(rev, totalAssets),
     // liquidity
     current_ratio: liq.current_ratio, quick_ratio: liq.quick_ratio, cash_ratio: liq.cash_ratio,
     working_capital: liq.working_capital,
+    // activity / efficiency
+    fixed_asset_turnover: ratio(rev, netFixedAssets),
+    receivables_turnover: receivablesTurnover,
+    dso: receivablesTurnover ? r2(365 / receivablesTurnover) : 0,
+    // leverage
+    debt_ratio: pct(totalLiab, totalAssets), debt_to_equity: ratio(totalLiab, equity),
+    equity_to_assets: pct(equity, totalAssets),
+    interest_expense: interestExpense, interest_coverage: ratio(ebit, interestExpense),
+    // additional
+    operating_cash_flow_margin: ocfMargin,
   };
 }
 

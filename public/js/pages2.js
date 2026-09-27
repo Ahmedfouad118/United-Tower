@@ -1085,6 +1085,61 @@ Object.assign(Pages, (() => {
     bindPrint(c, t('m_budget_report'));
   }
 
+  // =========================================================== FINANCIAL RATIOS
+  async function financialRatiosPage(c) {
+    const from = c._frfrom || (new Date().getFullYear() + '-01-01');
+    const to = c._frto || today();
+    const bl = await ref('buildings');
+    const bid = Number(c._frbld || 0);
+    reportShell(c, 'm_financial_ratios',
+      `<div class="field" style="margin:0"><label>${t('from')}</label><input type="date" id="frfrom" value="${from}"></div>
+       <div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="frto" value="${to}"></div>
+       <div class="field" style="margin:0"><label>${t('building')}</label><select id="frbld"><option value="0">${t('all_buildings_consolidated')}</option>${bl.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select></div>`, null);
+    c.querySelector('#frbld').value = String(bid);
+    const qs = `?from=${from}&to=${to}${bid ? '&building_id=' + bid : ''}`;
+    const fr = await API.get('/reports/financial-ratios' + qs);
+    const kpi = (lbl, val, sub, cls, ico) => `<div class="card kpi ${cls}"><div class="ico">${ico}</div><div class="lbl">${lbl}</div><div class="val mono">${val}</div><div class="sub">${sub}</div></div>`;
+    const sec = (title, cardsHTML) => `<div class="hd" style="margin-top:18px"><h3>${title}</h3></div><div class="grid g-4">${cardsHTML}</div>`;
+    const pct1 = (v) => (v == null ? t('fr_na') : v + '%');
+    const num1 = (v) => (v == null ? t('fr_na') : v);
+
+    c.querySelector('#rbody').innerHTML = `<div class="bd">
+      ${sec('💧 ' + t('fr_liquidity'), `
+        ${kpi(t('fr_current_ratio'), num1(fr.current_ratio), t('fr_current_ratio_hint'), fr.current_ratio >= 1 ? 'k-green' : 'k-amber', '💧')}
+        ${kpi(t('fr_quick_ratio'), num1(fr.quick_ratio), t('fr_quick_ratio_hint'), fr.quick_ratio >= 1 ? 'k-green' : 'k-amber', '⚡')}
+        ${kpi(t('fr_cash_ratio'), num1(fr.cash_ratio), t('fr_cash_ratio_hint'), 'k-blue', '💵')}
+        ${kpi(t('fr_working_capital'), money(fr.working_capital), t('fr_working_capital_hint'), fr.working_capital >= 0 ? 'k-green' : 'k-red', '🧮')}
+      `)}
+      ${sec('🔄 ' + t('fr_activity'), `
+        ${kpi(t('fr_asset_turnover'), num1(fr.asset_turnover_x), t('fr_asset_turnover_hint'), 'k-teal', '🔄')}
+        ${kpi(t('fr_fixed_asset_turnover'), num1(fr.fixed_asset_turnover), t('fr_fixed_asset_turnover_hint'), 'k-teal', '🏢')}
+        ${kpi(t('fr_receivables_turnover'), num1(fr.receivables_turnover), t('fr_receivables_turnover_hint'), 'k-blue', '🔁')}
+        ${kpi(t('fr_dso'), fr.dso + ' ' + t('day'), t('fr_dso_hint'), fr.dso <= 60 ? 'k-green' : 'k-amber', '📅')}
+      `)}
+      ${sec('💹 ' + t('fr_profitability'), `
+        ${kpi(t('fr_gross_margin'), pct1(fr.gross_margin), money(fr.gross_profit), 'k-green', '💰')}
+        ${kpi(t('fr_operating_margin'), pct1(fr.operating_margin), money(fr.operating_profit), 'k-green', '⚙️')}
+        ${kpi(t('fr_net_margin'), pct1(fr.net_margin), money(fr.net_income), fr.net_margin >= 0 ? 'k-green' : 'k-red', '💹')}
+        ${kpi('ROA', pct1(fr.roa), t('fr_roa_hint'), 'k-blue', '📊')}
+        ${kpi('ROE', pct1(fr.roe), t('fr_roe_hint'), 'k-teal', '🏦')}
+      `)}
+      ${sec('⚖️ ' + t('fr_leverage'), `
+        ${kpi(t('fr_debt_ratio'), pct1(fr.debt_ratio), t('fr_debt_ratio_hint'), fr.debt_ratio <= 60 ? 'k-green' : 'k-amber', '⚖️')}
+        ${kpi(t('fr_debt_to_equity'), num1(fr.debt_to_equity), t('fr_debt_to_equity_hint'), 'k-amber', '📐')}
+        ${kpi(t('fr_equity_to_assets'), pct1(fr.equity_to_assets), t('fr_equity_to_assets_hint'), 'k-blue', '🏛️')}
+        ${kpi(t('fr_interest_coverage'), fr.interest_expense ? num1(fr.interest_coverage) + 'x' : t('fr_na'), t('fr_interest_coverage_hint'), 'k-green', '🛡️')}
+      `)}
+      ${fr.operating_cash_flow_margin != null ? sec('➕ ' + t('fr_additional'), `
+        ${kpi(t('fr_ocf_margin'), pct1(fr.operating_cash_flow_margin), t('fr_ocf_margin_hint'), fr.operating_cash_flow_margin >= 0 ? 'k-green' : 'k-red', '💵')}
+      `) : ''}
+      <div class="card" style="margin-top:16px"><div class="bd" style="font-size:12px;color:var(--muted)">📌 ${t('fr_market_note')}</div></div>
+    </div>`;
+    c.querySelector('#frfrom').onchange = (e) => { c._frfrom = e.target.value; financialRatiosPage(c); };
+    c.querySelector('#frto').onchange = (e) => { c._frto = e.target.value; financialRatiosPage(c); };
+    c.querySelector('#frbld').onchange = (e) => { c._frbld = e.target.value; financialRatiosPage(c); };
+    bindPrint(c, t('m_financial_ratios'));
+  }
+
   // ---- Building Presentation (البرزنتيشن) ------------------------------------
   const PRES_CSS = `
     .pres-wrap { --pg-bg:#0b0f14; --pg-card:#121821; --pg-border:rgba(255,255,255,.08); --pg-text:#e7ebf0;
@@ -2122,5 +2177,5 @@ Object.assign(Pages, (() => {
 
   return { customers, vendors, buildings, units, categories, paymethods, banks, employees, coa,
     vendorBills, vendorPayments, trialBalance, incomeStatement, incomeStatementConsolidated, generalLedger, balanceSheet, arAging, apAging,
-    statement, vendorStatement, advances, balancePersistenceAr, balancePersistenceAp, auditCenter, propertyPL, roi, cashflow, comparison, vat, vatStatement, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, security, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, moneyPosition, vatReturn, activityLog, companyDocuments, budgetEntry, budgetReport, presentation };
+    statement, vendorStatement, advances, balancePersistenceAr, balancePersistenceAp, auditCenter, propertyPL, roi, cashflow, comparison, vat, vatStatement, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, security, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, moneyPosition, vatReturn, activityLog, companyDocuments, budgetEntry, budgetReport, financialRatiosPage, presentation };
 })());
