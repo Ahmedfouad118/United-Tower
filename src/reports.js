@@ -14,12 +14,21 @@ const normCode = (s) => String(s == null ? '' : s).toUpperCase().replace(/\s+/g,
 
 // ---- Trial Balance --------------------------------------------------------
 function trialBalance(upto, lang = 'en') {
+  // journal_lines must be date-filtered BEFORE joining to accounts — putting the
+  // "jdate<=?" condition on the journals LEFT JOIN's own ON clause (as this used
+  // to do) doesn't work: journal_lines rows survive that join regardless of
+  // whether it matched, so SUM(l.debit)/SUM(l.credit) silently ignored `upto`
+  // and this always returned the all-time balance no matter what date was asked
+  // for. Pre-filtering in a subquery fixes that.
   const rows = db.prepare(
     `SELECT a.code, ${nameCol(lang)} name, a.type,
-            COALESCE(SUM(l.debit),0) d, COALESCE(SUM(l.credit),0) c
+            COALESCE(SUM(jl.debit),0) d, COALESCE(SUM(jl.credit),0) c
      FROM accounts a
-     LEFT JOIN journal_lines l ON l.account_code=a.code
-     LEFT JOIN journals j ON j.id=l.journal_id ${upto ? 'AND j.jdate<=?' : ''}
+     LEFT JOIN (
+       SELECT l.account_code, l.debit, l.credit
+       FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+       ${upto ? 'WHERE j.jdate<=?' : ''}
+     ) jl ON jl.account_code = a.code
      GROUP BY a.code ORDER BY a.code`).all(...(upto ? [upto] : []));
   let td = 0, tc = 0;
   const out = rows.map((rw) => {
