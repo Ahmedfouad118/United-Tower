@@ -389,7 +389,7 @@ Object.assign(Pages, (() => {
     const upto = c._upto || today();
     reportShell(c, 'm_liquidity', `<div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="u" value="${upto}"></div>`, null);
     const r = await API.get('/reports/liquidity?upto=' + upto);
-    const sec = (title, rows, total, cls) => `<h3>${title}</h3><table><tbody>${rows.map((x) => `<tr><td>${esc(x.code)}</td><td>${esc(x.name)}</td><td class="num">${money(x.amt)}</td></tr>`).join('') || `<tr><td colspan="3" class="muted">${t('no_data')}</td></tr>`}</tbody><tfoot><tr><td></td><td>${t('total')}</td><td class="num ${cls}"><b>${money(total)}</b></td></tr></tfoot></table>`;
+    const sec = (title, rows, total, cls) => `<h3>${title}</h3><table><tbody>${rows.map((x) => `<tr><td>${esc(x.code)}</td><td>${esc(x.name)}</td><td class="num">${drillA(money(x.amt), `data-acc="${esc(x.code)}"`)}</td></tr>`).join('') || `<tr><td colspan="3" class="muted">${t('no_data')}</td></tr>`}</tbody><tfoot><tr><td></td><td>${t('total')}</td><td class="num ${cls}"><b>${money(total)}</b></td></tr></tfoot></table>`;
     const kpi = (lbl, val, sub, cls) => `<div class="card kpi ${cls}"><div class="lbl">${lbl}</div><div class="val mono">${val}</div><div class="sub">${sub}</div></div>`;
     const pctR = (x) => (Math.round((x || 0) * 1000) / 10) + '%';
     c.querySelector('#rbody').innerHTML = `<div class="bd">
@@ -403,6 +403,10 @@ Object.assign(Pages, (() => {
       ${sec('الالتزامات المتداولة (ذمم دائنة + مقدمات + ض.ق.م — تُدفع خلال سنة)', r.current_liabilities, r.total_current_liabilities, 'neg')}
       <p class="muted" style="margin-top:10px">رأس المال العامل = <b>${money(r.working_capital)}</b> — ${r.working_capital >= 0 ? 'عندك فائض سيولة يغطي التزاماتك القصيرة ✅' : 'التزاماتك القصيرة أكبر من أصولك المتداولة ⚠️'}</p>
     </div>`;
+    c.querySelector('#rbody').onclick = (e) => {
+      const a = e.target.closest('.drill[data-acc]'); if (!a) return; e.preventDefault();
+      accountDrill({ title: a.dataset.acc, account: a.dataset.acc, to: upto, building_id: (window.UT && UT.building) || null });
+    };
     c.querySelector('#u').onchange = (e) => { c._upto = e.target.value; liquidity(c); };
     bindPrint(c, t('m_liquidity'));
   }
@@ -450,10 +454,14 @@ Object.assign(Pages, (() => {
     reportShell(c, 'm_bs', `<div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="u" value="${upto}"></div>`, 'balance-sheet');
     c._qs = '?upto=' + upto;
     const r = await API.get('/reports/balance-sheet?upto=' + upto);
-    const sec = (title, rows, total) => `<h3>${title}</h3><table><tbody>${rows.map((x) => `<tr><td>${esc(x.code)}</td><td>${esc(x.name)}</td><td class="num">${money(x.amt)}</td></tr>`).join('')}</tbody><tfoot><tr><td></td><td>${t('total')}</td><td class="num">${money(total)}</td></tr></tfoot></table>`;
+    const sec = (title, rows, total) => `<h3>${title}</h3><table><tbody>${rows.map((x) => `<tr><td>${esc(x.code)}</td><td>${esc(x.name)}</td><td class="num">${x.code ? drillA(money(x.amt), `data-acc="${esc(x.code)}"`) : money(x.amt)}</td></tr>`).join('')}</tbody><tfoot><tr><td></td><td>${t('total')}</td><td class="num">${money(total)}</td></tr></tfoot></table>`;
     c.querySelector('#rbody').innerHTML = `<div class="bd">${sec('الأصول', r.assets, r.total_assets)}
       ${sec('الالتزامات', r.liabilities, r.total_liabilities)}
       ${sec('حقوق الملكية', r.equity.concat([{ code: '', name: 'صافي الدخل', amt: r.net_income }]), r.total_equity)}</div>`;
+    c.querySelector('#rbody').onclick = (e) => {
+      const a = e.target.closest('.drill[data-acc]'); if (!a) return; e.preventDefault();
+      accountDrill({ title: a.dataset.acc, account: a.dataset.acc, to: upto, building_id: (window.UT && UT.building) || null });
+    };
     c.querySelector('#u').onchange = (e) => { c._upto = e.target.value; balanceSheet(c); };
     bindPrint(c, t('m_bs'));
   }
@@ -538,10 +546,15 @@ Object.assign(Pages, (() => {
         ? `<tr><td></td><td></td><td></td><td></td><td><i>${t('opening')}</i></td><td></td><td></td><td class="num"><b>${money(r.opening)}</b></td></tr>` : '';
       c.querySelector('#rbody').innerHTML = table([{ key: 'jdate', label: t('date'), render: (x) => dateStr(x.jdate) },
         { key: 'flat', label: t('unit') }, { key: 'tenant', label: t('tenant') }, { key: 'account_name', label: t('account') }, { key: 'memo', label: t('description') },
-        { key: 'debit', label: t('debit'), num: true, render: (x) => x.debit ? money(x.debit) : '' }, { key: 'credit', label: t('credit'), num: true, render: (x) => x.credit ? money(x.credit) : '' },
+        { key: 'debit', label: t('debit'), num: true, render: (x) => x.debit ? drillA(money(x.debit), `data-jid="${x.journal_id}"`) : '' },
+        { key: 'credit', label: t('credit'), num: true, render: (x) => x.credit ? drillA(money(x.credit), `data-jid="${x.journal_id}"`) : '' },
         { key: 'balance', label: t('balance'), num: true, render: (x) => money(x.balance) }], r.lines,
         { foot: [{ v: '' }, { v: '' }, { v: '' }, { v: '' }, { v: t('total') }, { v: money(r.total_debit), num: true }, { v: money(r.total_credit), num: true }, { v: money(r.balance), num: true }] })
         .replace('<tbody>', '<tbody>' + openRow);
+      c.querySelector('#rbody').onclick = (e) => {
+        const a = e.target.closest('.drill[data-jid]'); if (!a) return; e.preventDefault();
+        viewJournal(a.dataset.jid);
+      };
     };
     // when a unit is picked, show only the tenants who rented THAT unit
     const stSel = c.querySelector('#st');

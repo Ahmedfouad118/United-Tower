@@ -718,7 +718,7 @@ function flatStatement({ flat_id, tenant_id, building_id, from, to }, lang = 'en
   if (from) { where += ' AND j.jdate>=?'; p.push(from); }
   if (to) { where += ' AND j.jdate<=?'; p.push(to); }
   const lines = db.prepare(
-    `SELECT j.jdate, j.jtype, j.reference, j.memo, l.account_code, ${nameCol(lang)} account_name,
+    `SELECT j.id journal_id, j.jdate, j.jtype, j.reference, j.memo, l.account_code, ${nameCol(lang)} account_name,
             l.debit, l.credit, l.tenant_id, t.name tenant, l.flat_id, f.code flat
      FROM journal_lines l JOIN journals j ON j.id=l.journal_id JOIN accounts a ON a.code=l.account_code
      LEFT JOIN tenants t ON t.id=l.tenant_id LEFT JOIN flats f ON f.id=l.flat_id
