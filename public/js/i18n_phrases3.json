@@ -1,0 +1,322 @@
+[
+ {
+  "ar": "قبض من",
+  "en": "Received from",
+  "hi": "से प्राप्त"
+ },
+ {
+  "ar": "دفعة مقدمة",
+  "en": "Advance payment",
+  "hi": "अग्रिम भुगतान"
+ },
+ {
+  "ar": "استخدام دفعة مقدمة",
+  "en": "Advance payment applied",
+  "hi": "अग्रिम भुगतान समायोजित"
+ },
+ {
+  "ar": "رصيد افتتاحي للعميل",
+  "en": "Customer opening balance",
+  "hi": "ग्राहक का प्रारंभिक शेष"
+ },
+ {
+  "ar": "فصل الضريبة المستحقة حتى مارس",
+  "en": "Tax due up to March split",
+  "hi": "मार्च तक देय कर का विभाजन"
+ },
+ {
+  "ar": "عن الإيجار",
+  "en": "from rent",
+  "hi": "किराये से"
+ },
+ {
+  "ar": "رصيد افتتاحي",
+  "en": "Opening balance",
+  "hi": "प्रारंभिक शेष"
+ },
+ {
+  "ar": "فاتورة مورد",
+  "en": "Vendor bill",
+  "hi": "विक्रेता बिल"
+ },
+ {
+  "ar": "ايجار",
+  "en": "Rent",
+  "hi": "किराया"
+ },
+ {
+  "ar": "معدلة",
+  "en": "adjusted",
+  "hi": "समायोजित"
+ },
+ {
+  "ar": "تصحيح سعر الإيجار",
+  "en": "Rent rate correction",
+  "hi": "किराया दर सुधार"
+ },
+ {
+  "ar": "مصاريف بنكية",
+  "en": "Bank charges",
+  "hi": "बैंक शुल्क"
+ },
+ {
+  "ar": "رصيد افتتاحي دائن",
+  "en": "Opening credit balance",
+  "hi": "प्रारंभिक क्रेडिट शेष"
+ },
+ {
+  "ar": "شيك محمد صايم",
+  "en": "Cheque — Mohammed Saim",
+  "hi": "चेक — मोहम्मद साइम"
+ },
+ {
+  "ar": "تحويل لعهدة النقدية",
+  "en": "Transfer to cash custody",
+  "hi": "नकद अभिरक्षा में स्थानांतरण"
+ },
+ {
+  "ar": "إيداع شيك مرتجع",
+  "en": "Returned cheque deposit",
+  "hi": "वापस आए चेक की जमा"
+ },
+ {
+  "ar": "مصاريف بنكية فبراير",
+  "en": "Bank charges — February",
+  "hi": "बैंक शुल्क — फ़रवरी"
+ },
+ {
+  "ar": "مصاريف بنكية مارس",
+  "en": "Bank charges — March",
+  "hi": "बैंक शुल्क — मार्च"
+ },
+ {
+  "ar": "مصاريف بنكية مايو",
+  "en": "Bank charges — May",
+  "hi": "बैंक शुल्क — मई"
+ },
+ {
+  "ar": "مصاريف بنكية يناير",
+  "en": "Bank charges — January",
+  "hi": "बैंक शुल्क — जनवरी"
+ },
+ {
+  "ar": "مصاريف بنكية يونيو",
+  "en": "Bank charges — June",
+  "hi": "बैंक शुल्क — जून"
+ },
+ {
+  "ar": "أرباح مرحّلة",
+  "en": "Retained earnings",
+  "hi": "अवशेष लाभ"
+ },
+ {
+  "ar": "إيرادات تأجير",
+  "en": "Rental income",
+  "hi": "किराया आय"
+ },
+ {
+  "ar": "إيرادات خدمات",
+  "en": "Service income",
+  "hi": "सेवा आय"
+ },
+ {
+  "ar": "إيرادات مقدمة",
+  "en": "Deferred income",
+  "hi": "अग्रिम प्राप्त आय"
+ },
+ {
+  "ar": "الحساب البنكي الرئيسي",
+  "en": "Main bank account",
+  "hi": "मुख्य बैंक खाता"
+ },
+ {
+  "ar": "النثرية",
+  "en": "Petty cash",
+  "hi": "छोटा नकद"
+ },
+ {
+  "ar": "المباني",
+  "en": "Buildings",
+  "hi": "भवन"
+ },
+ {
+  "ar": "تأمينات عملاء",
+  "en": "Customer deposits",
+  "hi": "ग्राहक जमा"
+ },
+ {
+  "ar": "تأمينات مستأجرين محتجزة",
+  "en": "Tenant deposits held",
+  "hi": "रोकी गई किरायेदार जमा"
+ },
+ {
+  "ar": "حساب بنكي خاص",
+  "en": "Special bank account",
+  "hi": "विशेष बैंक खाता"
+ },
+ {
+  "ar": "دفعات عملاء مقدمة",
+  "en": "Customer advance payments",
+  "hi": "ग्राहक अग्रिम भुगतान"
+ },
+ {
+  "ar": "ذمم المستأجرين المدينة",
+  "en": "Tenant receivables",
+  "hi": "किरायेदार प्राप्य"
+ },
+ {
+  "ar": "ذمم الموردين الدائنة",
+  "en": "Vendor payables",
+  "hi": "विक्रेता देय"
+ },
+ {
+  "ar": "رأس المال",
+  "en": "Capital",
+  "hi": "पूँजी"
+ },
+ {
+  "ar": "سلف الموظفين",
+  "en": "Employee advances",
+  "hi": "कर्मचारी अग्रिम"
+ },
+ {
+  "ar": "ضرائب أخرى",
+  "en": "Other taxes",
+  "hi": "अन्य कर"
+ },
+ {
+  "ar": "مجمع إهلاك المباني",
+  "en": "Accumulated depreciation — buildings",
+  "hi": "संचित मूल्यह्रास — भवन"
+ },
+ {
+  "ar": "مخصص ديون مشكوك فيها",
+  "en": "Allowance for doubtful debts",
+  "hi": "संदिग्ध ऋण प्रावधान"
+ },
+ {
+  "ar": "مصاريف أخرى",
+  "en": "Other expenses",
+  "hi": "अन्य व्यय"
+ },
+ {
+  "ar": "مصاريف سيارات",
+  "en": "Vehicle expenses",
+  "hi": "वाहन व्यय"
+ },
+ {
+  "ar": "مصاريف صيانة",
+  "en": "Maintenance expenses",
+  "hi": "रखरखाव व्यय"
+ },
+ {
+  "ar": "مصاريف مرافق",
+  "en": "Utilities expenses",
+  "hi": "उपयोगिता व्यय"
+ },
+ {
+  "ar": "مصاريف نظافة",
+  "en": "Cleaning expenses",
+  "hi": "सफ़ाई व्यय"
+ },
+ {
+  "ar": "مصروف الإهلاك",
+  "en": "Depreciation expense",
+  "hi": "मूल्यह्रास व्यय"
+ },
+ {
+  "ar": "مصروف الرواتب",
+  "en": "Salaries expense",
+  "hi": "वेतन व्यय"
+ },
+ {
+  "ar": "مصروفات مستحقة",
+  "en": "Accrued expenses",
+  "hi": "उपचित व्यय"
+ },
+ {
+  "ar": "السجل التجاري",
+  "en": "Commercial registration",
+  "hi": "वाणिज्यिक पंजीकरण"
+ },
+ {
+  "ar": "تثمين البناية",
+  "en": "Building valuation",
+  "hi": "भवन मूल्यांकन"
+ },
+ {
+  "ar": "رخصة بلدية",
+  "en": "Municipality licence",
+  "hi": "नगरपालिका लाइसेंस"
+ },
+ {
+  "ar": "سند ملكية",
+  "en": "Title deed",
+  "hi": "स्वामित्व विलेख"
+ },
+ {
+  "ar": "شقة",
+  "en": "Apartment",
+  "hi": "अपार्टमेंट"
+ },
+ {
+  "ar": "شهادة تسجيل ضريبي",
+  "en": "Tax registration certificate",
+  "hi": "कर पंजीकरण प्रमाणपत्र"
+ },
+ {
+  "ar": "صيانة",
+  "en": "Maintenance",
+  "hi": "रखरखाव"
+ },
+ {
+  "ar": "مرافق",
+  "en": "Utilities",
+  "hi": "उपयोगिताएँ"
+ },
+ {
+  "ar": "وثيقة تأمين",
+  "en": "Insurance policy",
+  "hi": "बीमा पॉलिसी"
+ },
+ {
+  "ar": "دفع إلكتروني",
+  "en": "Electronic payment",
+  "hi": "इलेक्ट्रॉनिक भुगतान"
+ },
+ {
+  "ar": "بطاقة",
+  "en": "Card",
+  "hi": "कार्ड"
+ },
+ {
+  "ar": "بنك عمان العربي",
+  "en": "Oman Arab Bank",
+  "hi": "ओमान अरब बैंक"
+ },
+ {
+  "ar": "قيد تسوية للبنك",
+  "en": "Bank adjustment entry",
+  "hi": "बैंक समायोजन प्रविष्टि"
+ },
+ {
+  "ar": "مصاريف ربعية",
+  "en": "Quarterly expenses",
+  "hi": "त्रैमासिक व्यय"
+ },
+ {
+  "ar": "تغذية صندوق النثرية",
+  "en": "Petty cash top-up",
+  "hi": "छोटे नकद की पूर्ति"
+ },
+ {
+  "ar": "إيداع شيك",
+  "en": "Cheque deposit",
+  "hi": "चेक जमा"
+ },
+ {
+  "ar": "أرض المبنى",
+  "en": "Building land",
+  "hi": "भवन की भूमि"
+ }
+]

@@ -466,14 +466,152 @@ Object.assign(Pages, (() => {
     bindPrint(c, t('m_bs'));
   }
   async function arAging(c) { await agingScreen(c, 'aging', t('m_ar_aging'), t('tenant')); }
+  // ---- Municipality tax: who hadn't paid the tax up to a chosen month ----
+  async function taxAging(c) {
+    const month = c._month || '';
+    reportShell(c, 'm_tax_aging', `
+      <div class="field" style="margin:0"><label>${t('tax_up_to_month')}</label><input type="month" id="tm" value="${month}"></div>
+      <label style="display:flex;align-items:center;gap:6px;margin:0 8px"><input type="checkbox" id="tall" ${c._all ? 'checked' : ''} style="width:auto"> ${t('tax_show_all')}</label>`, null);
+    const r = await API.get('/reports/tax-aging?month=' + month + (window.UT ? UT.bq() : ''));
+    if (!month) { c._month = r.month; c.querySelector('#tm').value = r.month; }
+    const rows = c._all ? r.rows : r.rows.filter((x) => x.remaining > 0.0005);
+    const cols = [
+      { key: 'tenant', label: t('tenant'), render: (x) => esc(x.tenant) },
+      { key: 'units', label: t('unit'), render: (x) => esc(x.units) },
+      { key: 'invoiced', label: t('tax_invoiced'), num: true, render: (x) => money(x.invoiced) },
+      { key: 'paid', label: t('tax_paid'), num: true, render: (x) => money(x.paid) },
+      ...r.periods.map((p) => ({ key: 'p' + p, label: p === '2025-12' ? t('tax_older') : p, num: true, render: (x) => x.by_period[p] ? money(x.by_period[p]) : '' })),
+      { key: 'remaining', label: t('tax_remaining'), num: true, render: (x) => x.remaining > 0.0005 ? `<b>${drillA(money(x.remaining), `data-tid="${x.tenant_id}"`)}</b>` : money(x.remaining) },
+    ];
+    const sum = (fn) => money(rows.reduce((s, x) => s + fn(x), 0));
+    const foot = [{ v: t('total') }, { v: '' }, { v: sum((x) => x.invoiced), num: true }, { v: sum((x) => x.paid), num: true },
+      ...r.periods.map((p) => ({ v: sum((x) => x.by_period[p] || 0), num: true })), { v: `<b>${sum((x) => x.remaining)}</b>`, num: true }];
+    c.querySelector('#rbody').innerHTML =
+      `<p class="muted" style="margin:0 0 8px">${t('tax_as_of')} <b>${dateStr(r.as_of)}</b></p>` +
+      table(cols, rows, { foot, empty: t('tax_none') }) +
+      `<p class="muted" style="font-size:11px;margin-top:8px">${t('tax_report_hint')}</p>`;
+    c.querySelector('#rbody').addEventListener('click', async (e) => {
+      const a = e.target.closest('.drill[data-tid]'); if (!a) return; e.preventDefault();
+      const row = r.rows.find((x) => String(x.tenant_id) === a.dataset.tid);
+      let d; try { d = await API.get('/reports/tax-aging-drill?tenant_id=' + a.dataset.tid + '&month=' + r.month); } catch (err) { return toast(err.message, 'err'); }
+      const cols2 = [
+        { key: 'period', label: t('tax_month'), render: (x) => x.is_opening ? t('tax_older') : x.period },
+        { key: 'flat', label: t('unit'), render: (x) => esc((x.flat || '').trim()) },
+        { key: 'amount', label: t('amount'), num: true, render: (x) => money(x.amount) },
+        { key: 'paid', label: t('tax_paid'), num: true, render: (x) => money(x.paid) },
+        { key: 'remaining', label: t('tax_remaining'), num: true, render: (x) => money(x.remaining) },
+        { key: 'journal_id', label: t('tax_split_entry'), render: (x) => x.journal_id ? `<a href="#" class="drill" data-jid="${x.journal_id}">#${x.journal_id}</a>` : '' },
+        { key: 'payments', label: t('tax_payments'), render: (x) => x.payments.map((p) => `${dateStr(p.pay_date)}: ${money(p.amount)} <a href="#" class="drill" data-jid="${p.journal_id}">#${p.journal_id}</a>`).join('<br>') },
+      ];
+      const tot = (k) => money(d.rows.reduce((s, x) => s + x[k], 0));
+      const body = table(cols2, d.rows, { foot: [{ v: t('total') }, { v: '' }, { v: tot('amount'), num: true }, { v: tot('paid'), num: true }, { v: tot('remaining'), num: true }, { v: '' }, { v: '' }] });
+      modal({ title: `${row ? row.tenant : ''} — ${t('tax_up_to_month')} ${r.month}`, wide: true, bodyHTML: body,
+        footerHTML: `<button class="btn" id="dprint">🖨 ${t('print')}</button>`,
+        onMount: (bg) => {
+          bg.querySelector('#dprint').onclick = () => printReport(t('m_tax_aging'), body);
+          bg.querySelector('.m-bd').addEventListener('click', (ev) => { const l = ev.target.closest('.drill[data-jid]'); if (l) { ev.preventDefault(); viewJournal(l.dataset.jid); } });
+        } });
+    });
+    c.querySelector('#tm').onchange = (e) => { c._month = e.target.value; taxAging(c); };
+    c.querySelector('#tall').onchange = (e) => { c._all = e.target.checked; taxAging(c); };
+    bindPrint(c, t('m_tax_aging'));
+  }
+  // ---- Municipality tax operations: split out of rent, record collections ----
+  async function taxDues(c) {
+    const [dues, pays, fl, tn] = [await API.get('/tax/dues'), await API.get('/tax/payments'), await ref('flats'), await ref('tenants')];
+    const write = canWrite();
+    const cols = [
+      { key: 'period', label: t('tax_month'), render: (x) => x.is_opening ? t('tax_older') : x.period },
+      { key: 'flat', label: t('unit'), render: (x) => esc((x.flat || '').trim()) },
+      { key: 'tenant', label: t('tenant'), render: (x) => esc(x.tenant || '') },
+      { key: 'amount', label: t('amount'), num: true, render: (x) => money(x.amount) },
+      { key: 'paid', label: t('tax_paid'), num: true, render: (x) => money(x.paid) },
+      { key: 'remaining', label: t('tax_remaining'), num: true, render: (x) => money(x.amount - x.paid) },
+      { key: 'journal_id', label: t('tax_split_entry'), render: (x) => x.journal_id ? `<a href="#" class="drill" data-jid="${x.journal_id}">#${x.journal_id}</a>` : '' },
+    ];
+    const total = (k) => money(dues.reduce((s, x) => s + (k === 'remaining' ? x.amount - x.paid : x[k]), 0));
+    const payCols = [
+      { key: 'pay_date', label: t('date'), render: (x) => dateStr(x.pay_date) },
+      { key: 'tenant', label: t('tenant'), render: (x) => esc(x.tenant || '') },
+      { key: 'amount', label: t('amount'), num: true, render: (x) => money(x.amount) },
+      { key: 'jtype', label: t('type'), render: (x) => x.jtype === 'receipt' ? t('tax_mode_cash') : t('tax_mode_settle') },
+      { key: 'journal_id', label: t('tax_split_entry'), render: (x) => `<a href="#" class="drill" data-jid="${x.journal_id}">#${x.journal_id}</a>` },
+      ...(write ? [{ key: 'act', label: '', render: (x) => `<button class="btn sm danger" data-delpay="${x.journal_id}">${t('delete')}</button>` }] : []),
+    ];
+    c.innerHTML = `<div class="toolbar"><h3 style="margin:0">${t('m_tax_dues')}</h3><div class="spacer"></div>
+      ${write ? `<button class="btn teal" id="tmonth">⚙ ${t('tax_month_btn')}</button><button class="btn teal" id="tsync">🔄 ${t('tax_sync_btn')}</button><button class="btn teal" id="tsplit">＋ ${t('tax_split_btn')}</button><button class="btn teal" id="tpay">💰 ${t('tax_pay_btn')}</button>` : ''}</div>
+      <div class="card">${table(cols, dues, { foot: [{ v: t('total') }, { v: '' }, { v: '' }, { v: total('amount'), num: true }, { v: total('paid'), num: true }, { v: total('remaining'), num: true }, { v: '' }], empty: t('tax_none') })}</div>
+      <div class="card" style="margin-top:12px"><h3>${t('tax_payments')}</h3>${table(payCols, pays, { empty: t('tax_none') })}</div>`;
+    if (!c._taxBound) {
+      c._taxBound = true;
+      c.addEventListener('click', async (e) => {
+        const a = e.target.closest('.drill[data-jid]'); if (a) { e.preventDefault(); return viewJournal(a.dataset.jid); }
+        const d = e.target.closest('[data-delpay]');
+        if (d && confirm(t('confirm_delete'))) {
+          try { await API.del('/tax/payments/' + d.dataset.delpay); toast(t('saved')); clearCache(); taxDues(c); } catch (err) { toast(err.message, 'err'); }
+        }
+      });
+    }
+    const tenOpts = tn.map((x) => ({ value: x.id, label: x.name }));
+    const tm = c.querySelector('#tmonth');
+    if (tm) tm.onclick = () => formModal({
+      title: t('tax_month_btn'),
+      fields: [
+        { key: 'from', label: t('from'), type: 'month', required: true, value: curMonth() },
+        { key: 'to', label: t('to'), type: 'month', required: true, value: curMonth() },
+        { key: 'note', value: t('tax_month_hint'), type: 'note' },
+      ],
+      onSave: async (d, close) => {
+        const r = await API.post('/tax/split-invoices', { from_period: d.from, to_period: d.to });
+        const s2 = await API.post('/tax/auto-settle', {});
+        toast(t('saved') + ' — ' + money(r.amount)); close(); clearCache(); taxDues(c);
+      },
+    });
+    const ts = c.querySelector('#tsync');
+    if (ts) ts.onclick = async () => { try { const r = await API.post('/tax/auto-settle', {}); toast(t('saved') + ' — ' + money(r.amount)); clearCache(); taxDues(c); } catch (e) { toast(e.message, 'err'); } };
+    const sp = c.querySelector('#tsplit');
+    if (sp) sp.onclick = () => formModal({
+      title: t('tax_split_btn'),
+      fields: [
+        { key: 'flat_id', label: t('unit'), type: 'select', required: true, options: fl.map((f) => ({ value: f.id, label: f.code })) },
+        { key: 'tenant_id', label: t('tenant'), type: 'select', required: true, options: tenOpts },
+        { key: 'jdate', label: t('date'), type: 'date', required: true, value: today() },
+        { key: 'from', label: t('from'), type: 'month', required: true, value: curMonth() },
+        { key: 'to', label: t('to'), type: 'month', required: true, value: curMonth() },
+        { key: 'amount', label: t('tax_monthly_amount'), type: 'number', step: '0.001', required: true },
+        { key: 'note', value: t('tax_split_hint'), type: 'note' },
+      ],
+      onSave: async (d, close) => {
+        const items = []; let p = d.from;
+        while (p <= d.to && items.length < 60) { items.push({ period: p, amount: d.amount }); const [y, m] = p.split('-').map(Number); p = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`; }
+        await API.post('/tax/split', { jdate: d.jdate, flat_id: Number(d.flat_id), tenant_id: Number(d.tenant_id), items });
+        toast(t('saved')); close(); clearCache(); taxDues(c);
+      },
+    });
+    const pb = c.querySelector('#tpay');
+    if (pb) pb.onclick = () => formModal({
+      title: t('tax_pay_btn'),
+      fields: [
+        { key: 'tenant_id', label: t('tenant'), type: 'select', required: true, options: tenOpts },
+        { key: 'pdate', label: t('date'), type: 'date', required: true, value: today() },
+        { key: 'amount', label: t('amount'), type: 'number', step: '0.001', required: true },
+        { key: 'mode', label: t('type'), type: 'select', value: 'cash', options: [{ value: 'cash', label: t('tax_mode_cash') }, { value: 'settle', label: t('tax_mode_settle') }] },
+        { key: 'note', value: t('tax_pay_hint'), type: 'note' },
+      ],
+      onSave: async (d, close) => {
+        await API.post('/tax/payments', { tenant_id: Number(d.tenant_id), pdate: d.pdate, amount: d.amount, mode: d.mode });
+        toast(t('saved')); close(); clearCache(); taxDues(c);
+      },
+    });
+  }
   async function apAging(c) { await agingScreen(c, 'payables-aging', t('m_ap_aging'), t('vendor')); }
   const AGING_BUCKET_LABEL = { current: t('current'), d30: '1-30', d60: '31-60', d90: '61-90', d180: '91-180', d180p: '+180', total: t('total') };
-  async function agingCellDrill(tenantId, tenantName, bucket, asOf, buildingId) {
+  async function agingCellDrill(tenantId, tenantName, bucket, asOf, buildingId, drillEndpoint) {
     const qp = new URLSearchParams(); qp.set('asOf', asOf);
     if (tenantId) qp.set('tenant_id', tenantId);
     if (buildingId) qp.set('building_id', buildingId);
     let r;
-    try { r = await API.get('/reports/aging-drill?' + qp.toString()); }
+    try { r = await API.get('/reports/' + (drillEndpoint || 'aging-drill') + '?' + qp.toString()); }
     catch (e) { return toast(e.message, 'err'); }
     const rows = bucket && bucket !== 'total' ? r.rows.filter((x) => x.bucket === bucket) : r.rows;
     if (!rows.length) return toast('لا توجد تفاصيل لهذا الرقم', 'err');
@@ -501,8 +639,8 @@ Object.assign(Pages, (() => {
     const asOf = c._asOf || today();
     reportShell(c, title, `<div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="a" value="${asOf}"></div>`, endpoint === 'aging' ? 'aging' : null);
     c._qs = '?asOf=' + asOf;
-    const r = await API.get('/reports/' + endpoint + '?asOf=' + asOf + (endpoint === 'aging' && window.UT ? UT.bq() : ''));
-    const isAr = endpoint === 'aging';
+    const r = await API.get('/reports/' + endpoint + '?asOf=' + asOf + ((endpoint === 'aging' || endpoint === 'tax-aging') && window.UT ? UT.bq() : ''));
+    const isAr = endpoint === 'aging' || endpoint === 'tax-aging';
     // "0" stands in for a null tenant_id ("(بدون عميل)") so it still survives
     // as a data-attribute and round-trips back through the click handler.
     const tidKey = (x) => x.tenant_id == null ? '0' : String(x.tenant_id);
@@ -522,7 +660,7 @@ Object.assign(Pages, (() => {
         const a = e.target.closest('.drill[data-tid]'); if (!a) return; e.preventDefault();
         const row = r.rows.find((x) => tidKey(x) === a.dataset.tid);
         const tid = a.dataset.tid === '0' ? null : a.dataset.tid;
-        agingCellDrill(tid, row && row.tenant, a.dataset.bucket, asOf, (window.UT && UT.building) || null);
+        agingCellDrill(tid, row && row.tenant, a.dataset.bucket, asOf, (window.UT && UT.building) || null, endpoint === 'tax-aging' ? 'tax-aging-drill' : 'aging-drill');
       });
     }
     c.querySelector('#a').onchange = (e) => { c._asOf = e.target.value; agingScreen(c, endpoint, title, who); };
@@ -1026,7 +1164,7 @@ Object.assign(Pages, (() => {
               <div class="bcb budget" style="height:${Math.round((Math.abs(budgetArr[i]) / max) * 100)}%" title="${money(budgetArr[i])}"></div>
               <div class="bcb actual ${actualArr[i] < budgetArr[i] ? 'neg' : ''}" style="height:${Math.round((Math.abs(actualArr[i]) / max) * 100)}%" title="${money(actualArr[i])}"></div>
             </div>
-            <div class="bud-chart-lbl">${m.slice(0, 3)}</div>
+            <div class="bud-chart-lbl">${I18N.tr(m).slice(0, 3)}</div>
           </div>`).join('')}</div></div></div>
         <style>
           .bud-chart-legend{display:flex;gap:16px;font-size:12px;color:var(--muted);margin-bottom:10px}
@@ -1154,224 +1292,273 @@ Object.assign(Pages, (() => {
   }
 
   // ---- Building Presentation (البرزنتيشن) ------------------------------------
+  // A light, animated slide deck: one slide at a time (arrows / keys / dots /
+  // contents page), counters and charts animate in when a slide opens, every
+  // slide has an action title, a one-line explainer and a link to its report.
+  // Without JS (or when printing) all slides simply stack, fully drawn.
   const PRES_CSS = `
-    .pres-wrap { --pg-bg:#0b0f14; --pg-card:#121821; --pg-border:rgba(255,255,255,.08); --pg-text:#e7ebf0;
-      --pg-muted:rgba(231,235,240,.58); --pg-accent:#38c2c0; --pg-accent2:#4f8fe0;
-      --pg-good:#3ecf8e; --pg-bad:#ef5b5b; --pg-warn:#e0a340;
-      direction:rtl; font-family:inherit; background:var(--pg-bg); color:var(--pg-text); border-radius:14px; overflow:hidden; position:relative; }
-    .pres-slide { padding:30px 34px; border-bottom:1px solid var(--pg-border); }
-    .pres-slide:last-child { border-bottom:none; }
-    @media print { .pres-slide { border-bottom:none; page-break-after:always; } }
-    .pres-cover { background:linear-gradient(160deg,#0e1620,#0b0f14 65%); text-align:center; padding:64px 30px; position:relative; min-height:auto; }
-    .pres-cover::before { content:''; position:absolute; inset:0 0 auto 0; height:3px; background:linear-gradient(90deg,var(--pg-accent),var(--pg-accent2)); }
-    .pres-cover .pres-mark { width:56px; height:56px; margin:0 auto 18px; border-radius:14px; background:rgba(56,194,192,.12); border:1px solid rgba(56,194,192,.3); display:flex; align-items:center; justify-content:center; font-size:26px; }
-    .pres-cover h1 { font-size:28px; margin:0 0 8px; font-weight:700; letter-spacing:.2px; }
-    .pres-cover h2 { font-size:14px; margin:0 0 20px; font-weight:400; color:var(--pg-muted); }
-    .pres-cover .badge { display:inline-block; border:1px solid var(--pg-border); color:var(--pg-muted); padding:6px 16px; border-radius:999px; font-size:12px; }
-    .pres-h { font-size:16px; font-weight:700; margin:0 0 16px; color:var(--pg-accent); display:flex; align-items:center; gap:8px; }
-    .kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(165px,1fr)); gap:12px; }
-    .kpi-card { background:var(--pg-card); border:1px solid var(--pg-border); border-radius:10px; padding:14px 16px; }
-    .kpi-card .ico { font-size:17px; opacity:.8; }
-    .kpi-card .val { font-size:20px; font-weight:700; margin:6px 0 2px; color:var(--pg-text); }
-    .kpi-card .lbl { font-size:11.5px; color:var(--pg-muted); }
-    .kpi-card.good .val { color:var(--pg-good); } .kpi-card.bad .val { color:var(--pg-bad); } .kpi-card.warn .val { color:var(--pg-warn); }
-    .pres-table { width:100%; border-collapse:collapse; font-size:13px; background:transparent; }
-    .pres-table th, .pres-table td { padding:8px 10px; text-align:right; border-bottom:1px solid var(--pg-border); background:transparent; color:var(--pg-text); }
-    .pres-table th { color:var(--pg-muted); font-weight:600; font-size:12px; }
-    .pres-wrap .pres-table tbody tr:nth-child(even) td { background:rgba(255,255,255,.03); }
-    .pres-wrap .pres-table tbody tr:hover td { background:rgba(255,255,255,.06); color:var(--pg-text); box-shadow:none; }
-    .pres-wrap .pres-table tbody tr:hover { box-shadow:none; }
-    .pres-table tr.tot td { font-weight:700; color:var(--pg-text); border-top:1px solid var(--pg-border); background:transparent; }
-    .pres-table td.num, .pres-table th.num { font-variant-numeric:tabular-nums; }
+    .pres-wrap { --bg1:#f7faff; --bg2:#eaf1fb; --card:#ffffff; --ink:#1d2b4a; --muted:#5f6f8c; --line:#dfe8f5;
+      --navy:#1b2f5e; --navy2:#2c4f9c; --accent:#2f6fed; --teal:#13a89e; --good:#1f9d6b; --bad:#e04a52; --warn:#e8a020;
+      font-family:inherit; background:linear-gradient(180deg,var(--bg1),var(--bg2)); color:var(--ink); border-radius:16px;
+      overflow:hidden; position:relative; outline:none; box-shadow:0 8px 30px rgba(31,58,104,.10); }
+    .pres-wrap *, .pres-wrap *::before, .pres-wrap *::after { box-sizing:border-box; }
+    .pres-bar { height:4px; background:rgba(47,111,237,.12); }
+    .pres-progress { display:block; height:100%; width:0; background:linear-gradient(90deg,var(--accent),var(--teal)); transition:width .5s ease; }
+    .pres-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 18px; border-bottom:1px solid var(--line); background:rgba(255,255,255,.7); backdrop-filter:blur(6px); }
+    .pres-brand { font-weight:700; font-size:13.5px; color:var(--navy); } .pres-brand span { font-weight:400; color:var(--muted); }
+    .pres-ctl { display:flex; align-items:center; gap:6px; }
+    .pres-ctl button { border:1px solid var(--line); background:#fff; color:var(--navy); border-radius:9px; padding:5px 11px; font-size:15px; cursor:pointer; line-height:1; transition:all .15s; }
+    .pres-ctl button:hover { background:var(--accent); color:#fff; border-color:var(--accent); transform:translateY(-1px); }
+    .pres-count { direction:ltr; unicode-bidi:isolate; font-size:12px; color:var(--muted); min-width:64px; text-align:center; font-variant-numeric:tabular-nums; }
+    .pres-stage { position:relative; min-height:430px; }
+    .pres-slide { display:none; padding:28px 34px 26px; }
+    .pres-wrap:not(.js) .pres-slide { display:block; border-bottom:1px solid var(--line); }
+    .pres-slide.active { display:block; animation:presFade .45s ease both; }
+    @keyframes presFade { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+    @keyframes presUp { from { opacity:0; transform:translateY(18px) scale(.98); } to { opacity:1; transform:none; } }
+    @keyframes presFloat { 0%,100% { transform:translate(0,0); } 50% { transform:translate(22px,-18px); } }
+    .pres-slide.active .anim { animation:presUp .6s cubic-bezier(.2,.8,.2,1) both; animation-delay:calc(var(--i,0) * 70ms + 120ms); }
+    .pres-eyebrow { display:inline-flex; align-items:center; gap:8px; font-size:12px; font-weight:600; color:var(--accent); background:rgba(47,111,237,.09); border-radius:999px; padding:4px 12px 4px 10px; margin-bottom:10px; }
+    .pres-eyebrow b { background:var(--accent); color:#fff; border-radius:50%; width:20px; height:20px; display:inline-flex; align-items:center; justify-content:center; font-size:11px; }
+    .pres-title { font-size:23px; line-height:1.45; margin:0 0 6px; color:var(--navy); font-weight:700; }
+    .pres-lead { margin:0 0 20px; color:var(--muted); font-size:13.5px; line-height:1.8; max-width:760px; }
+    .pres-src { margin-top:18px; padding-top:10px; border-top:1px dashed var(--line); font-size:11.5px; color:var(--muted); display:flex; align-items:center; gap:8px; }
+    .pres-src a { color:var(--accent); text-decoration:none; font-weight:600; } .pres-src a:hover { text-decoration:underline; }
+    /* cover */
+    .pres-slide.pres-cover { padding:0; background:linear-gradient(135deg,#16295a,#2a4c98 60%,#1d8fa0); color:#fff; text-align:center; position:relative; overflow:hidden; min-height:430px; }
+    .pres-cover .orb { position:absolute; border-radius:50%; filter:blur(48px); opacity:.45; animation:presFloat 9s ease-in-out infinite; }
+    .pres-cover .o1 { width:260px; height:260px; background:#4f8fff; top:-70px; right:-50px; } .pres-cover .o2 { width:220px; height:220px; background:#18c3b3; bottom:-80px; left:-40px; animation-delay:-3s; }
+    .pres-cover .o3 { width:140px; height:140px; background:#ffd36b; top:40%; left:30%; opacity:.18; animation-delay:-6s; }
+    .pres-cover .in { position:relative; padding:70px 30px 54px; }
+    .pres-cover .mark { width:64px; height:64px; margin:0 auto 18px; border-radius:18px; background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.3); display:flex; align-items:center; justify-content:center; font-size:30px; }
+    .pres-cover h1 { font-size:34px; margin:0 0 8px; font-weight:800; letter-spacing:.3px; }
+    .pres-cover h2 { font-size:15px; margin:0 0 22px; font-weight:400; color:rgba(255,255,255,.8); }
+    .pres-cover .badge { display:inline-block; border:1px solid rgba(255,255,255,.35); color:rgba(255,255,255,.88); padding:6px 16px; border-radius:999px; font-size:12px; margin-bottom:26px; }
+    .pres-cover .go { display:block; margin:0 auto; border:0; background:#fff; color:var(--navy); font-weight:700; font-size:14px; padding:11px 30px; border-radius:999px; cursor:pointer; box-shadow:0 8px 22px rgba(0,0,0,.2); transition:transform .15s; }
+    .pres-cover .go:hover { transform:translateY(-2px) scale(1.03); }
+    /* contents */
+    .toc-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:12px; }
+    .toc-item { display:flex; gap:12px; align-items:flex-start; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:13px 14px; text-decoration:none; color:inherit; cursor:pointer; transition:all .18s; }
+    .toc-item:hover { transform:translateY(-3px); border-color:var(--accent); box-shadow:0 8px 20px rgba(47,111,237,.14); }
+    .toc-item .n { flex:none; width:30px; height:30px; border-radius:9px; background:rgba(47,111,237,.1); color:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; }
+    .toc-item b { display:block; font-size:14px; color:var(--navy); margin-bottom:2px; } .toc-item span { font-size:12px; color:var(--muted); line-height:1.6; }
+    /* kpis */
+    .kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:13px; }
+    .kpi-card { display:block; text-decoration:none; color:inherit; background:var(--card); border:1px solid var(--line); border-radius:13px; padding:14px 16px; position:relative; overflow:hidden; transition:transform .18s, box-shadow .18s, border-color .18s; }
+    .kpi-card::before { content:''; position:absolute; inset:0 auto 0 0; width:4px; background:var(--accent); }
+    a.kpi-card:hover { transform:translateY(-3px); box-shadow:0 10px 22px rgba(31,58,104,.13); border-color:var(--accent); }
+    .kpi-card .ico { font-size:18px; } .kpi-card .val { font-size:22px; font-weight:800; margin:6px 0 2px; color:var(--navy); font-variant-numeric:tabular-nums; }
+    .kpi-card .lbl { font-size:12.5px; font-weight:600; color:var(--ink); } .kpi-card .hint { font-size:11px; color:var(--muted); margin-top:3px; line-height:1.5; }
+    .kpi-card.good::before { background:var(--good); } .kpi-card.good .val { color:var(--good); }
+    .kpi-card.bad::before { background:var(--bad); } .kpi-card.bad .val { color:var(--bad); }
+    .kpi-card.warn::before { background:var(--warn); } .kpi-card.warn .val { color:#b57a0c; }
+    /* tables */
+    .pres-table { width:100%; border-collapse:collapse; font-size:13px; background:var(--card); border-radius:12px; overflow:hidden; border:1px solid var(--line); }
+    .pres-table th, .pres-table td { padding:9px 14px; text-align:start; border-bottom:1px solid var(--line); background:transparent; color:var(--ink); }
+    .pres-table th { background:#f1f6fd; color:var(--muted); font-weight:600; font-size:12px; }
+    .pres-wrap .pres-table tbody tr:hover td { background:#f6faff; color:var(--ink); box-shadow:none; }
+    .pres-table tr.sec td { background:#f1f6fd; color:var(--navy); font-weight:700; font-size:12px; }
+    .pres-table tr.tot td { font-weight:700; background:#f7faff; border-top:1px solid var(--line); }
+    .pres-table tr.net td { font-weight:800; background:linear-gradient(90deg,rgba(47,111,237,.1),rgba(19,168,158,.1)); color:var(--navy); }
+    .pres-table td.num, .pres-table th.num { font-variant-numeric:tabular-nums; text-align:end; }
+    /* insights */
     .pres-insights { display:flex; flex-direction:column; gap:10px; }
-    .pres-insight { background:var(--pg-card); border:1px solid var(--pg-border); border-right:3px solid var(--pg-accent); border-radius:8px; padding:12px 14px; font-size:13.5px; line-height:1.7; }
-    .swot-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-    .swot-box { border-radius:10px; padding:14px 16px; background:var(--pg-card); border:1px solid var(--pg-border); border-right:3px solid var(--pg-border); }
-    .swot-box h3 { margin:0 0 8px; font-size:14px; font-weight:600; }
-    .swot-box textarea, .swot-box .ro-text { width:100%; min-height:100px; background:rgba(0,0,0,.2); border:1px solid var(--pg-border); border-radius:8px; color:var(--pg-text); padding:8px; font-size:13px; font-family:inherit; resize:vertical; white-space:pre-wrap; box-sizing:border-box; }
-    .swot-box.s { border-right-color:var(--pg-good); } .swot-box.s h3 { color:var(--pg-good); }
-    .swot-box.w { border-right-color:var(--pg-bad); } .swot-box.w h3 { color:var(--pg-bad); }
-    .swot-box.o { border-right-color:var(--pg-accent2); } .swot-box.o h3 { color:var(--pg-accent2); }
-    .swot-box.t { border-right-color:var(--pg-warn); } .swot-box.t h3 { color:var(--pg-warn); }
-    .plan-box textarea, .plan-box .ro-text { width:100%; min-height:130px; background:var(--pg-card); border:1px solid var(--pg-border); border-radius:10px; color:var(--pg-text); padding:12px; font-size:13.5px; font-family:inherit; resize:vertical; white-space:pre-wrap; box-sizing:border-box; }
-    .pres-foot { text-align:center; padding:22px; color:var(--pg-muted); font-size:11.5px; }
-    .cmp-item { margin-bottom:16px; }
-    .cmp-head { display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:5px; color:var(--pg-muted); }
-    .cmp-head b { color:var(--pg-text); font-weight:600; }
-    .cmp-track { background:rgba(255,255,255,.07); border-radius:5px; height:9px; margin-bottom:3px; overflow:hidden; }
-    .cmp-track .fill { height:100%; border-radius:5px; background:var(--pg-accent2); }
-    .cmp-track.budget .fill { background:rgba(255,255,255,.3); }
-    .cmp-track.actual .fill.good { background:var(--pg-good); }
-    .cmp-track.actual .fill.bad { background:var(--pg-bad); }
-    .trend-chart { display:flex; align-items:flex-end; gap:8px; height:150px; padding-top:10px; }
+    .pres-insight { display:flex; gap:12px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 14px; font-size:13.5px; line-height:1.8; }
+    .pres-insight i { flex:none; font-style:normal; width:26px; height:26px; border-radius:50%; background:linear-gradient(135deg,var(--accent),var(--teal)); color:#fff; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; }
+    /* swot / plan */
+    .swot-grid { display:grid; grid-template-columns:1fr 1fr; gap:13px; }
+    .swot-box { border-radius:13px; padding:14px 16px; background:var(--card); border:1px solid var(--line); border-top:4px solid var(--line); }
+    .swot-box h3 { margin:0 0 8px; font-size:14px; font-weight:700; }
+    .swot-box textarea, .swot-box .ro-text, .plan-box textarea, .plan-box .ro-text { width:100%; min-height:104px; background:#f8fbff; border:1px solid var(--line); border-radius:9px; color:var(--ink); padding:9px; font-size:13px; font-family:inherit; resize:vertical; white-space:pre-wrap; line-height:1.8; }
+    .plan-box textarea, .plan-box .ro-text { min-height:150px; font-size:13.5px; }
+    .swot-box.s { border-top-color:var(--good); } .swot-box.s h3 { color:var(--good); }
+    .swot-box.w { border-top-color:var(--bad); } .swot-box.w h3 { color:var(--bad); }
+    .swot-box.o { border-top-color:var(--accent); } .swot-box.o h3 { color:var(--accent); }
+    .swot-box.t { border-top-color:var(--warn); } .swot-box.t h3 { color:#b57a0c; }
+    .pres-foot { text-align:center; padding:12px; color:var(--muted); font-size:11.5px; border-top:1px solid var(--line); background:rgba(255,255,255,.6); }
+    /* budget bars */
+    .cmp-item { margin-bottom:18px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:13px 15px; }
+    .cmp-head { display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; font-size:12.5px; margin-bottom:8px; color:var(--muted); }
+    .cmp-head > span:first-child { color:var(--navy); font-weight:700; font-size:13.5px; } .cmp-head b { color:var(--ink); }
+    .cmp-track { background:#edf2fa; border-radius:6px; height:11px; margin-bottom:5px; overflow:hidden; }
+    .cmp-track .fill { height:100%; border-radius:6px; background:var(--accent); transform-origin:right center; transform:scaleX(0); transition:transform 1s cubic-bezier(.2,.8,.2,1) .25s; }
+    [dir=ltr] .cmp-track .fill { transform-origin:left center; }
+    .pres-slide.active .cmp-track .fill, .pres-wrap:not(.js) .cmp-track .fill { transform:scaleX(1); }
+    .cmp-track.budget .fill { background:#b8c6de; }
+    .cmp-track.actual .fill.good { background:var(--good); } .cmp-track.actual .fill.bad { background:var(--bad); }
+    /* trend chart */
+    .trend-chart { display:flex; align-items:flex-end; gap:8px; height:210px; padding:14px 12px 0; background:var(--card); border:1px solid var(--line); border-radius:12px; }
     .trend-col { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%; }
-    .trend-bars { display:flex; align-items:flex-end; gap:3px; height:120px; width:100%; justify-content:center; }
-    .trend-bars .tb { width:9px; border-radius:2px 2px 0 0; min-height:2px; }
-    .trend-bars .tb.income { background:var(--pg-accent2); }
-    .trend-bars .tb.expense { background:var(--pg-bad); opacity:.85; }
-    .trend-lbl { font-size:10.5px; color:var(--pg-muted); margin-top:6px; }
-    .trend-legend { display:flex; gap:16px; font-size:12px; color:var(--pg-muted); margin-bottom:10px; }
+    .trend-bars { display:flex; align-items:flex-end; gap:4px; height:170px; width:100%; justify-content:center; }
+    .trend-bars .tb { width:13px; border-radius:4px 4px 0 0; min-height:3px; height:0; transition:height .9s cubic-bezier(.2,.8,.2,1); transition-delay:calc(var(--i,0) * 60ms + 250ms); }
+    .pres-slide.active .tb, .pres-wrap:not(.js) .tb { height:var(--h); }
+    .trend-bars .tb.income { background:linear-gradient(180deg,#5b94ff,var(--accent)); }
+    .trend-bars .tb.expense { background:linear-gradient(180deg,#f27a80,var(--bad)); }
+    .trend-lbl { font-size:11px; color:var(--muted); padding:7px 0 8px; }
+    .trend-legend { display:flex; gap:16px; font-size:12px; color:var(--muted); margin-bottom:10px; }
     .trend-legend span { display:inline-flex; align-items:center; gap:5px; }
-    .trend-legend i { width:9px; height:9px; border-radius:2px; display:inline-block; }
-    .donut-wrap { display:flex; align-items:center; gap:22px; }
-    .donut { width:110px; height:110px; border-radius:50%; flex:none; }
-    .donut-inner { width:78px; height:78px; margin:16px; border-radius:50%; background:var(--pg-bg); display:flex; align-items:center; justify-content:center; flex-direction:column; }
-    .donut-inner b { font-size:17px; } .donut-inner span { font-size:10px; color:var(--pg-muted); }
+    .trend-legend i { width:10px; height:10px; border-radius:3px; display:inline-block; }
+    /* donut */
+    .donut-wrap { display:flex; align-items:center; gap:28px; flex-wrap:wrap; }
+    .donut { position:relative; width:150px; height:150px; flex:none; }
+    .donut svg { transform:rotate(-90deg); width:150px; height:150px; }
+    .donut circle { fill:none; stroke-width:14; } .donut .bg { stroke:#e3ebf7; }
+    .donut .fg { stroke:var(--good); stroke-linecap:round; stroke-dasharray:0 327; transition:stroke-dasharray 1.2s cubic-bezier(.2,.8,.2,1) .3s; }
+    .donut .fg.warn { stroke:var(--warn); } .donut .fg.bad { stroke:var(--bad); }
+    .pres-slide.active .donut .fg, .pres-wrap:not(.js) .donut .fg { stroke-dasharray:var(--dash) 327; }
+    .donut-inner { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; }
+    .donut-inner b { font-size:26px; color:var(--navy); } .donut-inner span { font-size:11px; color:var(--muted); }
+    /* feedback */
     .pres-fb-form { max-width:480px; margin:0 auto; }
-    .pres-fb-stars { display:flex; gap:6px; font-size:26px; cursor:pointer; justify-content:center; margin:6px 0 18px; }
-    .pres-fb-stars span { opacity:.3; transition:opacity .1s; }
-    .pres-fb-stars span.on { opacity:1; }
-    .pres-fb-form label { display:block; font-size:12.5px; color:var(--pg-muted); margin:14px 0 6px; text-align:center; }
-    .pres-fb-form input[type=text], .pres-fb-form textarea { width:100%; background:rgba(255,255,255,.06); border:1px solid var(--pg-border); border-radius:8px; color:var(--pg-text); padding:9px 11px; font-size:13.5px; font-family:inherit; box-sizing:border-box; }
+    .pres-fb-stars { display:flex; gap:6px; font-size:28px; cursor:pointer; justify-content:center; margin:6px 0 18px; color:var(--warn); }
+    .pres-fb-stars span { opacity:.3; transition:opacity .1s, transform .1s; } .pres-fb-stars span:hover { transform:scale(1.2); } .pres-fb-stars span.on { opacity:1; }
+    .pres-fb-form label { display:block; font-size:12.5px; color:var(--muted); margin:14px 0 6px; text-align:center; }
+    .pres-fb-form input[type=text], .pres-fb-form textarea { width:100%; background:#fff; border:1px solid var(--line); border-radius:9px; color:var(--ink); padding:9px 11px; font-size:13.5px; font-family:inherit; }
     .pres-fb-form textarea { min-height:80px; resize:vertical; }
-    .pres-fb-thanks { text-align:center; padding:40px 20px; }
-    .pres-fb-thanks .ico { font-size:40px; margin-bottom:10px; }
-    .fb-summary-row { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--pg-border); font-size:13px; }
-    .fb-summary-row:last-child { border-bottom:none; }
+    .pres-fb-thanks { text-align:center; padding:40px 20px; } .pres-fb-thanks .ico { font-size:40px; margin-bottom:10px; }
+    .fb-summary-row { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); font-size:13px; } .fb-summary-row:last-child { border-bottom:none; }
+    .pres-dots { display:flex; justify-content:center; gap:7px; padding:10px 0 12px; }
+    .pres-dots i { width:8px; height:8px; border-radius:50%; background:#c7d5ea; cursor:pointer; transition:all .25s; }
+    .pres-dots i.on { width:24px; border-radius:6px; background:var(--accent); }
+    .pres-wrap:not(.js) .pres-dots, .pres-wrap:not(.js) .pres-ctl { display:none; }
+    .pres-wrap:fullscreen { border-radius:0; overflow:auto; } .pres-wrap:fullscreen .pres-stage { min-height:70vh; }
+    @media (max-width:640px) { .swot-grid { grid-template-columns:1fr; } .pres-slide { padding:20px 16px; } .pres-title { font-size:19px; } }
+    @media print {
+      .pres-wrap { background:#fff; box-shadow:none; border-radius:0; }
+      .pres-bar, .pres-head, .pres-dots, .pres-cover .go, .pres-cover .orb { display:none !important; }
+      .pres-slide, .pres-wrap.js .pres-slide { display:block !important; animation:none !important; page-break-after:always; border-bottom:none; }
+      .pres-slide .anim { animation:none !important; opacity:1 !important; }
+      .tb { height:var(--h) !important; transition:none !important; } .cmp-track .fill { transform:none !important; } .donut .fg { stroke-dasharray:var(--dash) 327 !important; }
+      .pres-wrap, .pres-slide.pres-cover { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    }
   `;
-  function presKpi(ico, val, lbl, cls) { return `<div class="kpi-card ${cls || ''}"><div class="ico">${ico}</div><div class="val">${val}</div><div class="lbl">${esc(lbl)}</div></div>`; }
-  // Budget-vs-actual bar: neutral (teal) within a 5% tolerance band, green when
-  // favorable beyond that, red when unfavorable beyond it — so a near-target
-  // month doesn't read as visually "bad" just for missing budget by a hair.
-  function presCmp(label, budgetVal, actualVal, badWhenOver) {
+  const presFill = (s, o) => String(s).replace(/\{(\w+)\}/g, (m, k) => (o[k] != null ? o[k] : m));
+  // hint = how the number is calculated, link = report route inside the app
+  function presKpi(ico, val, lbl, cls, o) {
+    o = o || {};
+    const count = o.count != null ? ` data-count="${o.count}" data-dec="${o.dec != null ? o.dec : 3}"${o.suffix ? ` data-suffix="${o.suffix}"` : ''}` : '';
+    const inner = `<div class="ico">${ico}</div><div class="val"${count}>${val}</div><div class="lbl">${esc(lbl)}</div>${o.hint ? `<div class="hint">${esc(o.hint)}</div>` : ''}`;
+    const style = ` style="--i:${o.i || 0}"`;
+    return o.href ? `<a class="kpi-card anim ${cls || ''}" href="${o.href}"${style} title="${esc(t('pres_open_report'))}">${inner}</a>` : `<div class="kpi-card anim ${cls || ''}"${style}>${inner}</div>`;
+  }
+  // Budget-vs-actual bar: neutral within a 5% tolerance band, green when
+  // favorable beyond that, red when unfavorable beyond it.
+  function presCmp(label, budgetVal, actualVal, badWhenOver, i) {
     const max = Math.max(Math.abs(budgetVal), Math.abs(actualVal), 1) * 1.05;
     const bw = Math.round((Math.abs(budgetVal) / max) * 100), aw = Math.round((Math.abs(actualVal) / max) * 100);
     const diffPct = budgetVal ? ((actualVal - budgetVal) / Math.abs(budgetVal)) * 100 : 0;
     const unfavorable = badWhenOver ? diffPct > 0 : diffPct < 0;
     let cls = '';
     if (Math.abs(diffPct) > 5) cls = unfavorable ? 'bad' : 'good';
-    return `<div class="cmp-item">
-      <div class="cmp-head"><span>${esc(label)}</span><span>${t('budget')} <b>${money(budgetVal)}</b> · ${t('actual')} <b>${money(actualVal)}</b></span></div>
+    return `<div class="cmp-item anim" style="--i:${i || 0}">
+      <div class="cmp-head"><span>${esc(label)}</span><span>${t('budget')} <b>${money(budgetVal)}</b> · ${t('actual')} <b>${money(actualVal)}</b> · <b>${diffPct >= 0 ? '+' : ''}${r2(diffPct)}%</b></span></div>
       <div class="cmp-track budget"><div class="fill" style="width:${bw}%"></div></div>
       <div class="cmp-track actual"><div class="fill ${cls}" style="width:${aw}%"></div></div>
     </div>`;
   }
   function presDonut(pct, cls) {
-    const color = cls === 'bad' ? 'var(--pg-bad)' : cls === 'warn' ? 'var(--pg-warn)' : 'var(--pg-good)';
-    return `<div class="donut" style="background:conic-gradient(${color} ${pct}%, rgba(255,255,255,.08) ${pct}% 100%)"><div class="donut-inner"><b>${r2(pct)}%</b><span>${esc(t('occupancy'))}</span></div></div>`;
+    const dash = Math.max(0, Math.min(100, pct)) * 3.2673; // circumference of r=52
+    return `<div class="donut anim"><svg viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="52"/><circle class="fg ${cls === 'bad' ? 'bad' : cls === 'warn' ? 'warn' : ''}" cx="60" cy="60" r="52" style="--dash:${r2(dash)}"/></svg>
+      <div class="donut-inner"><b data-count="${r2(pct)}" data-dec="1" data-suffix="%">${r2(pct)}%</b><span>${esc(t('occupancy'))}</span></div></div>`;
   }
   function presTrend(monthly) {
     if (!monthly || !monthly.length) return `<div class="empty">${t('no_data')}</div>`;
     const max = Math.max(...monthly.map((m) => Math.max(m.income, m.expense)), 1);
-    return `<div class="trend-legend"><span><i style="background:var(--pg-accent2)"></i> ${t('pres_income_lbl')}</span><span><i style="background:var(--pg-bad)"></i> ${t('pres_expense_lbl')}</span></div>
-      <div class="trend-chart">${monthly.map((m) => `
+    return `<div class="trend-legend"><span><i style="background:var(--accent)"></i> ${t('pres_income_lbl')}</span><span><i style="background:var(--bad)"></i> ${t('pres_expense_lbl')}</span></div>
+      <div class="trend-chart anim">${monthly.map((m, k) => `
         <div class="trend-col">
           <div class="trend-bars">
-            <div class="tb income" style="height:${Math.round((m.income / max) * 100)}%" title="${money(m.income)}"></div>
-            <div class="tb expense" style="height:${Math.round((m.expense / max) * 100)}%" title="${money(m.expense)}"></div>
+            <div class="tb income" style="--h:${Math.round((m.income / max) * 100)}%;--i:${k}" title="${money(m.income)}"></div>
+            <div class="tb expense" style="--h:${Math.round((m.expense / max) * 100)}%;--i:${k}" title="${money(m.expense)}"></div>
           </div>
-          <div class="trend-lbl">${MONTHS_AR[m.mo - 1].slice(0, 3)}</div>
+          <div class="trend-lbl">${I18N.tr(MONTHS_AR[m.mo - 1]).slice(0, 3)}</div>
         </div>`).join('')}</div>`;
   }
-  // Slide navigation: shown one at a time in-app and in the public/exported
-  // view, but the print stylesheet forces every slide visible again.
-  function presSlideList(d, notesLive, opts) {
+  // Slides as data: {key, icon, label, title, lead, body, link:{path,label}}
+  function presSlideData(d, notesLive, opts) {
     opts = opts || {};
-    const pct = (v) => `${r2(v)}%`;
+    const L = (path) => (opts.links ? `#/${path}` : null);
+    const pct = (v) => `‎${r2(v)}%‎`;
     const occPct = d.occupancy.total ? r2((d.occupancy.occupied / d.occupancy.total) * 100) : 0;
     const occCls = occPct >= 80 ? 'good' : occPct >= 50 ? 'warn' : 'bad';
     const netCls = d.income.net >= 0 ? 'good' : 'bad';
     const marginCls = d.ratios.net_margin >= 20 ? 'good' : (d.ratios.net_margin >= 0 ? 'warn' : 'bad');
     const swot = notesLive || d.notes;
-    const periodLbl = d.from === `${d.year}-01-01` && d.to === `${d.year}-12-31` ? `${d.year}` : `${dateStr(d.from)} — ${dateStr(d.to)}`;
     const draftLine = (arr) => (arr || []).map((x) => `• ${esc(x)}`).join('\n');
     const swotBox = (cls, icon, title, key, draftKey) => `
-      <div class="swot-box ${cls}"><h3>${icon} ${title}</h3>
+      <div class="swot-box anim ${cls}" style="--i:${{ s: 0, w: 1, o: 2, t: 3 }[cls]}"><h3>${icon} ${title}</h3>
         ${opts.readOnly
           ? `<div class="ro-text">${esc(swot[key] || '') || `<span style="opacity:.5">${draftLine(d.swot_draft[draftKey])}</span>`}</div>`
           : `<textarea data-swot="${key}" placeholder="${esc(draftLine(d.swot_draft[draftKey]))}">${esc(swot[key] || '')}</textarea>`}</div>`;
     const hasBudget = d.budget && (d.budget.income_totals.budget.total || d.budget.expense_totals.budget.total);
-    const slides = [
-      `<div class="pres-slide pres-cover">
-        <div class="pres-mark">🏢</div>
-        <h1>${esc(d.building)}</h1>
-        <h2>${t('pres_period')} — ${esc(periodLbl)}</h2>
-        <div class="badge">${t('pres_generated_on')} ${dateStr(today())}</div>
-      </div>`,
-      `<div class="pres-slide">
-        <div class="pres-h">📊 ${t('pres_top_numbers')}</div>
-        <div class="kpi-grid">
-          ${presKpi('🏦', money(d.bank.total), t('pres_bank_balance'))}
-          ${presKpi('🏠', pct(occPct), t('occupancy_rate'), occCls)}
-          ${presKpi('💰', money(d.income.total_income), t('total_income'))}
-          ${presKpi('📈', money(d.income.net), t('net_profit'), netCls)}
-          ${presKpi('📐', pct(d.ratios.net_margin), t('pres_net_margin'), marginCls)}
-          ${presKpi('💧', money(d.liquidity.cash), t('pres_cash_equiv'))}
-          ${presKpi('⚖️', d.ratios.current_ratio, t('pres_current_ratio'))}
-          ${presKpi('🧮', money(d.liquidity.working_capital), t('pres_working_capital'))}
-          ${presKpi('⏰', money(d.aging.grand_total), t('pres_overdue_ar'), d.aging.grand_total > 0 ? 'warn' : 'good')}
-        </div>
-      </div>`,
-      `<div class="pres-slide">
-        <div class="pres-h">💡 ${t('pres_insights')}</div>
-        <div class="pres-insights">${(d.insights || []).map((x) => `<div class="pres-insight">${esc(x)}</div>`).join('')}</div>
-      </div>`,
-      `<div class="pres-slide">
-        <div class="pres-h">🏠 ${t('pres_occupancy_units')}</div>
-        <div class="donut-wrap">
-          ${presDonut(occPct, occCls)}
+    const k = (ico, val, lbl, cls, o) => presKpi(ico, val, lbl, cls, o);
+    return [
+      { key: 'numbers', icon: '📊', label: t('pres_top_numbers'), link: { path: 'is', label: t('m_is') },
+        title: presFill(t('pres_t_numbers'), { net: money(d.income.net), margin: pct(d.ratios.net_margin), occ: pct(occPct) }), lead: t('pres_l_numbers'),
+        body: `<div class="kpi-grid">
+          ${k('🏦', money(d.bank.total), t('pres_bank_balance'), '', { count: d.bank.total, hint: t('pres_h_bank'), href: L('banks'), i: 0 })}
+          ${k('🏠', pct(occPct), t('occupancy_rate'), occCls, { count: occPct, dec: 1, suffix: '%', hint: t('pres_h_occ'), href: L('calendar'), i: 1 })}
+          ${k('💰', money(d.income.total_income), t('total_income'), '', { count: d.income.total_income, hint: t('pres_h_income'), href: L('is'), i: 2 })}
+          ${k('📈', money(d.income.net), t('net_profit'), netCls, { count: d.income.net, hint: t('pres_h_net'), href: L('is'), i: 3 })}
+          ${k('📐', pct(d.ratios.net_margin), t('pres_net_margin'), marginCls, { count: d.ratios.net_margin, dec: 1, suffix: '%', hint: t('pres_h_margin'), href: L('financial_ratios'), i: 4 })}
+          ${k('💧', money(d.liquidity.cash), t('pres_cash_equiv'), '', { count: d.liquidity.cash, hint: t('pres_h_cash'), href: L('liquidity'), i: 5 })}
+          ${k('⚖️', d.ratios.current_ratio, t('pres_current_ratio'), '', { count: d.ratios.current_ratio, dec: 2, hint: t('fr_current_ratio_hint'), href: L('financial_ratios'), i: 6 })}
+          ${k('🧮', money(d.liquidity.working_capital), t('pres_working_capital'), '', { count: d.liquidity.working_capital, hint: t('fr_working_capital_hint'), href: L('liquidity'), i: 7 })}
+          ${k('⏰', money(d.aging.grand_total), t('pres_overdue_ar'), d.aging.grand_total > 0 ? 'warn' : 'good', { count: d.aging.grand_total, hint: t('pres_h_overdue'), href: L('ar_aging'), i: 8 })}
+        </div>` },
+      { key: 'insights', icon: '💡', label: t('pres_insights'), title: t('pres_t_insights'), lead: t('pres_l_insights'),
+        body: `<div class="pres-insights">${(d.insights || []).map((x, n) => `<div class="pres-insight anim" style="--i:${n}"><i>${n + 1}</i><div>${esc(x)}</div></div>`).join('')}</div>` },
+      { key: 'occupancy', icon: '🏠', label: t('pres_occupancy_units'), link: { path: 'calendar', label: t('m_calendar') },
+        title: presFill(t('pres_t_occ'), { occupied: d.occupancy.occupied, total: d.occupancy.total, pct: pct(occPct) }), lead: t('pres_l_occ'),
+        body: `<div class="donut-wrap">${presDonut(occPct, occCls)}
           <div class="kpi-grid" style="flex:1">
-            ${presKpi('✅', d.occupancy.occupied, t('pres_occupied_units'))}
-            ${presKpi('⬜', d.occupancy.vacant, t('pres_vacant_units'))}
-            ${presKpi('🏢', d.occupancy.total, t('pres_total_units'))}
-          </div>
-        </div>
-      </div>`,
-      `<div class="pres-slide">
-        <div class="pres-h">📈 ${t('pres_monthly_trend')}</div>
-        ${presTrend(d.monthly_trend)}
-      </div>`,
-      `<div class="pres-slide">
-        <div class="pres-h">💵 ${t('pres_income_statement')} — ${esc(periodLbl)}</div>
-        <table class="pres-table"><thead><tr><th>${t('item')}</th><th class="num">${t('value')}</th></tr></thead><tbody>
+            ${k('✅', d.occupancy.occupied, t('pres_occupied_units'), 'good', { count: d.occupancy.occupied, dec: 0, i: 1 })}
+            ${k('⬜', d.occupancy.vacant, t('pres_vacant_units'), d.occupancy.vacant ? 'warn' : '', { count: d.occupancy.vacant, dec: 0, i: 2 })}
+            ${k('🏢', d.occupancy.total, t('pres_total_units'), '', { count: d.occupancy.total, dec: 0, i: 3 })}
+          </div></div>` },
+      { key: 'trend', icon: '📈', label: t('pres_monthly_trend'), link: { path: 'is_consolidated', label: t('m_is_consolidated') }, title: t('pres_t_trend'), lead: t('pres_l_trend'), body: presTrend(d.monthly_trend) },
+      { key: 'income', icon: '💵', label: t('pres_income_statement'), link: { path: 'is', label: t('m_is') },
+        title: presFill(t('pres_t_income'), { inc: money(d.income.total_income), exp: money(d.income.total_expense), net: money(d.income.net) }), lead: t('pres_l_income'),
+        body: `<table class="pres-table anim"><thead><tr><th>${t('item')}</th><th class="num">${t('value')}</th></tr></thead><tbody>
+          <tr class="sec"><td colspan="2">${t('income')}</td></tr>
           ${d.income.income.map((x) => `<tr><td>${esc(x.name)}</td><td class="num">${money(x.amt)}</td></tr>`).join('')}
           <tr class="tot"><td>${t('total_income')}</td><td class="num">${money(d.income.total_income)}</td></tr>
+          <tr class="sec"><td colspan="2">${t('expense')}</td></tr>
           ${d.income.expense.map((x) => `<tr><td>${esc(x.name)}</td><td class="num">${money(x.amt)}</td></tr>`).join('')}
           <tr class="tot"><td>${t('total_expense')}</td><td class="num">${money(d.income.total_expense)}</td></tr>
-          <tr class="tot"><td>${t('net_profit')}</td><td class="num">${money(d.income.net)}</td></tr>
-        </tbody></table>
-      </div>`,
-      `<div class="pres-slide">
-        <div class="pres-h">📐 ${t('pres_financial_ratios')}</div>
-        <div class="kpi-grid">
-          ${presKpi('🏦', money(d.balance_sheet.total_assets), t('pres_total_assets'))}
-          ${presKpi('📄', money(d.balance_sheet.total_liabilities), t('pres_total_liabilities'))}
-          ${presKpi('👛', money(d.balance_sheet.total_equity), t('pres_total_equity'))}
-          ${presKpi('🔁', pct(d.ratios.roa), t('pres_roa'))}
-          ${presKpi('💹', pct(d.ratios.roe), t('pres_roe'))}
-          ${presKpi('💧', d.ratios.quick_ratio, t('pres_quick_ratio'))}
-        </div>
-      </div>`,
-      hasBudget ? `<div class="pres-slide">
-        <div class="pres-h">🎯 ${t('pres_budget_vs_actual')} — ${esc(periodLbl)}</div>
-        ${presCmp(t('income'), d.budget.income_totals.budget.total, d.budget.income_totals.actual.total, false)}
-        ${presCmp(t('expense'), d.budget.expense_totals.budget.total, d.budget.expense_totals.actual.total, true)}
-        ${presCmp(t('net_profit'), d.budget.net_budget.total, d.budget.net_actual.total, false)}
-      </div>` : null,
-      `<div class="pres-slide">
-        <div class="pres-h">🧭 ${t('pres_swot')}</div>
-        <div class="swot-grid">
+          <tr class="net"><td>${t('net_profit')}</td><td class="num">${money(d.income.net)}</td></tr>
+        </tbody></table>` },
+      { key: 'ratios', icon: '📐', label: t('pres_financial_ratios'), link: { path: 'financial_ratios', label: t('m_financial_ratios') },
+        title: presFill(t('pres_t_ratios'), { cr: d.ratios.current_ratio, assets: money(d.balance_sheet.total_assets) }), lead: t('pres_l_ratios'),
+        body: `<div class="kpi-grid">
+          ${k('🏦', money(d.balance_sheet.total_assets), t('pres_total_assets'), '', { count: d.balance_sheet.total_assets, hint: t('pres_h_assets'), href: L('bs'), i: 0 })}
+          ${k('📄', money(d.balance_sheet.total_liabilities), t('pres_total_liabilities'), '', { count: d.balance_sheet.total_liabilities, hint: t('pres_h_liab'), href: L('bs'), i: 1 })}
+          ${k('👛', money(d.balance_sheet.total_equity), t('pres_total_equity'), '', { count: d.balance_sheet.total_equity, hint: t('pres_h_equity'), href: L('bs'), i: 2 })}
+          ${k('🔁', pct(d.ratios.roa), t('pres_roa'), '', { count: d.ratios.roa, dec: 1, suffix: '%', hint: t('fr_roa_hint'), href: L('financial_ratios'), i: 3 })}
+          ${k('💹', pct(d.ratios.roe), t('pres_roe'), '', { count: d.ratios.roe, dec: 1, suffix: '%', hint: t('fr_roe_hint'), href: L('financial_ratios'), i: 4 })}
+          ${k('💧', d.ratios.quick_ratio, t('pres_quick_ratio'), '', { count: d.ratios.quick_ratio, dec: 2, hint: t('fr_quick_ratio_hint'), href: L('financial_ratios'), i: 5 })}
+        </div>` },
+      hasBudget ? { key: 'budget', icon: '🎯', label: t('pres_budget_vs_actual'), link: { path: 'budget_report', label: t('m_budget_report') }, title: t('pres_t_budget'), lead: t('pres_l_budget'),
+        body: presCmp(t('income'), d.budget.income_totals.budget.total, d.budget.income_totals.actual.total, false, 0) +
+          presCmp(t('expense'), d.budget.expense_totals.budget.total, d.budget.expense_totals.actual.total, true, 1) +
+          presCmp(t('net_profit'), d.budget.net_budget.total, d.budget.net_actual.total, false, 2) } : null,
+      { key: 'swot', icon: '🧭', label: t('pres_swot'), title: t('pres_t_swot'), lead: t('pres_l_swot'),
+        body: `<div class="swot-grid">
           ${swotBox('s', '💪', t('pres_strengths'), 'strengths', 'strengths')}
           ${swotBox('w', '⚠️', t('pres_weaknesses'), 'weaknesses', 'weaknesses')}
           ${swotBox('o', '🚀', t('pres_opportunities'), 'opportunities', 'opportunities')}
           ${swotBox('t', '🌩️', t('pres_threats'), 'threats', 'threats')}
-        </div>
-      </div>`,
-      `<div class="pres-slide">
-        <div class="pres-h">🗺️ ${t('pres_dev_plan')}</div>
-        ${opts.readOnly
-          ? `<div class="plan-box"><div class="ro-text">${esc(swot.development_plan || '') || `<span style="opacity:.5">${t('pres_dev_plan_ph')}</span>`}</div></div>`
-          : `<div class="plan-box"><textarea data-swot="development_plan" placeholder="${t('pres_dev_plan_ph')}">${esc(swot.development_plan || '')}</textarea></div>`}
-      </div>`,
+        </div>` },
+      { key: 'plan', icon: '🗺️', label: t('pres_dev_plan'), title: t('pres_t_plan'), lead: t('pres_l_plan'),
+        body: opts.readOnly
+          ? `<div class="plan-box anim"><div class="ro-text">${esc(swot.development_plan || '') || `<span style="opacity:.5">${t('pres_dev_plan_ph')}</span>`}</div></div>`
+          : `<div class="plan-box anim"><textarea data-swot="development_plan" placeholder="${t('pres_dev_plan_ph')}">${esc(swot.development_plan || '')}</textarea></div>` },
     ].filter(Boolean);
-    if (opts.feedbackToken) slides.push(presFeedbackSlide());
-    return slides;
   }
   function presFeedbackSlide() {
-    return `<div class="pres-slide">
-      <div class="pres-h">⭐ ${t('pres_feedback_title')}</div>
+    return `<div class="pres-eyebrow">⭐ ${t('pres_feedback_title')}</div><h2 class="pres-title">${t('pres_feedback_title')}</h2>
       <div id="fbArea"><form class="pres-fb-form" id="fbForm">
-        <p class="muted" style="text-align:center;margin-top:0">${t('pres_feedback_sub')}</p>
+        <p class="pres-lead" style="text-align:center;margin:0 auto 6px">${t('pres_feedback_sub')}</p>
         <label>${t('pres_feedback_overall')}</label>
         <div class="pres-fb-stars" data-star="rating_overall">${[1, 2, 3, 4, 5].map((i) => `<span data-v="${i}">★</span>`).join('')}</div>
         <label>${t('pres_feedback_clarity')}</label>
@@ -1383,8 +1570,7 @@ Object.assign(Pages, (() => {
         <label>${t('pres_feedback_notes')}</label>
         <textarea id="fbNotes"></textarea>
         <div style="text-align:center;margin-top:18px"><button type="submit" class="btn primary">${t('pres_feedback_submit')}</button></div>
-      </form></div>
-    </div>`;
+      </form></div>`;
   }
   function wirePresFeedbackForm(root, submitFn) {
     const form = root.querySelector('#fbForm'); if (!form) return;
@@ -1407,13 +1593,86 @@ Object.assign(Pages, (() => {
       } catch (err) { toast(err.message, 'err'); }
     };
   }
+  // Deck behaviour. Self-contained on purpose: the exported HTML file embeds
+  // this function's source (toString) so it works with no app around it.
+  function wirePresDeck(root) {
+    const slides = [...root.querySelectorAll('.pres-slide')];
+    if (!slides.length) return;
+    const dots = root.querySelector('.pres-dots'), count = root.querySelector('.pres-count'), prog = root.querySelector('.pres-progress');
+    const rtl = (root.getAttribute('dir') || document.documentElement.dir) === 'rtl';
+    let cur = -1, timers = [];
+    root.classList.add('js');
+    if (dots) dots.innerHTML = slides.map((s, i) => `<i data-go="${i}" title="${(s.dataset.title || '').replace(/"/g, '')}"></i>`).join('');
+    const fmt = (v, dec) => Number(v).toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+    function countUp(slide) {
+      timers.forEach(clearInterval); timers = [];
+      slide.querySelectorAll('[data-count]').forEach((el) => {
+        const end = Number(el.dataset.count), dec = Number(el.dataset.dec || 0), suf = el.dataset.suffix || '';
+        if (!isFinite(end)) return;
+        const t0 = performance.now(), dur = 900;
+        const id = setInterval(() => {
+          const p = Math.min(1, (performance.now() - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+          el.textContent = fmt(end * e, dec) + suf;
+          if (p >= 1) clearInterval(id);
+        }, 30);
+        timers.push(id);
+      });
+    }
+    function go(i) {
+      i = Math.max(0, Math.min(slides.length - 1, i));
+      if (i === cur) return;
+      slides.forEach((s, n) => s.classList.toggle('active', n === i));
+      cur = i;
+      if (dots) [...dots.children].forEach((d, n) => d.classList.toggle('on', n === i));
+      if (count) count.textContent = (i + 1) + ' / ' + slides.length;
+      if (prog) prog.style.width = ((i + 1) / slides.length * 100) + '%';
+      countUp(slides[i]);
+      root.dispatchEvent(new CustomEvent('presgo', { detail: i }));
+    }
+    root.addEventListener('click', (e) => {
+      const g = e.target.closest('[data-go]'); if (g && root.contains(g)) { e.preventDefault(); go(Number(g.dataset.go)); return; }
+      const a = e.target.closest('[data-act]'); if (!a) return;
+      if (a.dataset.act === 'next') go(cur + 1);
+      else if (a.dataset.act === 'prev') go(cur - 1);
+      else if (a.dataset.act === 'fs') { if (document.fullscreenElement) document.exitFullscreen(); else if (root.requestFullscreen) root.requestFullscreen(); }
+    });
+    document.addEventListener('keydown', (e) => {
+      if (!document.body.contains(root) || /INPUT|TEXTAREA|SELECT/.test((e.target.tagName || ''))) return;
+      if (e.key === 'ArrowLeft') { e.preventDefault(); go(cur + (rtl ? 1 : -1)); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); go(cur + (rtl ? -1 : 1)); }
+      else if (e.key === 'Home') go(0);
+      else if (e.key === 'End') go(slides.length - 1);
+    });
+    go(0);
+  }
   function presBuildSlides(d, notesLive, opts) {
     opts = opts || {};
     const rootId = opts.rootId || 'presDeck';
-    const slides = presSlideList(d, notesLive, opts);
+    const data = presSlideData(d, notesLive, opts);
     const periodLbl = d.from === `${d.year}-01-01` && d.to === `${d.year}-12-31` ? `${d.year}` : `${dateStr(d.from)} — ${dateStr(d.to)}`;
-    return `<div class="pres-wrap" id="${esc(rootId)}">
-      <div class="pres-slides">${slides.join('')}</div>
+    // slide 0 = cover, 1 = contents, then the content slides, then (public link) feedback
+    const toc = data.map((s, n) => `<a class="toc-item anim" style="--i:${n}" href="#" data-go="${n + 2}"><div class="n">${n + 1}</div><div><b>${s.icon} ${esc(s.label)}</b><span>${esc(s.lead)}</span></div></a>`).join('');
+    const body = data.map((s, n) => `<section class="pres-slide" data-title="${esc(s.label)}">
+      <div class="pres-eyebrow anim"><b>${n + 1}</b> ${s.icon} ${esc(s.label)}</div>
+      <h2 class="pres-title anim" style="--i:1">${esc(s.title)}</h2>
+      <p class="pres-lead anim" style="--i:2">${esc(s.lead)}</p>
+      ${s.body}
+      ${opts.links && s.link ? `<div class="pres-src">${t('pres_source')}: <a href="#/${s.link.path}">${esc(s.link.label)} ↗</a></div>` : ''}
+    </section>`).join('');
+    const fb = opts.feedbackToken ? `<section class="pres-slide" data-title="${esc(t('pres_feedback_title'))}">${presFeedbackSlide()}</section>` : '';
+    return `<div class="pres-wrap" id="${esc(rootId)}" dir="${I18N.dir()}" tabindex="0">
+      <div class="pres-bar"><i class="pres-progress"></i></div>
+      <div class="pres-head"><div class="pres-brand">🏢 United Tower <span>— ${esc(d.building)}</span></div>
+        <div class="pres-ctl"><button data-act="prev" title="${esc(t('pres_prev'))}">${I18N.dir() === 'rtl' ? '›' : '‹'}</button><span class="pres-count"></span><button data-act="next" title="${esc(t('pres_next'))}">${I18N.dir() === 'rtl' ? '‹' : '›'}</button><button data-act="fs" title="${esc(t('pres_fullscreen'))}">⛶</button></div></div>
+      <div class="pres-stage">
+        <section class="pres-slide pres-cover" data-title="${esc(d.building)}"><span class="orb o1"></span><span class="orb o2"></span><span class="orb o3"></span>
+          <div class="in"><div class="mark anim">🏢</div><h1 class="anim" style="--i:1">${esc(d.building)}</h1><h2 class="anim" style="--i:2">${t('pres_period')} — ${esc(periodLbl)}</h2>
+            <div class="badge anim" style="--i:3">${t('pres_generated_on')} ${dateStr(today())}</div><button class="go anim" style="--i:4" data-act="next">${t('pres_start')} ${I18N.dir() === 'rtl' ? '‹' : '›'}</button></div></section>
+        <section class="pres-slide" data-title="${esc(t('pres_toc'))}"><div class="pres-eyebrow anim">📚 ${t('pres_toc')}</div><h2 class="pres-title anim" style="--i:1">${t('pres_toc')}</h2>
+          <p class="pres-lead anim" style="--i:2">${t('pres_l_toc')}</p><div class="toc-grid">${toc}</div></section>
+        ${body}${fb}
+      </div>
+      <div class="pres-dots"></div>
       <div class="pres-foot">United Tower — ${esc(d.building)} — ${esc(periodLbl)}</div>
     </div><style>${PRES_CSS}</style>`;
   }
@@ -1431,7 +1690,8 @@ Object.assign(Pages, (() => {
     const bid = c._pbld || '';
     c.querySelector('#pbld').value = bid;
     const d = await API.get(`/presentation?from=${from}&to=${to}${bid ? '&building_id=' + bid : ''}`);
-    c.querySelector('#rbody').innerHTML = presBuildSlides(d) + '<div id="fbSummary" style="margin-top:14px"></div>';
+    c.querySelector('#rbody').innerHTML = presBuildSlides(d, null, { links: true }) + '<div id="fbSummary" style="margin-top:14px"></div>';
+    wirePresDeck(c.querySelector('.pres-wrap'));
     API.get(`/presentation/feedback?from=${from}&to=${to}${bid ? '&building_id=' + bid : ''}`).then((fb) => {
       const box = c.querySelector('#fbSummary'); if (!box) return;
       if (!fb.count) { box.innerHTML = `<div class="card"><div class="bd muted">${t('pres_feedback_view')}: ${t('pres_feedback_none')}</div></div>`; return; }
@@ -1465,8 +1725,8 @@ Object.assign(Pages, (() => {
     c.querySelector('#presExport').onclick = () => {
       const deckHtml = presBuildSlides(d, liveNotes(), { readOnly: true, rootId: 'presDeckExport' });
       const full = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>United Tower — ${esc(d.building)} ${from}_${to}</title>
-        <style>body{margin:0;background:#0b0f14;font-family:'Segoe UI',Tahoma,Arial,sans-serif}</style></head>
-        <body>${deckHtml}</body></html>`;
+        <style>body{margin:0;padding:18px;background:#e6eef9;font-family:'Segoe UI',Tahoma,Arial,sans-serif}.pres-wrap{max-width:1000px;margin:0 auto}</style></head>
+        <body>${deckHtml}<script>(${wirePresDeck.toString()})(document.querySelector('.pres-wrap'));<\/script></body></html>`;
       const blob = new Blob([full], { type: 'text/html;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = `United-Tower-Presentation-${d.building.replace(/\s+/g, '_')}-${from}_${to}.html`;
@@ -1487,7 +1747,8 @@ Object.assign(Pages, (() => {
       container.innerHTML = `<div class="login-wrap"><div class="login-card" style="text-align:center">⚠️ الرابط غير صحيح أو منتهي</div></div>`;
       return;
     }
-    container.innerHTML = `<div style="max-width:900px;margin:24px auto;padding:0 16px">${presBuildSlides(d, null, { readOnly: true, rootId: 'presDeckPublic', feedbackToken: token })}</div>`;
+    container.innerHTML = `<div style="max-width:960px;margin:24px auto;padding:0 16px">${presBuildSlides(d, null, { readOnly: true, rootId: 'presDeckPublic', feedbackToken: token })}</div>`;
+    wirePresDeck(container.querySelector('.pres-wrap'));
     wirePresFeedbackForm(container, (payload) => fetch(`/api/public/presentation/${encodeURIComponent(token)}/feedback`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
     }).then((res) => { if (!res.ok) throw new Error('failed'); }));
@@ -2004,7 +2265,7 @@ Object.assign(Pages, (() => {
     ['المالية', [['coa', 'شجرة الحسابات'], ['journals', 'القيود اليومية'], ['gjournals', 'القيود المجمعة'], ['legacy', 'قيود النظام القديم'], ['tb', 'ميزان المراجعة'], ['is', 'قائمة الدخل'], ['is_consolidated', 'قائمة الدخل المجمعة'], ['gl', 'دفتر الأستاذ'], ['bs', 'المركز المالي'], ['liquidity', 'تقرير السيولة'], ['cashflow', 'التدفق النقدي'], ['ppl', 'أرباح العقارات'], ['roi', 'العائد ROI'], ['comparison', 'مقارنة أداء البنايات']]],
     ['الخزينة والبنوك', [['banks', 'الحسابات البنكية'], ['cheques', 'الشيكات'], ['cheques_dash', 'متابعة الشيكات'], ['reconciliation', 'التسوية البنكية']]],
     ['الأصول', [['assets', 'الأصول الثابتة'], ['depreciation', 'جدول الإهلاك']]],
-    ['الضرائب', [['vat', 'تقرير ض.ق.م'], ['vat_statement', 'كشف الضريبة'], ['vatreturn', 'إقرار ض.ق.م (عُمان)']]],
+    ['الضرائب', [['vat', 'تقرير ض.ق.م'], ['vat_statement', 'كشف الضريبة'], ['vatreturn', 'إقرار ض.ق.م (عُمان)'], ['tax_dues', 'ذمم الضريبة البلدية'], ['tax_aging', 'الضريبة غير المسددة']]],
     ['الموارد البشرية', [['employees', 'الموظفون والرواتب']]],
     ['الإعدادات', [['company', 'بيانات البناية'], ['categories', 'التصنيفات'], ['paymethods', 'طرق الدفع'], ['users', 'المستخدمون والصلاحيات']]],
   ];
@@ -2190,5 +2451,5 @@ Object.assign(Pages, (() => {
 
   return { customers, vendors, buildings, units, categories, paymethods, banks, employees, coa,
     vendorBills, vendorPayments, trialBalance, incomeStatement, incomeStatementConsolidated, generalLedger, balanceSheet, arAging, apAging,
-    statement, vendorStatement, advances, balancePersistenceAr, balancePersistenceAp, auditCenter, propertyPL, roi, cashflow, comparison, vat, vatStatement, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, security, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, moneyPosition, vatReturn, activityLog, companyDocuments, budgetEntry, budgetReport, financialRatiosPage, presentation };
+    statement, vendorStatement, advances, balancePersistenceAr, balancePersistenceAp, auditCenter, propertyPL, roi, cashflow, comparison, vat, vatStatement, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, security, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, moneyPosition, vatReturn, activityLog, companyDocuments, budgetEntry, budgetReport, financialRatiosPage, presentation, taxAging, taxDues };
 })());

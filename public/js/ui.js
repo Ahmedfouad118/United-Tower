@@ -178,6 +178,7 @@ const UI = (() => {
 
   // ---- Clean print (opens new window with only the content) ---------------
   function printReport(title, contentHTML) {
+    if (I18N.trHTML) { title = I18N.tr(title); contentHTML = I18N.trHTML(contentHTML); }
     const w = window.open('', '_blank', 'width=900,height=700');
     const dir = I18N.dir();
     const co = (window.UT && UT.company) || { name: t('app_name'), sub: 'GHALA 299/1', logo: '' };
@@ -224,6 +225,7 @@ const UI = (() => {
   // Builds an Excel-readable HTML workbook from the given HTML (tables), so every
   // screen can be exported next to its print button without a server endpoint.
   function exportTableToExcel(title, containerHTML) {
+    if (I18N.trHTML) { title = I18N.tr(title); containerHTML = I18N.trHTML(containerHTML); }
     const dir = I18N.dir();
     const doc = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
       <head><meta charset="utf-8"><style>table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:4px;mso-number-format:"\\@"}th{background:#f0f0f0;font-weight:bold}</style></head>

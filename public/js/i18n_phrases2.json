@@ -1,0 +1,2187 @@
+[
+ {
+  "ar": "العائد على الأصول",
+  "en": "Return on assets",
+  "hi": "परिसंपत्तियों पर प्रतिफल"
+ },
+ {
+  "ar": "العائد على حقوق الملكية",
+  "en": "Return on equity",
+  "hi": "इक्विटी पर प्रतिफल"
+ },
+ {
+  "ar": "أصول متداولة",
+  "en": "Current assets",
+  "hi": "चालू परिसंपत्तियाँ"
+ },
+ {
+  "ar": "التزامات",
+  "en": "Liabilities",
+  "hi": "देनदारियाँ"
+ },
+ {
+  "ar": "النقدية",
+  "en": "Cash",
+  "hi": "नकद"
+ },
+ {
+  "ar": "الالتزامات",
+  "en": "Liabilities",
+  "hi": "देनदारियाँ"
+ },
+ {
+  "ar": "عقود قرب انتهاؤها",
+  "en": "Contracts nearing expiry",
+  "hi": "समाप्ति के करीब अनुबंध"
+ },
+ {
+  "ar": "خلال",
+  "en": "within",
+  "hi": "के भीतर"
+ },
+ {
+  "ar": "باقي",
+  "en": "remaining",
+  "hi": "शेष"
+ },
+ {
+  "ar": "سيتم حذف العقد وفواتيره غير المدفوعة",
+  "en": "The contract and its unpaid invoices will be deleted",
+  "hi": "अनुबंध और उसके अवैतनिक चालान हटा दिए जाएँगे"
+ },
+ {
+  "ar": "صورة العقد",
+  "en": "Contract image",
+  "hi": "अनुबंध की छवि"
+ },
+ {
+  "ar": "مبلغ التسوية",
+  "en": "Settlement amount",
+  "hi": "निपटान राशि"
+ },
+ {
+  "ar": "اختياري",
+  "en": "optional",
+  "hi": "वैकल्पिक"
+ },
+ {
+  "ar": "طباعة المحدد",
+  "en": "Print selected",
+  "hi": "चयनित प्रिंट करें"
+ },
+ {
+  "ar": "إيميل المحدد",
+  "en": "Email selected",
+  "hi": "चयनित ईमेल करें"
+ },
+ {
+  "ar": "اتحصّل منها",
+  "en": "collected from it",
+  "hi": "जिसमें से वसूल हुआ"
+ },
+ {
+  "ar": "فعلاً",
+  "en": "actually",
+  "hi": "वास्तव में"
+ },
+ {
+  "ar": "الإجمالي الجديد",
+  "en": "New total",
+  "hi": "नया कुल"
+ },
+ {
+  "ar": "إيجار",
+  "en": "Rent",
+  "hi": "किराया"
+ },
+ {
+  "ar": "ض",
+  "en": "ض",
+  "hi": "ض"
+ },
+ {
+  "ar": "ق",
+  "en": "ق",
+  "hi": "ق"
+ },
+ {
+  "ar": "م",
+  "en": "م",
+  "hi": "م"
+ },
+ {
+  "ar": "لازم يكون",
+  "en": "must be",
+  "hi": "होना चाहिए"
+ },
+ {
+  "ar": "على الأقل",
+  "en": "at least",
+  "hi": "कम से कम"
+ },
+ {
+  "ar": "مسودة",
+  "en": "Draft",
+  "hi": "ड्राफ्ट"
+ },
+ {
+  "ar": "افتح الملف ليفتح أوتلوك",
+  "en": "Open the file to open Outlook",
+  "hi": "Outlook खोलने के लिए फ़ाइल खोलें"
+ },
+ {
+  "ar": "بدون بريد",
+  "en": "No email",
+  "hi": "ईमेल नहीं है"
+ },
+ {
+  "ar": "المستلم",
+  "en": "Recipient",
+  "hi": "प्राप्तकर्ता"
+ },
+ {
+  "ar": "المحاسب",
+  "en": "Accountant",
+  "hi": "लेखाकार"
+ },
+ {
+  "ar": "المدير",
+  "en": "Manager",
+  "hi": "प्रबंधक"
+ },
+ {
+  "ar": "دمج الوحدات المكررة",
+  "en": "Merge duplicate units",
+  "hi": "डुप्लिकेट यूनिट मर्ज करें"
+ },
+ {
+  "ar": "سيتم دمج الوحدات اللي ليها نفس الرقم",
+  "en": "Units that have the same number will be merged",
+  "hi": "समान संख्या वाली यूनिट मर्ज की जाएँगी"
+ },
+ {
+  "ar": "مع اختلاف المسافات",
+  "en": "with differences in spacing",
+  "hi": "रिक्त स्थान के अंतर के साथ"
+ },
+ {
+  "ar": "الحروف",
+  "en": "letters",
+  "hi": "अक्षर"
+ },
+ {
+  "ar": "في وحدة واحدة، مع نقل كل العقود والفواتير والقيود إليها",
+  "en": "into a single unit, moving all contracts, invoices and entries to it",
+  "hi": "एक ही यूनिट में, सभी अनुबंध, चालान और प्रविष्टियाँ उसमें स्थानांतरित करके"
+ },
+ {
+  "ar": "لن تُفقد أي حركة",
+  "en": "No transaction will be lost",
+  "hi": "कोई भी लेन-देन नहीं खोएगा"
+ },
+ {
+  "ar": "متابعة؟",
+  "en": "Continue?",
+  "hi": "जारी रखें?"
+ },
+ {
+  "ar": "مجموعة",
+  "en": "group",
+  "hi": "समूह"
+ },
+ {
+  "ar": "إزالة",
+  "en": "Remove",
+  "hi": "हटाएँ"
+ },
+ {
+  "ar": "صورة",
+  "en": "Image",
+  "hi": "छवि"
+ },
+ {
+  "ar": "تعذّر فتح المرفق",
+  "en": "Unable to open the attachment",
+  "hi": "अटैचमेंट खोलने में असमर्थ"
+ },
+ {
+  "ar": "تعديل فاتورة مورد",
+  "en": "Edit supplier invoice",
+  "hi": "आपूर्तिकर्ता चालान संपादित करें"
+ },
+ {
+  "ar": "تُحسب تلقائياً",
+  "en": "Calculated automatically",
+  "hi": "स्वचालित रूप से गणना की जाती है"
+ },
+ {
+  "ar": "صورة الفاتورة",
+  "en": "Invoice image",
+  "hi": "चालान की छवि"
+ },
+ {
+  "ar": "اضغط على",
+  "en": "Click on",
+  "hi": "पर क्लिक करें"
+ },
+ {
+  "ar": "لعرض القيد الكامل",
+  "en": "to view the full entry",
+  "hi": "पूरी प्रविष्टि देखने के लिए"
+ },
+ {
+  "ar": "جه منين",
+  "en": "Where it came from",
+  "hi": "यह कहाँ से आया"
+ },
+ {
+  "ar": "ابحث بالكود أو الاسم",
+  "en": "Search by code or name",
+  "hi": "कोड या नाम से खोजें"
+ },
+ {
+  "ar": "جيد",
+  "en": "Good",
+  "hi": "अच्छा"
+ },
+ {
+  "ar": "نقدية",
+  "en": "Cash",
+  "hi": "नकद"
+ },
+ {
+  "ar": "ذمم مدينة",
+  "en": "Accounts receivable",
+  "hi": "प्राप्य खाते"
+ },
+ {
+  "ar": "تتحصّل خلال سنة",
+  "en": "Collected within a year",
+  "hi": "एक वर्ष के भीतर वसूल होगा"
+ },
+ {
+  "ar": "ذمم دائنة",
+  "en": "Accounts payable",
+  "hi": "देय खाते"
+ },
+ {
+  "ar": "مقدمات",
+  "en": "Advances",
+  "hi": "अग्रिम"
+ },
+ {
+  "ar": "تُدفع خلال سنة",
+  "en": "Payable within a year",
+  "hi": "एक वर्ष के भीतर देय"
+ },
+ {
+  "ar": "عندك فائض سيولة يغطي التزاماتك القصيرة",
+  "en": "You have a liquidity surplus that covers your short-term liabilities",
+  "hi": "आपके पास तरलता अधिशेष है जो आपकी अल्पकालिक देनदारियों को कवर करता है"
+ },
+ {
+  "ar": "التزاماتك القصيرة أكبر من أصولك المتداولة",
+  "en": "Your short-term liabilities exceed your current assets",
+  "hi": "आपकी अल्पकालिक देनदारियाँ आपकी चालू परिसंपत्तियों से अधिक हैं"
+ },
+ {
+  "ar": "صافي الدخل",
+  "en": "Net income",
+  "hi": "शुद्ध आय"
+ },
+ {
+  "ar": "اختر شقة",
+  "en": "Select an apartment",
+  "hi": "अपार्टमेंट चुनें"
+ },
+ {
+  "ar": "تظهر أسماء من سكنوها",
+  "en": "Names of past occupants appear",
+  "hi": "पूर्व निवासियों के नाम दिखाई देते हैं"
+ },
+ {
+  "ar": "و",
+  "en": "and",
+  "hi": "और"
+ },
+ {
+  "ar": "أو عميل ثم",
+  "en": "or a customer, then",
+  "hi": "या ग्राहक, फिर"
+ },
+ {
+  "ar": "أضف حساب بنكي أولاً من",
+  "en": "Add a bank account first from",
+  "hi": "पहले बैंक खाता जोड़ें, यहाँ से"
+ },
+ {
+  "ar": "رفع كشف البنك",
+  "en": "Upload bank statement",
+  "hi": "बैंक स्टेटमेंट अपलोड करें"
+ },
+ {
+  "ar": "مطابقة تلقائية",
+  "en": "Auto-match",
+  "hi": "स्वचालित मिलान"
+ },
+ {
+  "ar": "رصيد الدفاتر",
+  "en": "Book balance",
+  "hi": "बही शेष"
+ },
+ {
+  "ar": "النظام",
+  "en": "System",
+  "hi": "सिस्टम"
+ },
+ {
+  "ar": "يحتاج تسوية",
+  "en": "Needs reconciliation",
+  "hi": "समाधान आवश्यक"
+ },
+ {
+  "ar": "الدفاتر",
+  "en": "Books",
+  "hi": "बही"
+ },
+ {
+  "ar": "المرفوع",
+  "en": "Uploaded",
+  "hi": "अपलोड किया गया"
+ },
+ {
+  "ar": "ارفع كشف حساب البنك",
+  "en": "Upload the bank account statement",
+  "hi": "बैंक खाते का विवरण अपलोड करें"
+ },
+ {
+  "ar": "للبدء",
+  "en": "to start",
+  "hi": "शुरू करने के लिए"
+ },
+ {
+  "ar": "حركة",
+  "en": "Transaction",
+  "hi": "लेन-देन"
+ },
+ {
+  "ar": "رصيد البنك",
+  "en": "Bank balance",
+  "hi": "बैंक शेष"
+ },
+ {
+  "ar": "الوقت",
+  "en": "Time",
+  "hi": "समय"
+ },
+ {
+  "ar": "الإقرار الضريبي",
+  "en": "Tax return",
+  "hi": "कर रिटर्न"
+ },
+ {
+  "ar": "ضريبة القيمة المضافة",
+  "en": "Value added tax",
+  "hi": "मूल्य वर्धित कर"
+ },
+ {
+  "ar": "سلطنة عُمان",
+  "en": "Sultanate of Oman",
+  "hi": "ओमान सल्तनत"
+ },
+ {
+  "ar": "القطاع",
+  "en": "Sector",
+  "hi": "क्षेत्र"
+ },
+ {
+  "ar": "عقارات",
+  "en": "Real estate",
+  "hi": "रियल एस्टेट"
+ },
+ {
+  "ar": "بالريال العُماني",
+  "en": "In Omani rial",
+  "hi": "ओमानी रियाल में"
+ },
+ {
+  "ar": "القسم أ",
+  "en": "Section A",
+  "hi": "खंड अ"
+ },
+ {
+  "ar": "المبيعات والإيرادات",
+  "en": "Sales and revenue",
+  "hi": "बिक्री और राजस्व"
+ },
+ {
+  "ar": "ضريبة المخرجات",
+  "en": "Output tax",
+  "hi": "आउटपुट कर"
+ },
+ {
+  "ar": "أ",
+  "en": "A",
+  "hi": "अ"
+ },
+ {
+  "ar": "التوريدات الخاضعة بالمعدل العادي",
+  "en": "Supplies subject to the standard rate",
+  "hi": "मानक दर के अधीन आपूर्तियाँ"
+ },
+ {
+  "ar": "ب",
+  "en": "B",
+  "hi": "ब"
+ },
+ {
+  "ar": "التوريدات الخاضعة بنسبة الصفر",
+  "en": "Supplies subject to the zero rate",
+  "hi": "शून्य दर के अधीन आपूर्तियाँ"
+ },
+ {
+  "ar": "ج",
+  "en": "C",
+  "hi": "स"
+ },
+ {
+  "ar": "التوريدات المعفاة",
+  "en": "Exempt supplies",
+  "hi": "छूट प्राप्त आपूर्तियाँ"
+ },
+ {
+  "ar": "التوريدات الخاضعة للاحتساب العكسي",
+  "en": "Supplies subject to reverse charge",
+  "hi": "रिवर्स चार्ज के अधीन आपूर्तियाँ"
+ },
+ {
+  "ar": "القسم ب",
+  "en": "Section B",
+  "hi": "खंड ब"
+ },
+ {
+  "ar": "المشتريات والمصروفات",
+  "en": "Purchases and expenses",
+  "hi": "खरीद और व्यय"
+ },
+ {
+  "ar": "ضريبة المدخلات",
+  "en": "Input tax",
+  "hi": "इनपुट कर"
+ },
+ {
+  "ar": "مدخلات قابلة للخصم على المشتريات",
+  "en": "Deductible input tax on purchases",
+  "hi": "खरीद पर कटौती योग्य इनपुट कर"
+ },
+ {
+  "ar": "مدخلات على شراء أصول ثابتة",
+  "en": "Input tax on purchase of fixed assets",
+  "hi": "स्थायी परिसंपत्तियों की खरीद पर इनपुट कर"
+ },
+ {
+  "ar": "اضغط على إجمالي الخانة",
+  "en": "Click on the box total",
+  "hi": "बॉक्स के कुल पर क्लिक करें"
+ },
+ {
+  "ar": "أو",
+  "en": "or",
+  "hi": "या"
+ },
+ {
+  "ar": "تشوف القيود الفعلية اللي كوّنتها",
+  "en": "to see the actual entries that formed it",
+  "hi": "इसे बनाने वाली वास्तविक प्रविष्टियाँ देखने के लिए"
+ },
+ {
+  "ar": "فيه فرق",
+  "en": "There is a difference",
+  "hi": "अंतर है"
+ },
+ {
+  "ar": "بين إجمالي ضريبة المدخلات في دفتر الأستاذ وإجمالي فواتير الموردين المُدخلة",
+  "en": "between total input tax in the general ledger and total supplier invoices entered",
+  "hi": "जनरल लेजर में कुल इनपुट कर और दर्ज किए गए कुल आपूर्तिकर्ता चालानों के बीच"
+ },
+ {
+  "ar": "يبقى فيه مبلغ ضريبة مدخلات اترحّل بقيد يدوي مش من خلال شاشة فواتير الموردين",
+  "en": "which means there is an input tax amount posted by a manual entry, not through the supplier invoices screen",
+  "hi": "यानी इनपुट कर की एक राशि मैन्युअल प्रविष्टि से दर्ज हुई है, आपूर्तिकर्ता चालान स्क्रीन से नहीं"
+ },
+ {
+  "ar": "راجع",
+  "en": "Review",
+  "hi": "समीक्षा करें"
+ },
+ {
+  "ar": "لمعرفة الشهر",
+  "en": "to identify the month",
+  "hi": "महीना पहचानने के लिए"
+ },
+ {
+  "ar": "القسم ج",
+  "en": "Section C",
+  "hi": "खंड स"
+ },
+ {
+  "ar": "صافي الضريبة",
+  "en": "Net tax",
+  "hi": "शुद्ध कर"
+ },
+ {
+  "ar": "خانة",
+  "en": "box",
+  "hi": "बॉक्स"
+ },
+ {
+  "ar": "ناقص",
+  "en": "minus",
+  "hi": "घटाएँ"
+ },
+ {
+  "ar": "القابلة للاسترداد",
+  "en": "Recoverable",
+  "hi": "वसूली योग्य"
+ },
+ {
+  "ar": "المستحقة السداد",
+  "en": "Payable",
+  "hi": "देय"
+ },
+ {
+  "ar": "الأرقام على أساس الاستحقاق",
+  "en": "Figures are on an accrual basis",
+  "hi": "आँकड़े उपार्जन आधार पर हैं"
+ },
+ {
+  "ar": "تاريخ الفاتورة",
+  "en": "Invoice date",
+  "hi": "चालान की तारीख"
+ },
+ {
+  "ar": "المخرجات من فواتير الإيجار، والمدخلات من فواتير الموردين",
+  "en": "Outputs from rent invoices, and inputs from supplier invoices",
+  "hi": "आउटपुट किराया चालानों से, और इनपुट आपूर्तिकर्ता चालानों से"
+ },
+ {
+  "ar": "الفترة الربعية محددة تلقائيًا وتقدر تغيّرها",
+  "en": "The quarterly period is set automatically and you can change it",
+  "hi": "तिमाही अवधि स्वचालित रूप से सेट है और आप इसे बदल सकते हैं"
+ },
+ {
+  "ar": "قائمة المركز المالي",
+  "en": "Statement of financial position",
+  "hi": "वित्तीय स्थिति का विवरण"
+ },
+ {
+  "ar": "كما في",
+  "en": "As at",
+  "hi": "तक"
+ },
+ {
+  "ar": "إجمالي الأصول غير المتداولة",
+  "en": "Total non-current assets",
+  "hi": "कुल गैर-चालू परिसंपत्तियाँ"
+ },
+ {
+  "ar": "إجمالي الأصول المتداولة",
+  "en": "Total current assets",
+  "hi": "कुल चालू परिसंपत्तियाँ"
+ },
+ {
+  "ar": "إجمالي حقوق الملكية",
+  "en": "Total equity",
+  "hi": "कुल इक्विटी"
+ },
+ {
+  "ar": "إجمالي الالتزامات غير المتداولة",
+  "en": "Total non-current liabilities",
+  "hi": "कुल गैर-चालू देनदारियाँ"
+ },
+ {
+  "ar": "إجمالي الالتزامات المتداولة",
+  "en": "Total current liabilities",
+  "hi": "कुल चालू देनदारियाँ"
+ },
+ {
+  "ar": "إجمالي حقوق الملكية والالتزامات",
+  "en": "Total equity and liabilities",
+  "hi": "कुल इक्विटी और देनदारियाँ"
+ },
+ {
+  "ar": "قائمة الدخل الشامل",
+  "en": "Statement of comprehensive income",
+  "hi": "समग्र आय का विवरण"
+ },
+ {
+  "ar": "عن السنة المنتهية في",
+  "en": "For the year ended",
+  "hi": "समाप्त वर्ष के लिए"
+ },
+ {
+  "ar": "صافي ربح السنة",
+  "en": "Net profit for the year",
+  "hi": "वर्ष का शुद्ध लाभ"
+ },
+ {
+  "ar": "قائمة التغيرات في حقوق الملكية",
+  "en": "Statement of changes in equity",
+  "hi": "इक्विटी में परिवर्तन का विवरण"
+ },
+ {
+  "ar": "رصيد بداية السنة",
+  "en": "Balance at start of year",
+  "hi": "वर्ष के आरंभ का शेष"
+ },
+ {
+  "ar": "رأس المال المُدرج",
+  "en": "Paid-up capital",
+  "hi": "चुकता पूँजी"
+ },
+ {
+  "ar": "أرصدة افتتاحية",
+  "en": "Opening balances",
+  "hi": "आरंभिक शेष"
+ },
+ {
+  "ar": "رصيد نهاية السنة",
+  "en": "Balance at end of year",
+  "hi": "वर्ष के अंत का शेष"
+ },
+ {
+  "ar": "قائمة التدفقات النقدية",
+  "en": "Statement of cash flows",
+  "hi": "नकदी प्रवाह विवरण"
+ },
+ {
+  "ar": "غير نقدي",
+  "en": "Non-cash",
+  "hi": "गैर-नकद"
+ },
+ {
+  "ar": "التدفقات متوازنة مع رصيد النقد الفعلي",
+  "en": "Cash flows reconcile with the actual cash balance",
+  "hi": "नकदी प्रवाह वास्तविक नकद शेष से मेल खाते हैं"
+ },
+ {
+  "ar": "فرق بسيط في المطابقة",
+  "en": "Minor reconciliation difference",
+  "hi": "मिलान में मामूली अंतर"
+ },
+ {
+  "ar": "التزامات أخرى",
+  "en": "Other liabilities",
+  "hi": "अन्य देनदारियाँ"
+ },
+ {
+  "ar": "زائد",
+  "en": "plus",
+  "hi": "जोड़ें"
+ },
+ {
+  "ar": "مستحق ليا من العملاء",
+  "en": "Due to me from customers",
+  "hi": "ग्राहकों से मुझे देय"
+ },
+ {
+  "ar": "لسه ما حصلتوش",
+  "en": "not yet collected",
+  "hi": "अभी तक वसूल नहीं हुआ"
+ },
+ {
+  "ar": "مستحق عليا للموردين",
+  "en": "Due from me to suppliers",
+  "hi": "मुझसे आपूर्तिकर्ताओं को देय"
+ },
+ {
+  "ar": "تأمينات ودفعات مقدمة من العملاء",
+  "en": "Deposits and advance payments from customers",
+  "hi": "ग्राहकों से जमा और अग्रिम भुगतान"
+ },
+ {
+  "ar": "مش فلوسي، هترجع",
+  "en": "Not my money, it will be returned",
+  "hi": "मेरा पैसा नहीं है, लौटाया जाएगा"
+ },
+ {
+  "ar": "تتخصم",
+  "en": "are deducted",
+  "hi": "काटे जाते हैं"
+ },
+ {
+  "ar": "اضغط على أي رقم تشوف تفاصيله",
+  "en": "Click any number to see its details",
+  "hi": "विवरण देखने के लिए किसी भी संख्या पर क्लिक करें"
+ },
+ {
+  "ar": "الفرق بين ده وإجمالي حقوق الملكية إن جزء من رأس مالك مش كاش",
+  "en": "The difference between this and total equity is that part of your capital is not cash",
+  "hi": "इसमें और कुल इक्विटी में अंतर यह है कि आपकी पूँजी का एक हिस्सा नकद नहीं है"
+ },
+ {
+  "ar": "استثمرته في المبنى",
+  "en": "you invested it in the building",
+  "hi": "आपने इसे इमारत में निवेश किया"
+ },
+ {
+  "ar": "الأرض",
+  "en": "Land",
+  "hi": "भूमि"
+ },
+ {
+  "ar": "شوف تحت",
+  "en": "See below",
+  "hi": "नीचे देखें"
+ },
+ {
+  "ar": "الأرباح المحتجزة فين؟",
+  "en": "Where are the retained earnings?",
+  "hi": "प्रतिधारित आय कहाँ है?"
+ },
+ {
+  "ar": "رصيد الأرباح المحتجزة",
+  "en": "Retained earnings balance",
+  "hi": "प्रतिधारित आय शेष"
+ },
+ {
+  "ar": "تراكمي من أول ما اشتغل المشروع",
+  "en": "Cumulative since the project started",
+  "hi": "परियोजना शुरू होने से अब तक संचयी"
+ },
+ {
+  "ar": "منها",
+  "en": "of which",
+  "hi": "जिसमें से"
+ },
+ {
+  "ar": "توزيعات أرباح اتصرفت فعلاً حتى الآن",
+  "en": "Dividends actually paid so far",
+  "hi": "अब तक वास्तव में भुगतान किया गया लाभांश"
+ },
+ {
+  "ar": "عند العملاء",
+  "en": "With customers",
+  "hi": "ग्राहकों के पास"
+ },
+ {
+  "ar": "مستثمر في المباني",
+  "en": "Invested in buildings",
+  "hi": "इमारतों में निवेशित"
+ },
+ {
+  "ar": "الأراضي",
+  "en": "Lands",
+  "hi": "भूमि"
+ },
+ {
+  "ar": "صافي بعد الإهلاك",
+  "en": "Net after depreciation",
+  "hi": "मूल्यह्रास के बाद शुद्ध"
+ },
+ {
+  "ar": "مطلوب لسه للموردين وتأمينات والتزامات تانية",
+  "en": "Still owed to suppliers, deposits and other liabilities",
+  "hi": "आपूर्तिकर्ताओं, जमा और अन्य देनदारियों के लिए अभी भी देय"
+ },
+ {
+  "ar": "فوق عشان تحدد نطاق الشهور اللي هيتعبّى",
+  "en": "Above to set the range of months to be filled",
+  "hi": "भरे जाने वाले महीनों की सीमा तय करने के लिए ऊपर"
+ },
+ {
+  "ar": "افتراضيًا يناير",
+  "en": "By default January",
+  "hi": "डिफ़ॉल्ट रूप से जनवरी"
+ },
+ {
+  "ar": "اقتراح الإيراد بيتطبق على حساب إيراد الإيجار",
+  "en": "The revenue suggestion is applied to the rental income account",
+  "hi": "राजस्व सुझाव किराया आय खाते पर लागू होता है"
+ },
+ {
+  "ar": "اقتراح المصاريف بياخد متوسط كل حساب على الشهور اللي فيها بيانات فعلية بالسنة دي",
+  "en": "The expense suggestion takes each account's average over the months that have actual data in this year",
+  "hi": "व्यय सुझाव इस वर्ष के उन महीनों पर प्रत्येक खाते का औसत लेता है जिनमें वास्तविक डेटा है"
+ },
+ {
+  "ar": "أو آخر",
+  "en": "or the last",
+  "hi": "या अंतिम"
+ },
+ {
+  "ar": "شهر لو السنة لسة مفيهاش بيانات",
+  "en": "month if the year has no data yet",
+  "hi": "महीना यदि वर्ष में अभी डेटा नहीं है"
+ },
+ {
+  "ar": "مش تقسيم ثابت على",
+  "en": "not a fixed split over",
+  "hi": "इतने में निश्चित विभाजन नहीं"
+ },
+ {
+  "ar": "حدد صفوف بالمربعات على اليسار عشان تعدّل أو تمسح مجموعة منها، وبعدها اضغط حفظ",
+  "en": "Select rows using the checkboxes on the left to edit or clear a group of them, then click Save",
+  "hi": "एक समूह को संपादित या साफ़ करने के लिए बाईं ओर के चेकबॉक्स से पंक्तियाँ चुनें, फिर सहेजें पर क्लिक करें"
+ },
+ {
+  "ar": "حساب محدد",
+  "en": "Selected account",
+  "hi": "चयनित खाता"
+ },
+ {
+  "ar": "مسح كل الموازنة",
+  "en": "Clear the entire budget",
+  "hi": "पूरा बजट साफ़ करें"
+ },
+ {
+  "ar": "كل الحسابات وكل الشهور",
+  "en": "All accounts and all months",
+  "hi": "सभी खाते और सभी महीने"
+ },
+ {
+  "ar": "في هذا العرض؟ هيتحفظ فاضي لو ضغطت حفظ بعد كده",
+  "en": "in this view? It will be saved empty if you click Save afterwards",
+  "hi": "इस दृश्य में? इसके बाद सहेजें पर क्लिक करने पर यह खाली सहेजा जाएगा"
+ },
+ {
+  "ar": "وحدة",
+  "en": "Unit",
+  "hi": "यूनिट"
+ },
+ {
+  "ar": "إيجار كامل شهريًا",
+  "en": "Full monthly rent",
+  "hi": "पूरा मासिक किराया"
+ },
+ {
+  "ar": "بنسبة إشغال",
+  "en": "at occupancy rate",
+  "hi": "अधिभोग दर पर"
+ },
+ {
+  "ar": "شهريًا",
+  "en": "Monthly",
+  "hi": "मासिक"
+ },
+ {
+  "ar": "تطبيقه على حساب إيراد الإيجار",
+  "en": "Apply it to the rental income account",
+  "hi": "इसे किराया आय खाते पर लागू करें"
+ },
+ {
+  "ar": "حساب إيراد الإيجار",
+  "en": "Rental income account",
+  "hi": "किराया आय खाता"
+ },
+ {
+  "ar": "مش موجود في شجرة الحسابات",
+  "en": "is not in the chart of accounts",
+  "hi": "खातों की सूची में नहीं है"
+ },
+ {
+  "ar": "اسم الموازنة الجديدة",
+  "en": "New budget name",
+  "hi": "नए बजट का नाम"
+ },
+ {
+  "ar": "اسم الموازنة",
+  "en": "Budget name",
+  "hi": "बजट का नाम"
+ },
+ {
+  "ar": "على العملاء",
+  "en": "On customers",
+  "hi": "ग्राहकों पर"
+ },
+ {
+  "ar": "من الفواتير",
+  "en": "From invoices",
+  "hi": "चालानों से"
+ },
+ {
+  "ar": "م مستحقة",
+  "en": "VAT due",
+  "hi": "देय वैट"
+ },
+ {
+  "ar": "على الفواتير الصادرة",
+  "en": "On issued invoices",
+  "hi": "जारी किए गए चालानों पर"
+ },
+ {
+  "ar": "م محصّلة فعلاً",
+  "en": "VAT actually collected",
+  "hi": "वास्तव में वसूल वैट"
+ },
+ {
+  "ar": "م غير محصّلة",
+  "en": "VAT not collected",
+  "hi": "अवसूल वैट"
+ },
+ {
+  "ar": "مين ما دفعش",
+  "en": "Who has not paid",
+  "hi": "किसने भुगतान नहीं किया"
+ },
+ {
+  "ar": "غير محصّلة",
+  "en": "Not collected",
+  "hi": "अवसूल"
+ },
+ {
+  "ar": "لعرض مين ما دفعش الضريبة",
+  "en": "to view who has not paid the tax",
+  "hi": "यह देखने के लिए कि किसने कर का भुगतान नहीं किया"
+ },
+ {
+  "ar": "الجزء الضريبي فقط",
+  "en": "The tax portion only",
+  "hi": "केवल कर का भाग"
+ },
+ {
+  "ar": "على الموردين",
+  "en": "On suppliers",
+  "hi": "आपूर्तिकर्ताओं पर"
+ },
+ {
+  "ar": "من فواتير الموردين",
+  "en": "From supplier invoices",
+  "hi": "आपूर्तिकर्ता चालानों से"
+ },
+ {
+  "ar": "م مدخلات مستحقة",
+  "en": "Input VAT due",
+  "hi": "देय इनपुट वैट"
+ },
+ {
+  "ar": "م مدخلات مدفوعة",
+  "en": "Input VAT paid",
+  "hi": "चुकाया गया इनपुट वैट"
+ },
+ {
+  "ar": "م مدخلات غير مدفوعة",
+  "en": "Input VAT unpaid",
+  "hi": "अवैतनिक इनपुट वैट"
+ },
+ {
+  "ar": "إحنا مدفعناهاش للمورد",
+  "en": "We have not paid it to the supplier",
+  "hi": "हमने इसे आपूर्तिकर्ता को नहीं चुकाया"
+ },
+ {
+  "ar": "غير مدفوعة",
+  "en": "Unpaid",
+  "hi": "अवैतनिक"
+ },
+ {
+  "ar": "لعرض المورّدين اللي لسه مدفعناش ضريبتهم",
+  "en": "to view the suppliers whose tax we have not yet paid",
+  "hi": "उन आपूर्तिकर्ताओं को देखने के लिए जिनका कर हमने अभी तक नहीं चुकाया"
+ },
+ {
+  "ar": "التسوية مع الضرائب",
+  "en": "Tax settlement",
+  "hi": "कर निपटान"
+ },
+ {
+  "ar": "حساب المخصص",
+  "en": "Provision account",
+  "hi": "प्रावधान खाता"
+ },
+ {
+  "ar": "صافي الضريبة عن الفترة",
+  "en": "Net tax for the period",
+  "hi": "अवधि का शुद्ध कर"
+ },
+ {
+  "ar": "مخرجات",
+  "en": "Outputs",
+  "hi": "आउटपुट"
+ },
+ {
+  "ar": "مدخلات",
+  "en": "Inputs",
+  "hi": "इनपुट"
+ },
+ {
+  "ar": "غير المسدَّد",
+  "en": "Unsettled",
+  "hi": "असमाधित"
+ },
+ {
+  "ar": "صافي الفترة",
+  "en": "Net for the period",
+  "hi": "अवधि का शुद्ध"
+ },
+ {
+  "ar": "الضريبة المستحقة عن الفترة المحددة",
+  "en": "Tax due for the selected period",
+  "hi": "चयनित अवधि के लिए देय कर"
+ },
+ {
+  "ar": "رصيد",
+  "en": "Balance",
+  "hi": "शेष"
+ },
+ {
+  "ar": "إجمالي الضريبة غير المسدَّدة لكل الفترات",
+  "en": "Total unsettled tax for all periods",
+  "hi": "सभी अवधियों के लिए कुल असमाधित कर"
+ },
+ {
+  "ar": "اللي هتدفعه",
+  "en": "What you will pay",
+  "hi": "जो आप चुकाएँगे"
+ },
+ {
+  "ar": "توليد قيد التسوية",
+  "en": "Generate settlement entry",
+  "hi": "निपटान प्रविष्टि बनाएँ"
+ },
+ {
+  "ar": "توليد قيد السداد",
+  "en": "Generate payment entry",
+  "hi": "भुगतान प्रविष्टि बनाएँ"
+ },
+ {
+  "ar": "القيد",
+  "en": "Entry",
+  "hi": "प्रविष्टि"
+ },
+ {
+  "ar": "دائن البنك بالصافي",
+  "en": "Credit the bank with the net amount",
+  "hi": "शुद्ध राशि से बैंक को जमा करें"
+ },
+ {
+  "ar": "قيد واحد لكل فترة",
+  "en": "One entry per period",
+  "hi": "प्रति अवधि एक प्रविष्टि"
+ },
+ {
+  "ar": "صافي ض",
+  "en": "Net VAT",
+  "hi": "शुद्ध वैट"
+ },
+ {
+  "ar": "م مدفوعة",
+  "en": "VAT paid",
+  "hi": "चुकाया गया वैट"
+ },
+ {
+  "ar": "م غير مدفوعة",
+  "en": "VAT unpaid",
+  "hi": "अवैतनिक वैट"
+ },
+ {
+  "ar": "مين ما دفعش الضريبة",
+  "en": "Who has not paid the tax",
+  "hi": "किसने कर का भुगतान नहीं किया"
+ },
+ {
+  "ar": "موردين لسه مدفعناش ضريبتهم",
+  "en": "Suppliers whose tax we have not yet paid",
+  "hi": "आपूर्तिकर्ता जिनका कर हमने अभी तक नहीं चुकाया"
+ },
+ {
+  "ar": "البداية",
+  "en": "Start",
+  "hi": "आरंभ"
+ },
+ {
+  "ar": "الصافي المستحق",
+  "en": "Net amount due",
+  "hi": "शुद्ध देय राशि"
+ },
+ {
+  "ar": "تم توليد قيد التسوية رقم",
+  "en": "Settlement entry generated, number",
+  "hi": "निपटान प्रविष्टि बनाई गई, संख्या"
+ },
+ {
+  "ar": "يعني بيمثّل الرصيد الحقيقي للحساب أول بأول، مش بس صافي حركة السنة",
+  "en": "meaning it represents the true running balance of the account, not only the net movement of the year",
+  "hi": "यानी यह खाते का वास्तविक चालू शेष दर्शाता है, केवल वर्ष की शुद्ध गतिविधि नहीं"
+ },
+ {
+  "ar": "محاسبي",
+  "en": "Accounting",
+  "hi": "लेखांकन"
+ },
+ {
+  "ar": "حسب تواريخ الفواتير",
+  "en": "according to invoice dates",
+  "hi": "चालान की तारीखों के अनुसार"
+ },
+ {
+  "ar": "فعلي",
+  "en": "Actual",
+  "hi": "वास्तविक"
+ },
+ {
+  "ar": "يشمل أي قيد يدوي",
+  "en": "includes any manual entry",
+  "hi": "किसी भी मैन्युअल प्रविष्टि सहित"
+ },
+ {
+  "ar": "تشوف القيود اللي كوّنته",
+  "en": "See the entries that formed it",
+  "hi": "इसे बनाने वाली प्रविष्टियाँ देखें"
+ },
+ {
+  "ar": "لو",
+  "en": "if",
+  "hi": "यदि"
+ },
+ {
+  "ar": "مش صفر في شهر معيّن، يبقى فيه مبلغ ضريبة اترحّل بقيد يدوي",
+  "en": "is not zero in a given month, there is a tax amount posted by a manual entry",
+  "hi": "किसी महीने में शून्य नहीं है, तो कर की एक राशि मैन्युअल प्रविष्टि से दर्ज हुई है"
+ },
+ {
+  "ar": "مش من شاشة الفواتير أو فواتير الموردين",
+  "en": "not from the invoices screen or supplier invoices",
+  "hi": "चालान या आपूर्तिकर्ता चालान स्क्रीन से नहीं"
+ },
+ {
+  "ar": "في الشهر ده",
+  "en": "in this month",
+  "hi": "इस महीने में"
+ },
+ {
+  "ar": "أرض",
+  "en": "Land",
+  "hi": "भूमि"
+ },
+ {
+  "ar": "لا تُهلك",
+  "en": "Not depreciated",
+  "hi": "मूल्यह्रास नहीं होता"
+ },
+ {
+  "ar": "العمر",
+  "en": "Life",
+  "hi": "आयु"
+ },
+ {
+  "ar": "سنوات",
+  "en": "years",
+  "hi": "वर्ष"
+ },
+ {
+  "ar": "أو فارغ لأصل لا يُهلك مثل الأرض",
+  "en": "or leave blank for a non-depreciating asset such as land",
+  "hi": "या मूल्यह्रास रहित परिसंपत्ति, जैसे भूमि, के लिए खाली छोड़ें"
+ },
+ {
+  "ar": "تحصيل",
+  "en": "Collection",
+  "hi": "वसूली"
+ },
+ {
+  "ar": "ترحيل",
+  "en": "Post",
+  "hi": "पोस्ट करें"
+ },
+ {
+  "ar": "قبض من عميل",
+  "en": "Receipt from a customer",
+  "hi": "ग्राहक से प्राप्ति"
+ },
+ {
+  "ar": "صرف لمورد",
+  "en": "Payment to a supplier",
+  "hi": "आपूर्तिकर्ता को भुगतान"
+ },
+ {
+  "ar": "اسم",
+  "en": "Name",
+  "hi": "नाम"
+ },
+ {
+  "ar": "وارد مستحق تحصيله الآن",
+  "en": "Incoming, due for collection now",
+  "hi": "आवक, अभी वसूली योग्य"
+ },
+ {
+  "ar": "صادر مستحق صرفه الآن",
+  "en": "Outgoing, due for payment now",
+  "hi": "जावक, अभी भुगतान योग्य"
+ },
+ {
+  "ar": "شيكات واردة",
+  "en": "Incoming cheques",
+  "hi": "आवक चेक"
+ },
+ {
+  "ar": "تحصيل من العملاء",
+  "en": "Collection from customers",
+  "hi": "ग्राहकों से वसूली"
+ },
+ {
+  "ar": "مستحقة الآن",
+  "en": "Due now",
+  "hi": "अभी देय"
+ },
+ {
+  "ar": "شيكات صادرة",
+  "en": "Outgoing cheques",
+  "hi": "जावक चेक"
+ },
+ {
+  "ar": "صرف للموردين",
+  "en": "Payment to suppliers",
+  "hi": "आपूर्तिकर्ताओं को भुगतान"
+ },
+ {
+  "ar": "أي شيك فات تاريخ استحقاقه ولم يُحصّل يظل ضمن",
+  "en": "Any cheque whose due date has passed and has not been collected stays under",
+  "hi": "कोई भी चेक जिसकी देय तारीख बीत चुकी है और वसूल नहीं हुआ, इसके अंतर्गत रहता है"
+ },
+ {
+  "ar": "مستحق الآن",
+  "en": "Due now",
+  "hi": "अभी देय"
+ },
+ {
+  "ar": "تلقائيًا لحد ما ترحّله من شاشة",
+  "en": "automatically until you post it from the screen",
+  "hi": "स्वचालित रूप से जब तक आप इसे स्क्रीन से पोस्ट नहीं करते"
+ },
+ {
+  "ar": "كل الأنواع",
+  "en": "All types",
+  "hi": "सभी प्रकार"
+ },
+ {
+  "ar": "نسخ المحدد",
+  "en": "Copy selected",
+  "hi": "चयनित कॉपी करें"
+ },
+ {
+  "ar": "ده قيد نظامي",
+  "en": "This is a system entry",
+  "hi": "यह एक सिस्टम प्रविष्टि है"
+ },
+ {
+  "ar": "ناتج عن فاتورة",
+  "en": "generated from an invoice",
+  "hi": "चालान से उत्पन्न"
+ },
+ {
+  "ar": "سند",
+  "en": "Voucher",
+  "hi": "वाउचर"
+ },
+ {
+  "ar": "إهلاك",
+  "en": "Depreciation",
+  "hi": "मूल्यह्रास"
+ },
+ {
+  "ar": "التعديل عليه بيفصله عن مستنده الأصلي",
+  "en": "Editing it separates it from its original document",
+  "hi": "इसे संपादित करने से यह अपने मूल दस्तावेज़ से अलग हो जाती है"
+ },
+ {
+  "ar": "نسخ قيد",
+  "en": "Copy entry",
+  "hi": "प्रविष्टि कॉपी करें"
+ },
+ {
+  "ar": "قيد جديد",
+  "en": "New entry",
+  "hi": "नई प्रविष्टि"
+ },
+ {
+  "ar": "تعديل قيد",
+  "en": "Edit entry",
+  "hi": "प्रविष्टि संपादित करें"
+ },
+ {
+  "ar": "كل",
+  "en": "Each",
+  "hi": "प्रत्येक"
+ },
+ {
+  "ar": "سطر",
+  "en": "line",
+  "hi": "पंक्ति"
+ },
+ {
+  "ar": "متوازن",
+  "en": "Balanced",
+  "hi": "संतुलित"
+ },
+ {
+  "ar": "فرق",
+  "en": "Difference",
+  "hi": "अंतर"
+ },
+ {
+  "ar": "يومي",
+  "en": "Daily",
+  "hi": "दैनिक"
+ },
+ {
+  "ar": "شهري",
+  "en": "Monthly",
+  "hi": "मासिक"
+ },
+ {
+  "ar": "الفترة كلها",
+  "en": "Entire period",
+  "hi": "पूरी अवधि"
+ },
+ {
+  "ar": "فواتير موردين",
+  "en": "Supplier invoices",
+  "hi": "आपूर्तिकर्ता चालान"
+ },
+ {
+  "ar": "إيرادات",
+  "en": "Revenues",
+  "hi": "राजस्व"
+ },
+ {
+  "ar": "مجمّع",
+  "en": "Cumulative",
+  "hi": "संचयी"
+ },
+ {
+  "ar": "دفعات قديمة",
+  "en": "Old payments",
+  "hi": "पुराने भुगतान"
+ },
+ {
+  "ar": "إجمالي المقدم",
+  "en": "Total advance",
+  "hi": "कुल अग्रिम"
+ },
+ {
+  "ar": "كل الأرصدة متحرّكة",
+  "en": "All balances are moving",
+  "hi": "सभी शेष गतिशील हैं"
+ },
+ {
+  "ar": "مفيش رصيد ثابت من غير سداد",
+  "en": "There is no fixed balance without payment",
+  "hi": "भुगतान के बिना कोई स्थिर शेष नहीं है"
+ },
+ {
+  "ar": "أقدم تاريخ رصيد العميل من ساعتها لغاية دلوقتي عمره ما قل عن الرصيد الحالي",
+  "en": "The oldest date from which the customer's balance has never fallen below the current balance until now",
+  "hi": "वह सबसे पुरानी तारीख जिससे अब तक ग्राहक का शेष कभी वर्तमान शेष से कम नहीं हुआ"
+ },
+ {
+  "ar": "لو مستحق لينا",
+  "en": "If due to us",
+  "hi": "यदि हमें देय है"
+ },
+ {
+  "ar": "أو ما زاد عنه",
+  "en": "or more",
+  "hi": "या उससे अधिक"
+ },
+ {
+  "ar": "لو مقدم عندنا",
+  "en": "If an advance held with us",
+  "hi": "यदि हमारे पास अग्रिम जमा है"
+ },
+ {
+  "ar": "يعني ده أقل التزام مستمر منّه من غير انقطاع، حتى لو الفواتير المحدّدة اتغيّرت بالنسبة له بالسداد",
+  "en": "meaning this is the minimum continuous obligation from it without interruption, even if the selected invoices changed for it through payment",
+  "hi": "यानी यह उसकी ओर से बिना रुकावट न्यूनतम सतत दायित्व है, भले ही चयनित चालान भुगतान से उसके लिए बदल गए हों"
+ },
+ {
+  "ar": "دخل",
+  "en": "Income",
+  "hi": "आय"
+ },
+ {
+  "ar": "مركز مالي",
+  "en": "Financial position",
+  "hi": "वित्तीय स्थिति"
+ },
+ {
+  "ar": "تدفقات نقدية",
+  "en": "Cash flows",
+  "hi": "नकदी प्रवाह"
+ },
+ {
+  "ar": "تفصيل أعمار الذمم المدينة",
+  "en": "Receivables aging details",
+  "hi": "प्राप्य खातों की आयु का विवरण"
+ },
+ {
+  "ar": "تفصيل أعمار الذمم الدائنة",
+  "en": "Payables aging details",
+  "hi": "देय खातों की आयु का विवरण"
+ },
+ {
+  "ar": "الموردين",
+  "en": "Suppliers",
+  "hi": "आपूर्तिकर्ता"
+ },
+ {
+  "ar": "كشف ضريبة القيمة المضافة",
+  "en": "VAT statement",
+  "hi": "वैट विवरण"
+ },
+ {
+  "ar": "فواتير مقابل الأستاذ",
+  "en": "Invoices vs ledger",
+  "hi": "चालान बनाम लेजर"
+ },
+ {
+  "ar": "الشيكات تحت التحصيل",
+  "en": "Cheques under collection",
+  "hi": "वसूली के अधीन चेक"
+ },
+ {
+  "ar": "تحت الدفع",
+  "en": "Under payment",
+  "hi": "भुगतान के अधीन"
+ },
+ {
+  "ar": "الذمم المدينة",
+  "en": "Accounts receivable",
+  "hi": "प्राप्य खाते"
+ },
+ {
+  "ar": "الأستاذ",
+  "en": "Ledger",
+  "hi": "लेजर"
+ },
+ {
+  "ar": "كل حسابات العملاء",
+  "en": "All customer accounts",
+  "hi": "सभी ग्राहक खाते"
+ },
+ {
+  "ar": "الذمم الدائنة",
+  "en": "Accounts payable",
+  "hi": "देय खाते"
+ },
+ {
+  "ar": "فواتير موردين غير مسددة",
+  "en": "Unpaid supplier invoices",
+  "hi": "अवैतनिक आपूर्तिकर्ता चालान"
+ },
+ {
+  "ar": "دفعات العملاء المقدمة",
+  "en": "Customer advance payments",
+  "hi": "ग्राहक अग्रिम भुगतान"
+ },
+ {
+  "ar": "النقدية والبنوك",
+  "en": "Cash and banks",
+  "hi": "नकद और बैंक"
+ },
+ {
+  "ar": "يحتاج مراجعة",
+  "en": "Needs review",
+  "hi": "समीक्षा आवश्यक"
+ },
+ {
+  "ar": "خطأ",
+  "en": "Error",
+  "hi": "त्रुटि"
+ },
+ {
+  "ar": "فواتير مختلفة عن شروط عقودها الحالية",
+  "en": "Invoices that differ from the terms of their current contracts",
+  "hi": "चालान जो उनके वर्तमान अनुबंधों की शर्तों से भिन्न हैं"
+ },
+ {
+  "ar": "إيجار العقد الحالي مطبّق عليه نفس قاعدة التناسب اليومي المستخدمة عند توليد الفاتورة",
+  "en": "The current contract rent has the same daily proration rule applied that was used when generating the invoice",
+  "hi": "वर्तमान अनुबंध के किराये पर वही दैनिक आनुपातिक नियम लागू है जो चालान बनाते समय प्रयुक्त हुआ था"
+ },
+ {
+  "ar": "شهر أول",
+  "en": "First month",
+  "hi": "पहला महीना"
+ },
+ {
+  "ar": "آخر جزئي",
+  "en": "Partial last",
+  "hi": "आंशिक अंतिम"
+ },
+ {
+  "ar": "لو العقد اتجدد أو اتعدّل بعد ما الفاتورة اتولدت، القيمة القديمة بتفضل زي ما هي لحد ما تتعدّل الفاتورة يدويًا من شاشة الفواتير الشهرية",
+  "en": "If the contract was renewed or amended after the invoice was generated, the old value remains as is until the invoice is manually edited from the monthly invoices screen",
+  "hi": "यदि चालान बनने के बाद अनुबंध का नवीनीकरण या संशोधन हुआ, तो पुराना मान जस का तस रहता है जब तक मासिक चालान स्क्रीन से चालान मैन्युअल रूप से संपादित नहीं किया जाता"
+ },
+ {
+  "ar": "العائد",
+  "en": "Return",
+  "hi": "प्रतिफल"
+ },
+ {
+  "ar": "تقرير ض",
+  "en": "VAT report",
+  "hi": "वैट रिपोर्ट"
+ },
+ {
+  "ar": "إقرار ض",
+  "en": "VAT return",
+  "hi": "वैट रिटर्न"
+ },
+ {
+  "ar": "عُمان",
+  "en": "Oman",
+  "hi": "ओमान"
+ },
+ {
+  "ar": "اتركه فارغاً",
+  "en": "Leave it empty",
+  "hi": "इसे खाली छोड़ें"
+ },
+ {
+  "ar": "البنايات المسموح بها",
+  "en": "Allowed buildings",
+  "hi": "अनुमत इमारतें"
+ },
+ {
+  "ar": "فارغ",
+  "en": "Empty",
+  "hi": "खाली"
+ },
+ {
+  "ar": "لا شيء",
+  "en": "None",
+  "hi": "कोई नहीं"
+ },
+ {
+  "ar": "الأدمن يرى الكل",
+  "en": "The admin sees everything",
+  "hi": "एडमिन सब कुछ देखता है"
+ },
+ {
+  "ar": "صلاحيات الشاشات",
+  "en": "Screen permissions",
+  "hi": "स्क्रीन अनुमतियाँ"
+ },
+ {
+  "ar": "كل شاشة على حدة",
+  "en": "Each screen separately",
+  "hi": "प्रत्येक स्क्रीन अलग से"
+ },
+ {
+  "ar": "زي",
+  "en": "such as",
+  "hi": "जैसे"
+ },
+ {
+  "ar": "توحيد الأرصدة الافتتاحية",
+  "en": "Consolidate opening balances",
+  "hi": "आरंभिक शेष एकीकृत करें"
+ },
+ {
+  "ar": "نسخة احتياطية",
+  "en": "Backup",
+  "hi": "बैकअप"
+ },
+ {
+  "ar": "اسم الشركة",
+  "en": "Company name",
+  "hi": "कंपनी का नाम"
+ },
+ {
+  "ar": "البريد الذي تُرسل منه الفواتير",
+  "en": "The email from which invoices are sent",
+  "hi": "वह ईमेल जिससे चालान भेजे जाते हैं"
+ },
+ {
+  "ar": "مفتاح المساعد الذكي",
+  "en": "Smart assistant key",
+  "hi": "स्मार्ट सहायक कुंजी"
+ },
+ {
+  "ar": "لتفعيل زر المساعد الذكي",
+  "en": "To enable the smart assistant button",
+  "hi": "स्मार्ट सहायक बटन सक्षम करने के लिए"
+ },
+ {
+  "ar": "اللي بيعمل قيود وفواتير ويجاوب من بياناتك",
+  "en": "which creates entries and invoices and answers from your data",
+  "hi": "जो प्रविष्टियाँ और चालान बनाता है और आपके डेटा से उत्तर देता है"
+ },
+ {
+  "ar": "الشعار",
+  "en": "Logo",
+  "hi": "लोगो"
+ },
+ {
+  "ar": "لا يوجد شعار",
+  "en": "No logo",
+  "hi": "कोई लोगो नहीं"
+ },
+ {
+  "ar": "إيميل الإرسال والشعار والأرقام دي بتظهر في الفواتير والمسودات اللي بتتبعت للعملاء",
+  "en": "The sending email, logo and these numbers appear on the invoices and drafts sent to customers",
+  "hi": "भेजने वाला ईमेल, लोगो और ये संख्याएँ ग्राहकों को भेजे जाने वाले चालानों और ड्राफ्ट पर दिखाई देती हैं"
+ },
+ {
+  "ar": "لإدارة البنايات استخدم",
+  "en": "To manage buildings use",
+  "hi": "इमारतों के प्रबंधन के लिए उपयोग करें"
+ },
+ {
+  "ar": "هيشيل أرصدة",
+  "en": "It will remove balances",
+  "hi": "यह शेष हटा देगा"
+ },
+ {
+  "ar": "الإجمالية من القيد الافتتاحي اليدوي",
+  "en": "totals from the manual opening entry",
+  "hi": "कुल, मैन्युअल आरंभिक प्रविष्टि से"
+ },
+ {
+  "ar": "لأنها متسجلة لكل عميل",
+  "en": "because they are recorded for each customer",
+  "hi": "क्योंकि वे प्रत्येक ग्राहक के लिए दर्ज हैं"
+ },
+ {
+  "ar": "مورد على حدة",
+  "en": "Each supplier separately",
+  "hi": "प्रत्येक आपूर्तिकर्ता अलग से"
+ },
+ {
+  "ar": "ويعيد التوازن على حقوق الملكية الافتتاحية",
+  "en": "and rebalances the opening equity",
+  "hi": "और आरंभिक इक्विटी को पुनः संतुलित करता है"
+ },
+ {
+  "ar": "خُد نسخة احتياطية الأول",
+  "en": "Take a backup first",
+  "hi": "पहले बैकअप लें"
+ },
+ {
+  "ar": "سطر مكرر",
+  "en": "Duplicate line",
+  "hi": "डुप्लिकेट पंक्ति"
+ },
+ {
+  "ar": "بمبلغ",
+  "en": "with amount",
+  "hi": "राशि के साथ"
+ },
+ {
+  "ar": "افتراضي",
+  "en": "Default",
+  "hi": "डिफ़ॉल्ट"
+ },
+ {
+  "ar": "حسابات القيود",
+  "en": "Entry accounts",
+  "hi": "प्रविष्टि खाते"
+ },
+ {
+  "ar": "اختر الحساب من شجرة الحسابات",
+  "en": "Select the account from the chart of accounts",
+  "hi": "खातों की सूची से खाता चुनें"
+ },
+ {
+  "ar": "هنا بتحدد كل نوع مستند بيتسجل على أي حساب",
+  "en": "Here you set which account each document type posts to",
+  "hi": "यहाँ आप तय करते हैं कि प्रत्येक दस्तावेज़ प्रकार किस खाते में पोस्ट होता है"
+ },
+ {
+  "ar": "التغيير بيأثر على",
+  "en": "The change affects",
+  "hi": "परिवर्तन प्रभावित करता है"
+ },
+ {
+  "ar": "فقط",
+  "en": "only",
+  "hi": "केवल"
+ },
+ {
+  "ar": "نوع المستند",
+  "en": "Document type",
+  "hi": "दस्तावेज़ प्रकार"
+ },
+ {
+  "ar": "أسماء القوائم",
+  "en": "Menu names",
+  "hi": "मेनू नाम"
+ },
+ {
+  "ar": "عدّل أي اسم قائمة رئيسية أو فرعية",
+  "en": "Edit any main or sub menu name",
+  "hi": "किसी भी मुख्य या उप मेनू का नाम संपादित करें"
+ },
+ {
+  "ar": "الأسماء بتتغير للغة الحالية",
+  "en": "Names change for the current language",
+  "hi": "नाम वर्तमान भाषा के लिए बदलते हैं"
+ },
+ {
+  "ar": "سجّل خروج ودخول أو بدّل اللغة عشان تشوف التغيير كامل",
+  "en": "Log out and in, or switch the language to see the full change",
+  "hi": "पूरा परिवर्तन देखने के लिए लॉग आउट करके दोबारा लॉग इन करें, या भाषा बदलें"
+ },
+ {
+  "ar": "حدّث الصفحة",
+  "en": "Refresh the page",
+  "hi": "पृष्ठ रीफ़्रेश करें"
+ },
+ {
+  "ar": "ملف",
+  "en": "File",
+  "hi": "फ़ाइल"
+ },
+ {
+  "ar": "نزّل النموذج، املأه، ثم ارفعه هنا",
+  "en": "Download the template, fill it in, then upload it here",
+  "hi": "टेम्पलेट डाउनलोड करें, उसे भरें, फिर यहाँ अपलोड करें"
+ },
+ {
+  "ar": "جاري",
+  "en": "In progress",
+  "hi": "जारी है"
+ },
+ {
+  "ar": "أخطاء",
+  "en": "Errors",
+  "hi": "त्रुटियाँ"
+ },
+ {
+  "ar": "مرفق موجود",
+  "en": "Attachment exists",
+  "hi": "अटैचमेंट मौजूद है"
+ },
+ {
+  "ar": "فشل",
+  "en": "Failed",
+  "hi": "विफल"
+ },
+ {
+  "ar": "تمام عمارتیں",
+  "en": "All buildings",
+  "hi": "सभी इमारतें"
+ },
+ {
+  "ar": "كل البنايات",
+  "en": "All buildings",
+  "hi": "सभी इमारतें"
+ },
+ {
+  "ar": "أهلاً",
+  "en": "Welcome",
+  "hi": "स्वागत है"
+ },
+ {
+  "ar": "أقدر أجاوبك من بيانات النظام، أعملك قيد، أولّد فواتير، أو أطلّعلك تقرير",
+  "en": "I can answer from the system data, create an entry, generate invoices, or pull a report for you",
+  "hi": "मैं सिस्टम डेटा से उत्तर दे सकता हूँ, प्रविष्टि बना सकता हूँ, चालान बना सकता हूँ, या आपके लिए रिपोर्ट निकाल सकता हूँ"
+ },
+ {
+  "ar": "اكتب طلبك",
+  "en": "Type your request",
+  "hi": "अपना अनुरोध लिखें"
+ },
+ {
+  "ar": "مثال",
+  "en": "Example",
+  "hi": "उदाहरण"
+ },
+ {
+  "ar": "اعملي قيد إيجار",
+  "en": "Create a rent entry",
+  "hi": "किराया प्रविष्टि बनाएँ"
+ },
+ {
+  "ar": "للوحدة",
+  "en": "for unit",
+  "hi": "यूनिट के लिए"
+ },
+ {
+  "ar": "جاري التفكير",
+  "en": "Thinking",
+  "hi": "सोच रहा है"
+ },
+ {
+  "ar": "لا يوجد رد",
+  "en": "No response",
+  "hi": "कोई उत्तर नहीं"
+ },
+ {
+  "ar": "محتجز",
+  "en": "Retained",
+  "hi": "प्रतिधारित"
+ },
+ {
+  "ar": "مدور",
+  "en": "Carried forward",
+  "hi": "आगे लाया गया"
+ },
+ {
+  "ar": "توزيع",
+  "en": "Distribution",
+  "hi": "वितरण"
+ },
+ {
+  "ar": "اهلاك",
+  "en": "Depreciation",
+  "hi": "मूल्यह्रास"
+ },
+ {
+  "ar": "بدون عميل",
+  "en": "No customer",
+  "hi": "कोई ग्राहक नहीं"
+ },
+ {
+  "ar": "ميزان المراجعة متوازن",
+  "en": "The trial balance is balanced",
+  "hi": "परीक्षण शेष संतुलित है"
+ },
+ {
+  "ar": "كل قيد متزن",
+  "en": "Every entry is balanced",
+  "hi": "प्रत्येक प्रविष्टि संतुलित है"
+ },
+ {
+  "ar": "لوحده",
+  "en": "on its own",
+  "hi": "अकेले"
+ },
+ {
+  "ar": "رصيد حساب الذمم بالأستاذ",
+  "en": "Receivables account balance in the ledger",
+  "hi": "लेजर में प्राप्य खाते का शेष"
+ },
+ {
+  "ar": "الفواتير مقابل الأستاذ",
+  "en": "Invoices vs ledger",
+  "hi": "चालान बनाम लेजर"
+ },
+ {
+  "ar": "فواتير",
+  "en": "Invoices",
+  "hi": "चालान"
+ },
+ {
+  "ar": "أستاذ",
+  "en": "Ledger",
+  "hi": "लेजर"
+ },
+ {
+  "ar": "فجوة مدخلات غير موثّقة",
+  "en": "Undocumented input gap",
+  "hi": "अप्रलेखित इनपुट अंतर"
+ },
+ {
+  "ar": "متأخرة",
+  "en": "Overdue",
+  "hi": "अतिदेय"
+ },
+ {
+  "ar": "تحت التحصيل",
+  "en": "Under collection",
+  "hi": "वसूली के अधीन"
+ },
+ {
+  "ar": "عقود قاربت على الانتهاء",
+  "en": "Contracts nearing expiry",
+  "hi": "समाप्ति के करीब अनुबंध"
+ },
+ {
+  "ar": "محاولات كتير غلط",
+  "en": "Too many wrong attempts",
+  "hi": "बहुत अधिक गलत प्रयास"
+ },
+ {
+  "ar": "الحساب مقفول مؤقتًا، حاول بعد شوية",
+  "en": "The account is temporarily locked, try again shortly",
+  "hi": "खाता अस्थायी रूप से लॉक है, कुछ देर बाद पुनः प्रयास करें"
+ },
+ {
+  "ar": "العقد عليه فواتير مدفوعة",
+  "en": "The contract has paid invoices",
+  "hi": "अनुबंध पर भुगतान किए गए चालान हैं"
+ },
+ {
+  "ar": "احذف سندات القبض أولاً",
+  "en": "Delete the receipt vouchers first",
+  "hi": "पहले प्राप्ति वाउचर हटाएँ"
+ },
+ {
+  "ar": "القيمة الجديدة لازم تكون",
+  "en": "The new value must be",
+  "hi": "नया मान होना चाहिए"
+ },
+ {
+  "ar": "أو أكتر",
+  "en": "or more",
+  "hi": "या अधिक"
+ },
+ {
+  "ar": "لو عايز تقلّل عن كده، احذف سند القبض أولاً",
+  "en": "If you want to reduce below that, delete the receipt voucher first",
+  "hi": "यदि आप इससे कम करना चाहते हैं, तो पहले प्राप्ति वाउचर हटाएँ"
+ },
+ {
+  "ar": "معدّلة",
+  "en": "Modified",
+  "hi": "संशोधित"
+ },
+ {
+  "ar": "الفاتورة مدفوعة جزئياً",
+  "en": "The invoice is partially paid",
+  "hi": "चालान का आंशिक भुगतान हो चुका है"
+ },
+ {
+  "ar": "كلياً",
+  "en": "Fully",
+  "hi": "पूर्णतः"
+ },
+ {
+  "ar": "احذف سند القبض أولاً",
+  "en": "Delete the receipt voucher first",
+  "hi": "पहले प्राप्ति वाउचर हटाएँ"
+ },
+ {
+  "ar": "أو استخدم مدير النظام",
+  "en": "or use the system administrator",
+  "hi": "या सिस्टम व्यवस्थापक का उपयोग करें"
+ },
+ {
+  "ar": "لا يوجد قيد افتتاحي يدوي",
+  "en": "There is no manual opening entry",
+  "hi": "कोई मैन्युअल आरंभिक प्रविष्टि नहीं है"
+ },
+ {
+  "ar": "حقوق ملكية افتتاحية",
+  "en": "Opening equity",
+  "hi": "आरंभिक इक्विटी"
+ },
+ {
+  "ar": "تسوية توحيد الأرصدة الافتتاحية",
+  "en": "Opening balances consolidation adjustment",
+  "hi": "आरंभिक शेष एकीकरण समायोजन"
+ },
+ {
+  "ar": "ذمم العملاء",
+  "en": "Customer receivables",
+  "hi": "ग्राहक प्राप्य"
+ },
+ {
+  "ar": "م المستحقة",
+  "en": "VAT due",
+  "hi": "देय वैट"
+ },
+ {
+  "ar": "م المدخلات",
+  "en": "Input VAT",
+  "hi": "इनपुट वैट"
+ },
+ {
+  "ar": "دفعات العملاء",
+  "en": "Customer payments",
+  "hi": "ग्राहक भुगतान"
+ },
+ {
+  "ar": "قديم",
+  "en": "Old",
+  "hi": "पुराना"
+ },
+ {
+  "ar": "حساب الموردين",
+  "en": "Suppliers account",
+  "hi": "आपूर्तिकर्ता खाता"
+ },
+ {
+  "ar": "نسبة إشغال مرتفعة",
+  "en": "High occupancy rate",
+  "hi": "उच्च अधिभोग दर"
+ },
+ {
+  "ar": "نسبة إشغال منخفضة",
+  "en": "Low occupancy rate",
+  "hi": "निम्न अधिभोग दर"
+ },
+ {
+  "ar": "فرصة لحملة تسويقية للوحدات الشاغرة",
+  "en": "An opportunity for a marketing campaign for vacant units",
+  "hi": "रिक्त यूनिटों के लिए मार्केटिंग अभियान का अवसर"
+ },
+ {
+  "ar": "هامش ربح صافي قوي",
+  "en": "Strong net profit margin",
+  "hi": "मजबूत शुद्ध लाभ मार्जिन"
+ },
+ {
+  "ar": "هامش الربح الصافي ضعيف",
+  "en": "Weak net profit margin",
+  "hi": "कमज़ोर शुद्ध लाभ मार्जिन"
+ },
+ {
+  "ar": "سيولة قصيرة الأجل مريحة",
+  "en": "Comfortable short-term liquidity",
+  "hi": "आरामदायक अल्पकालिक तरलता"
+ },
+ {
+  "ar": "نسبة تداول جيدة",
+  "en": "Good current ratio",
+  "hi": "अच्छा चालू अनुपात"
+ },
+ {
+  "ar": "نسبة التداول أقل من",
+  "en": "The current ratio is below",
+  "hi": "चालू अनुपात इससे कम है"
+ },
+ {
+  "ar": "ضغط محتمل على السيولة قصيرة الأجل",
+  "en": "Possible pressure on short-term liquidity",
+  "hi": "अल्पकालिक तरलता पर संभावित दबाव"
+ },
+ {
+  "ar": "يحتاج متابعة تحصيل",
+  "en": "Needs collection follow-up",
+  "hi": "वसूली की निगरानी आवश्यक"
+ },
+ {
+  "ar": "إشغال شبه كامل، فرصة محدودة لزيادة الإيراد إلا برفع الإيجارات أو وحدات جديدة",
+  "en": "Near-full occupancy, limited opportunity to increase revenue except by raising rents or adding new units",
+  "hi": "लगभग पूर्ण अधिभोग, किराया बढ़ाने या नई यूनिट जोड़ने के अलावा राजस्व बढ़ाने का सीमित अवसर"
+ },
+ {
+  "ar": "مستوى جيد، مع وجود وحدات شاغرة تستحق حملة تسويقية مركّزة",
+  "en": "A good level, with vacant units that deserve a focused marketing campaign",
+  "hi": "अच्छा स्तर, रिक्त यूनिटों के साथ जो केंद्रित मार्केटिंग अभियान के योग्य हैं"
+ },
+ {
+  "ar": "أقل من المتوسط المعتاد للقطاع العقاري",
+  "en": "Below the usual average for the real estate sector",
+  "hi": "रियल एस्टेट क्षेत्र के सामान्य औसत से कम"
+ },
+ {
+  "ar": "، وده بيأثر مباشرة على الإيراد المحتمل",
+  "en": "which directly affects potential revenue",
+  "hi": "जो संभावित राजस्व को सीधे प्रभावित करता है"
+ },
+ {
+  "ar": "أعلى من متوسط قطاع العقارات التجارية",
+  "en": "Higher than the average for the commercial real estate sector",
+  "hi": "वाणिज्यिक रियल एस्टेट क्षेत्र के औसत से अधिक"
+ },
+ {
+  "ar": "عادة",
+  "en": "usually",
+  "hi": "आमतौर पर"
+ },
+ {
+  "ar": "، أداء مالي قوي",
+  "en": "strong financial performance",
+  "hi": "मजबूत वित्तीय प्रदर्शन"
+ },
+ {
+  "ar": "ضمن النطاق المعتاد للقطاع، لكن فيه مساحة لتحسين ضبط المصروفات",
+  "en": "Within the usual range for the sector, but there is room to improve expense control",
+  "hi": "क्षेत्र की सामान्य सीमा के भीतर, लेकिन व्यय नियंत्रण सुधारने की गुंजाइश है"
+ },
+ {
+  "ar": "أقل من المعتاد للقطاع، يستحق مراجعة بنود المصروفات الأكبر",
+  "en": "Lower than usual for the sector, the largest expense items deserve review",
+  "hi": "क्षेत्र के लिए सामान्य से कम, सबसे बड़े व्यय मदों की समीक्षा आवश्यक है"
+ },
+ {
+  "ar": "سيولة قصيرة الأجل مريحة جدًا، تغطي الالتزامات المتداولة براحة",
+  "en": "Very comfortable short-term liquidity, comfortably covering current liabilities",
+  "hi": "अत्यंत आरामदायक अल्पकालिक तरलता, चालू देनदारियों को आराम से कवर करती है"
+ },
+ {
+  "ar": "سيولة كافية لتغطية الالتزامات المتداولة، بدون فائض كبير",
+  "en": "Sufficient liquidity to cover current liabilities, without a large surplus",
+  "hi": "चालू देनदारियों को कवर करने के लिए पर्याप्त तरलता, बड़े अधिशेष के बिना"
+ },
+ {
+  "ar": "أقل من",
+  "en": "Less than",
+  "hi": "इससे कम"
+ },
+ {
+  "ar": "، ما يعني ضغط محتمل على السيولة قصيرة الأجل يستحق المتابعة",
+  "en": "which means possible pressure on short-term liquidity that deserves follow-up",
+  "hi": "जिसका अर्थ है अल्पकालिक तरलता पर संभावित दबाव जिस पर नज़र रखना आवश्यक है"
+ },
+ {
+  "ar": "ما يعادل",
+  "en": "equivalent to",
+  "hi": "के बराबर"
+ },
+ {
+  "ar": "من إيراد الفترة، يستحق خطة تحصيل واضحة",
+  "en": "of the period's revenue, deserving a clear collection plan",
+  "hi": "अवधि के राजस्व का, स्पष्ट वसूली योजना के योग्य"
+ },
+ {
+  "ar": "لا توجد ذمم متأخرة على العملاء في نهاية الفترة",
+  "en": "There are no overdue receivables from customers at the end of the period",
+  "hi": "अवधि के अंत में ग्राहकों से कोई अतिदेय प्राप्य नहीं है"
+ },
+ {
+  "ar": "تحصيل جيد",
+  "en": "Good collection",
+  "hi": "अच्छी वसूली"
+ },
+ {
+  "ar": "موحّد",
+  "en": "Consolidated",
+  "hi": "समेकित"
+ },
+ {
+  "ar": "س",
+  "en": "س",
+  "hi": "س"
+ },
+ {
+  "ar": "ت",
+  "en": "ت",
+  "hi": "ت"
+ },
+ {
+  "ar": "إليكم فاتورة",
+  "en": "Please find attached the invoice",
+  "hi": "कृपया संलग्न चालान देखें"
+ },
+ {
+  "ar": "فواتير الإيجار لشهر",
+  "en": "Rent invoices for the month of",
+  "hi": "माह के किराया चालान"
+ },
+ {
+  "ar": "ر",
+  "en": "ر",
+  "hi": "ر"
+ },
+ {
+  "ar": "ع",
+  "en": "ع",
+  "hi": "ع"
+ },
+ {
+  "ar": "ض.ق.م",
+  "en": "VAT",
+  "hi": "वैट"
+ },
+ {
+  "ar": "ض.ق.م %",
+  "en": "VAT %",
+  "hi": "वैट %"
+ },
+ {
+  "ar": "الالتزامات",
+  "en": "Liabilities",
+  "hi": "देनदारियाँ"
+ },
+ {
+  "ar": "صافي الدخل",
+  "en": "Net income",
+  "hi": "शुद्ध आय"
+ }
+]

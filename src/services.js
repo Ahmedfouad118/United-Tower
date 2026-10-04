@@ -62,6 +62,10 @@ function tenantReceivableBalance(tenant_id) {
 // Exported so any report checking invoices against their contract reuses the
 // exact same rule the generator applied, instead of re-deriving it and drifting.
 const PRORATE_FROM = '2026-04';
+// From Sep 2026 a contract that starts or ends around the middle of the month (day 13–17)
+// is charged exactly half a month instead of a day-count share.
+const HALF_MONTH_FROM = '2026-09';
+const isMidMonth = (period, day) => period >= HALF_MONTH_FROM && day >= 13 && day <= 17;
 function expectedRentForPeriod(contract, period) {
   let rent = r2(contract.monthly_rent);
   if (period >= PRORATE_FROM && contract.start_date && contract.end_date) {
@@ -73,15 +77,15 @@ function expectedRentForPeriod(contract, period) {
       const days = Math.max(0, Math.min(d, ed) - (sd > 3 ? sd : 0));
       rent = r2(base * days / d);
     } else if (period === startP && sd > 3) {             // first (partial) month
-      rent = r2(base * (d - sd) / d);
+      rent = isMidMonth(period, sd) ? r2(base / 2) : r2(base * (d - sd) / d);
     } else if (period === endP && ed < d) {               // last (partial) month
-      rent = r2(base * ed / d);
+      rent = isMidMonth(period, ed) ? r2(base / 2) : r2(base * ed / d);
     }
   }
   return rent;
 }
 
-function issueInvoiceForContract(contract, period, created_by) {
+function issueInvoiceForContract(contract, period, created_by, opts = {}) {
   const existing = db.prepare('SELECT id FROM invoices WHERE contract_id=? AND period=?').get(contract.id, period);
   if (existing) return { skipped: true, reason: 'exists', id: existing.id };
   // one invoice per UNIT per month — prevents double billing when a contract is
@@ -130,7 +134,7 @@ function issueInvoiceForContract(contract, period, created_by) {
   const invId = Number(res.lastInsertRowid);
   db.prepare('UPDATE journals SET source_id=? WHERE id=?').run(invId, jid);
 
-  applyAdvanceToInvoice(invId, created_by);
+  if (!opts.skipAdvance) applyAdvanceToInvoice(invId, created_by);
   return { id: invId, invoice_no: invNo, journal_id: jid, total };
 }
 
@@ -197,11 +201,12 @@ function setVendorOpening(vendor_id, amount, created_by) {
   postJournal({ jdate: date, jtype: 'opening', reference: ref, memo: 'Vendor opening balance', memo_ar: narr, source_table: 'vendors', source_id: vendor_id, created_by }, lines);
 }
 
-function issueInvoicesForPeriod(period, created_by) {
+function issueInvoicesForPeriod(period, created_by, opts = {}) {
   const contracts = db.prepare("SELECT * FROM contracts").all();
+  const noAdv = new Set(opts.skipAdvanceContracts || []);
   let created = 0, skipped = 0;
   for (const c of contracts) {
-    const r = issueInvoiceForContract(c, period, created_by);
+    const r = issueInvoiceForContract(c, period, created_by, { skipAdvance: noAdv.has(c.id) });
     if (r.skipped) skipped++; else created++;
   }
   return { period, created, skipped };
@@ -286,17 +291,23 @@ function recordPayment(input, created_by) {
     if (!active) throw new Error('لا يوجد عقد ساري لهذا العميل على هذه الوحدة — راجع الوحدة أو اسم العميل');
   }
 
-  const invoices = db.prepare(
+  let invoices = db.prepare(
     `SELECT * FROM invoices WHERE tenant_id=? ${contract_id ? 'AND contract_id=?' : ''}
        AND status NOT IN ('paid','cancelled') ORDER BY due_date ASC`)
     .all(...(contract_id ? [tenant_id, contract_id] : [tenant_id]));
+  // invoice_ids: settle exactly these invoices (in this order) instead of oldest-first
+  const explicit = Array.isArray(input.invoice_ids) && input.invoice_ids.length;
+  if (explicit) {
+    const byId = new Map(invoices.map((i) => [i.id, i]));
+    invoices = input.invoice_ids.map((id) => byId.get(Number(id))).filter(Boolean);
+  }
 
   // Settle the OLD debt first: the opening/other receivable that isn't tied to an
   // invoice (dated before any invoice) is the oldest, so it gets paid before the
   // current-month invoices. Any excess beyond total owed becomes a prepaid advance.
   const invoiceDue = r2(invoices.reduce((s, inv) => s + Math.max(0, r2(inv.total - inv.paid_amount)), 0));
   const netReceivable = tenantReceivableBalance(tenant_id);
-  const openingDue = r2(Math.max(0, r2(netReceivable - invoiceDue))); // opening balance / misc — oldest
+  const openingDue = explicit ? 0 : r2(Math.max(0, r2(netReceivable - invoiceDue))); // opening balance / misc — oldest
 
   let left = total;
   const toOpening = r2(Math.min(left, openingDue)); // pay down the old balance first
@@ -518,6 +529,217 @@ function runDepreciation(period, created_by) {
   return { period, posted };
 }
 
+// ---- Municipality tax (tax share split out of the rent receivable) --------
+// The rent invoice already keeps the tax out of income (it is credited to the
+// tax provision, not to 40000), and the real PeachTree GL moves it with a plain
+// Dr 11000 / Cr 11100. So the split is a pure receivable reclass — no income
+// effect. Each tax month of each unit is tracked in tax_dues; collections are
+// settled Dr 11100 / Cr 11000 on the date the money actually came in (derived
+// from the payment allocations) so 11000 always equals "tax not yet paid".
+//   • "tax last" rule (same as the VAT report): of an invoice's outstanding
+//     amount, the tax is the part that stays unpaid until everything else is paid.
+const TAX_TABLES = ['tax_dues', 'tax_due_payments'];
+
+function invPaidAsOf(invoiceId, d) {
+  const a = db.prepare(`SELECT COALESCE(SUM(al.amount),0) s FROM payment_allocations al JOIN payments p ON p.id=al.payment_id
+    WHERE al.invoice_id=? AND p.pdate<=?`).get(invoiceId, d).s;
+  const b = db.prepare(`SELECT COALESCE(SUM(l.credit),0) s FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+    WHERE j.source_table='invoices' AND j.source_id=? AND j.jtype='adjustment' AND l.account_code='11100' AND j.jdate<=?`).get(invoiceId, d).s;
+  return a + b;
+}
+const invVatPaidAsOf = (inv, d) => r2(inv.vat_amount - Math.min(inv.vat_amount, Math.max(0, inv.total - invPaidAsOf(inv.id, d))));
+
+// One journal (Dr 11000 / Cr 11100) per date covering every unit in `entries`:
+// [{flat_id, tenant_id, period, amount, opening?, invoice_id?, base_paid?}]
+function postTaxSplit(jdate, entries, memo, created_by) {
+  const rows = entries.filter((e) => r2(e.amount) > 0);
+  if (!rows.length) return null;
+  const byFlat = new Map();
+  for (const e of rows) {
+    const k = `${e.flat_id}|${e.tenant_id || ''}`;
+    const g = byFlat.get(k) || { flat_id: e.flat_id, tenant_id: e.tenant_id || null, amt: 0 };
+    g.amt = r2(g.amt + e.amount); byFlat.set(k, g);
+  }
+  const flatInfo = db.prepare('SELECT code, building_id FROM flats WHERE id=?');
+  const lines = [];
+  for (const g of byFlat.values()) {
+    const f = flatInfo.get(g.flat_id);
+    if (!f) throw new Error('Unit not found');
+    const narr = `${memo || 'فصل الضريبة عن الإيجار'} — ${String(f.code).trim()}`;
+    lines.push({ account_code: '11000', debit: g.amt, building_id: f.building_id, flat_id: g.flat_id, tenant_id: g.tenant_id, memo: narr });
+    lines.push({ account_code: '11100', credit: g.amt, building_id: f.building_id, flat_id: g.flat_id, tenant_id: g.tenant_id, memo: narr });
+  }
+  const total = r2(rows.reduce((s, e) => s + e.amount, 0));
+  const jid = postJournal(
+    { jdate, jtype: 'adjustment', reference: `TAX-SPLIT-${jdate}`, memo: 'Tax split from rent receivable',
+      memo_ar: memo || 'فصل الضريبة عن الإيجار', source_table: 'tax_dues', created_by }, lines);
+  const ins = db.prepare('INSERT INTO tax_dues (flat_id,tenant_id,building_id,period,amount,is_opening,invoice_id,base_paid,journal_id) VALUES (?,?,?,?,?,?,?,?,?)');
+  for (const e of rows) {
+    const f = flatInfo.get(e.flat_id);
+    ins.run(e.flat_id, e.tenant_id || null, f.building_id, e.period, r2(e.amount), e.opening ? 1 : 0, e.invoice_id || null, r2(e.base_paid || 0), jid);
+  }
+  return { journal_id: jid, amount: total, rows: rows.length };
+}
+
+// Manual split of a unit's tax for a range of tax months (also used for older,
+// pre-invoice tax: opening=true).
+function splitTaxFromRent({ jdate, flat_id, tenant_id, items, memo }, created_by) {
+  if (!jdate) throw new Error('Date is required');
+  const rows = (items || []).map((i) => ({ flat_id, tenant_id, period: String(i.period || ''), amount: r2(i.amount), opening: i.opening }))
+    .filter((i) => i.amount > 0);
+  if (!rows.length) throw new Error('No tax amounts');
+  if (rows.some((i) => !/^\d{4}-\d{2}$/.test(i.period))) throw new Error('period must be YYYY-MM');
+  const r = postTaxSplit(jdate, rows, memo, created_by);
+  return r;
+}
+
+// Split the tax of commercial invoices in a period range that were not split yet.
+//   asOf given  → only the part still unpaid on that date (catch-up of a closed period)
+//   asOf empty  → the full tax of each invoice, dated on `jdate` or the invoice date
+function splitInvoiceTax({ from_period, to_period, jdate, asOf }, created_by) {
+  const invs = db.prepare(
+    `SELECT i.* FROM invoices i JOIN flats f ON f.id=i.flat_id
+     WHERE f.unit_type='Commercial' AND i.status!='cancelled' AND i.vat_amount>0 AND i.period>=? AND i.period<=?
+       AND NOT EXISTS (SELECT 1 FROM tax_dues d WHERE d.invoice_id=i.id)
+     ORDER BY i.idate, i.id`).all(from_period || '0000-00', to_period || '9999-99');
+  const groups = new Map();
+  for (const inv of invs) {
+    const base = asOf ? invVatPaidAsOf(inv, asOf) : 0;
+    const amount = r2(inv.vat_amount - base);
+    if (amount <= 0.0005) continue;
+    const d = jdate || inv.idate;
+    if (!groups.has(d)) groups.set(d, []);
+    groups.get(d).push({ flat_id: inv.flat_id, tenant_id: inv.tenant_id, period: inv.period, amount, invoice_id: inv.id, base_paid: base });
+  }
+  const out = [];
+  for (const [d, entries] of groups) { const r = postTaxSplit(d, entries, null, created_by); if (r) out.push({ jdate: d, ...r }); }
+  return { journals: out.length, amount: r2(out.reduce((s, x) => s + x.amount, 0)) };
+}
+
+function taxDueRemaining(tenant_id, flat_id, asOfDate) {
+  return db.prepare(
+    `SELECT d.*, d.amount - COALESCE((SELECT SUM(p.amount) FROM tax_due_payments p WHERE p.due_id=d.id ${asOfDate ? 'AND p.pay_date<=?' : ''}),0) remaining
+     FROM tax_dues d WHERE d.tenant_id=? ${flat_id ? 'AND d.flat_id=?' : ''}
+     ORDER BY d.period, d.id`).all(...[...(asOfDate ? [asOfDate] : []), tenant_id, ...(flat_id ? [flat_id] : [])]);
+}
+
+// Book settlements [{due, date, amount}] as Dr 11100 / Cr 11000, one journal per tenant+date.
+function postTaxSettlements(list, created_by, memo) {
+  const groups = new Map();
+  for (const s of list) { const k = `${s.due.tenant_id}|${s.date}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(s); }
+  const ins = db.prepare('INSERT INTO tax_due_payments (due_id,pay_date,amount,journal_id) VALUES (?,?,?,?)');
+  let n = 0;
+  for (const [k, items] of groups) {
+    const [tenant, date] = k.split('|');
+    const byFlat = new Map();
+    for (const s of items) { const g = byFlat.get(s.due.flat_id) || { flat_id: s.due.flat_id, building_id: s.due.building_id, a: 0 }; g.a = r2(g.a + s.amount); byFlat.set(s.due.flat_id, g); }
+    const narr = memo || 'تسوية سداد ضريبة ضمن مقبوضات الإيجار';
+    const lines = [];
+    for (const g of byFlat.values()) {
+      lines.push({ account_code: '11100', debit: g.a, building_id: g.building_id, flat_id: g.flat_id, tenant_id: Number(tenant) || null, memo: narr });
+      lines.push({ account_code: '11000', credit: g.a, building_id: g.building_id, flat_id: g.flat_id, tenant_id: Number(tenant) || null, memo: narr });
+    }
+    const jid = postJournal({ jdate: date, jtype: 'adjustment', reference: `TAX-SETTLE-${tenant}-${date}`, memo: narr, memo_ar: narr,
+      source_table: 'tax_due_payments', created_by }, lines);
+    for (const s of items) ins.run(s.due.id, date, r2(s.amount), jid);
+    n++;
+  }
+  return n;
+}
+
+// Derive tax settlements from the real payments, up to `upTo`:
+//  • invoice tax: settled by the payments/advances applied to that invoice (tax last)
+//  • older tax (opening): settled once the tenant's opening-balance part of 11100
+//    (11100 balance − unpaid invoices) drops below what is still owed
+function taxAutoSettle({ upTo } = {}, created_by) {
+  const end = upTo || today();
+  const settled = (dueId) => db.prepare('SELECT COALESCE(SUM(amount),0) s FROM tax_due_payments WHERE due_id=?').get(dueId).s;
+  const list = [];
+  // 1) invoice-linked dues
+  const dues = db.prepare('SELECT * FROM tax_dues WHERE invoice_id IS NOT NULL ORDER BY id').all();
+  for (const d of dues) {
+    const inv = db.prepare('SELECT * FROM invoices WHERE id=?').get(d.invoice_id);
+    if (!inv) continue;
+    const dates = new Set();
+    for (const r of db.prepare(`SELECT p.pdate x FROM payment_allocations al JOIN payments p ON p.id=al.payment_id WHERE al.invoice_id=?`).all(inv.id)) dates.add(r.x);
+    for (const r of db.prepare(`SELECT j.jdate x FROM journals j WHERE j.source_table='invoices' AND j.source_id=? AND j.jtype='adjustment'`).all(inv.id)) dates.add(r.x);
+    let have = settled(d.id);
+    for (const dt of [...dates].filter((x) => x <= end).sort()) {
+      const cum = Math.min(d.amount, Math.max(0, r2(invVatPaidAsOf(inv, dt) - d.base_paid)));
+      if (cum > have + 0.0005) { list.push({ due: d, date: dt, amount: r2(cum - have) }); have = cum; }
+    }
+  }
+  // 2) older (opening) tax per tenant
+  const tenants = db.prepare('SELECT DISTINCT tenant_id FROM tax_dues WHERE is_opening=1 AND tenant_id IS NOT NULL').all().map((x) => x.tenant_id);
+  for (const t of tenants) {
+    const old = db.prepare('SELECT * FROM tax_dues WHERE tenant_id=? AND is_opening=1 ORDER BY period, id').all(t);
+    const O = r2(old.reduce((s, d) => s + d.amount, 0));
+    const from = db.prepare('SELECT MIN(j.jdate) m FROM tax_dues d JOIN journals j ON j.id=d.journal_id WHERE d.tenant_id=? AND d.is_opening=1').get(t).m;
+    const dates = db.prepare(`SELECT DISTINCT j.jdate x FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+      WHERE l.account_code='11100' AND l.tenant_id=? AND l.credit>0 AND j.jdate>? AND j.jdate<=?
+        AND COALESCE(j.source_table,'') NOT IN ('tax_dues','tax_due_payments') ORDER BY j.jdate`).all(t, from, end).map((x) => x.x);
+    const invs = db.prepare("SELECT * FROM invoices WHERE tenant_id=? AND status!='cancelled'").all(t);
+    let target = old.reduce((s, d) => s + settled(d.id), 0);
+    for (const dt of dates) {
+      const ar = db.prepare(`SELECT COALESCE(SUM(l.debit-l.credit),0) b FROM journal_lines l JOIN journals j ON j.id=l.journal_id
+        WHERE l.account_code='11100' AND l.tenant_id=? AND j.jdate<=? AND COALESCE(j.source_table,'') NOT IN ('tax_dues','tax_due_payments')`).get(t, dt).b;
+      const unpaidInv = invs.filter((i) => i.due_date <= dt).reduce((s, i) => s + Math.max(0, i.total - invPaidAsOf(i.id, dt)), 0);
+      const owedOld = Math.min(O, Math.max(0, r2(ar - unpaidInv)));
+      const want = r2(O - owedOld);
+      if (want > target + 0.0005) {
+        let need = r2(want - target);
+        for (const d of old) { const room = r2(d.amount - settled(d.id) - list.filter((x) => x.due.id === d.id).reduce((s, x) => s + x.amount, 0)); if (need <= 0 || room <= 0) continue; const a = r2(Math.min(room, need)); list.push({ due: d, date: dt, amount: a }); need = r2(need - a); }
+        target = want;
+      }
+    }
+  }
+  const journals = postTaxSettlements(list, created_by);
+  return { settlements: list.length, journals, amount: r2(list.reduce((s, x) => s + x.amount, 0)) };
+}
+
+// Collecting a tenant's tax dues by hand, applied oldest tax-month first.
+//   mode 'cash'   — new money received: Dr bank/cash / Cr 11000
+//   mode 'settle' — the tenant already paid it inside a rent receipt (sits as a
+//                   credit on 11100): Dr 11100 / Cr 11000, no cash movement
+function recordTaxPayment({ pdate, tenant_id, flat_id, amount, mode = 'cash', cash_account = '10400', memo }, created_by) {
+  let left = r2(amount);
+  if (!pdate || !tenant_id) throw new Error('Date and tenant are required');
+  if (left <= 0) throw new Error('Amount must be positive');
+  const open = taxDueRemaining(tenant_id, flat_id).filter((d) => r2(d.remaining) > 0);
+  const owed = r2(open.reduce((s, d) => s + d.remaining, 0));
+  if (left > owed + 0.0005) throw new Error(`Amount exceeds the tax owed (${owed})`);
+  const alloc = [];
+  for (const d of open) { if (left <= 0.0005) break; const a = r2(Math.min(left, d.remaining)); alloc.push({ d, a }); left = r2(left - a); }
+  const narr = memo || (mode === 'settle' ? 'تسوية سداد ضريبة ضمن مقبوضات الإيجار' : 'تحصيل ضريبة');
+  const debitAcc = mode === 'settle' ? '11100' : cash_account;
+  const byFlat = new Map();
+  for (const x of alloc) { const k = x.d.flat_id || 0; byFlat.set(k, { flat_id: x.d.flat_id, building_id: x.d.building_id, a: r2((byFlat.get(k) ? byFlat.get(k).a : 0) + x.a) }); }
+  const lines = [];
+  for (const g of byFlat.values()) {
+    lines.push({ account_code: debitAcc, debit: g.a, building_id: g.building_id, flat_id: g.flat_id, tenant_id, memo: narr });
+    lines.push({ account_code: '11000', credit: g.a, building_id: g.building_id, flat_id: g.flat_id, tenant_id, memo: narr });
+  }
+  const jid = postJournal(
+    { jdate: pdate, jtype: mode === 'settle' ? 'adjustment' : 'receipt', reference: `TAXRCV-${tenant_id}-${pdate}`,
+      memo: narr, memo_ar: narr, source_table: 'tax_due_payments', created_by }, lines);
+  const ins = db.prepare('INSERT INTO tax_due_payments (due_id,pay_date,amount,journal_id) VALUES (?,?,?,?)');
+  for (const x of alloc) ins.run(x.d.id, pdate, x.a, jid);
+  return { journal_id: jid, amount: r2(amount), applied: alloc.length };
+}
+
+function deleteTaxPayment(journal_id) {
+  db.prepare('DELETE FROM tax_due_payments WHERE journal_id=?').run(journal_id);
+  deleteJournal(journal_id);
+  return { deleted: journal_id };
+}
+function deleteTaxSplit(journal_id) {
+  const used = db.prepare('SELECT COUNT(*) n FROM tax_due_payments WHERE due_id IN (SELECT id FROM tax_dues WHERE journal_id=?)').get(journal_id).n;
+  if (used) throw new Error('Tax payments already applied to this split — delete them first');
+  db.prepare('DELETE FROM tax_dues WHERE journal_id=?').run(journal_id);
+  deleteJournal(journal_id);
+  return { deleted: journal_id };
+}
+
 // ---- Contract lifecycle ---------------------------------------------------
 function terminateContract(contractId, date, settledAmount, created_by) {
   const c = db.prepare('SELECT * FROM contracts WHERE id=?').get(contractId);
@@ -608,7 +830,7 @@ module.exports = {
   recognizeInvoice, recognizeRevenueForPeriod,
   recordPayment, deletePayment, recordDeposit,
   recordVendorBill, deleteVendorBill, updateVendorBill, recordVendorPayment, runPayroll, terminateContract, runDepreciation, setTenantOpening, setVendorOpening,
-  settleVAT,
+  settleVAT, splitTaxFromRent, splitInvoiceTax, taxAutoSettle, recordTaxPayment, taxDueRemaining, deleteTaxPayment, deleteTaxSplit,
   tenantAdvanceBalance, addMonths, periodOf, firstOfMonth, currentMonth, today,
   CUSTOMER_ADVANCE, expectedRentForPeriod,
 };

@@ -83,6 +83,7 @@ const JOURNAL_REFS = [
   ['invoices', 'issue_journal'], ['invoices', 'recog_journal'], ['payments', 'journal_id'],
   ['vendor_bills', 'journal_id'], ['vendor_payments', 'journal_id'], ['contracts', 'deposit_journal'],
   ['cheques', 'journal_id'], ['payroll_runs', 'journal_id'], ['depreciation_runs', 'journal_id'],
+  ['tax_dues', 'journal_id'], ['tax_due_payments', 'journal_id'],
 ];
 function deleteJournal(jid) {
   if (!jid) return;

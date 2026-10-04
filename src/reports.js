@@ -592,15 +592,75 @@ function financialStatements(year, lang = 'en') {
   return { year, prev_year: year - 1, currency: 'OMR', end_cur: endCur, end_prev: endPrev, balance_sheet, income, equity, cash_flow };
 }
 
+// ---- Municipality tax receivable — who hadn't paid the tax up to month M ----
+// Period-based (the tax month), not journal-date based: the split journal may be
+// dated later (e.g. 1 Apr for Q1) but "as of month 3" still shows Q1's unpaid tax.
+// Collections only count when their date is on/before the end of month M.
+function monthEnd(m) { const [y, mo] = m.split('-').map(Number); return `${m}-${String(new Date(y, mo, 0).getDate()).padStart(2, '0')}`; }
+function taxDuesReport(month, building_id) {
+  const latest = db.prepare('SELECT MAX(period) p FROM tax_dues').get().p;
+  const m = /^\d{4}-\d{2}$/.test(month || '') ? month : (latest || new Date().toISOString().slice(0, 7));
+  const end = monthEnd(m);
+  const bc = building_id ? ' AND d.building_id=' + Number(building_id) : '';
+  const dues = db.prepare(
+    `SELECT d.id, d.tenant_id, d.flat_id, d.period, d.amount, d.is_opening, f.code flat,
+            COALESCE((SELECT SUM(p.amount) FROM tax_due_payments p WHERE p.due_id=d.id AND p.pay_date<=?),0) paid
+     FROM tax_dues d LEFT JOIN flats f ON f.id=d.flat_id WHERE d.period<=? ${bc}`).all(end, m);
+  const tenants = new Map(); // tenant_id -> row
+  const row = (tid, name) => { if (!tenants.has(tid)) tenants.set(tid, { tenant_id: tid, tenant: name, units: new Set(), invoiced: 0, remaining: 0, by_period: {} }); return tenants.get(tid); };
+  const nameOf = db.prepare('SELECT name FROM tenants WHERE id=?');
+  // every commercial tenant: tax invoiced (VAT on its invoices up to month M)
+  const ic = building_id ? ' AND i.building_id=' + Number(building_id) : '';
+  const inv = db.prepare(
+    `SELECT i.tenant_id, t.name tenant, f.code flat, ROUND(SUM(i.vat_amount),3) vat FROM invoices i
+     JOIN flats f ON f.id=i.flat_id JOIN tenants t ON t.id=i.tenant_id
+     WHERE f.unit_type='Commercial' AND i.period<=? AND i.status!='cancelled' ${ic} GROUP BY i.tenant_id, f.code`).all(m);
+  for (const x of inv) { const r = row(x.tenant_id, x.tenant); r.units.add(x.flat.trim()); r.invoiced = r2(r.invoiced + x.vat); }
+  for (const d of dues) {
+    const r = row(d.tenant_id, d.tenant_id ? (nameOf.get(d.tenant_id) || {}).name : null);
+    if (d.flat) r.units.add(d.flat.trim());
+    if (d.is_opening) r.invoiced = r2(r.invoiced + d.amount);
+    const rem = r2(d.amount - d.paid);
+    r.remaining = r2(r.remaining + rem);
+    if (rem > 0.0005) r.by_period[d.period] = r2((r.by_period[d.period] || 0) + rem);
+  }
+  const rows = [...tenants.values()].map((r) => ({
+    tenant_id: r.tenant_id, tenant: r.tenant || '(بدون عميل)', units: [...r.units].sort().join(' · '),
+    invoiced: r.invoiced, paid: r2(r.invoiced - r.remaining), remaining: r.remaining, by_period: r.by_period,
+  })).sort((a, b) => b.remaining - a.remaining || a.tenant.localeCompare(b.tenant));
+  const periods = [...new Set(dues.filter((d) => r2(d.amount - d.paid) > 0.0005).map((d) => d.period))].sort();
+  const sum = (k) => r2(rows.reduce((s, r) => s + r[k], 0));
+  const psum = {}; for (const p of periods) psum[p] = r2(rows.reduce((s, r) => s + (r.by_period[p] || 0), 0));
+  const available = db.prepare('SELECT DISTINCT period FROM tax_dues ORDER BY period').all().map((x) => x.period);
+  return { month: m, as_of: end, periods, rows, totals: { invoiced: sum('invoiced'), paid: sum('paid'), remaining: sum('remaining'), by_period: psum }, available };
+}
+function taxDuesDrill(tenant_id, month) {
+  const m = /^\d{4}-\d{2}$/.test(month || '') ? month : new Date().toISOString().slice(0, 7);
+  const end = monthEnd(m);
+  const dues = db.prepare(
+    `SELECT d.id, d.period, d.amount, d.is_opening, d.journal_id, f.code flat FROM tax_dues d LEFT JOIN flats f ON f.id=d.flat_id
+     WHERE d.tenant_id=? AND d.period<=? ORDER BY d.period, f.code`).all(tenant_id, m);
+  const pays = db.prepare(
+    `SELECT p.due_id, p.pay_date, p.amount, p.journal_id FROM tax_due_payments p WHERE p.due_id IN (SELECT id FROM tax_dues WHERE tenant_id=?) AND p.pay_date<=? ORDER BY p.pay_date`).all(tenant_id, end);
+  return {
+    month: m,
+    rows: dues.map((d) => {
+      const ps = pays.filter((p) => p.due_id === d.id);
+      const paid = r2(ps.reduce((s, p) => s + p.amount, 0));
+      return { ...d, paid, remaining: r2(d.amount - paid), payments: ps };
+    }),
+  };
+}
+
 // ---- Receivables aging (GL-based: ties to the trial balance) ---------------
 // Built from the customer receivable accounts (11000/11100) so it INCLUDES the
 // opening balances (posted as journals, not invoices). Each debit "charge"
 // (invoice / opening / manual) is aged by its date; total credits (collections)
 // are consumed oldest-first. The grand total therefore equals the net receivable
 // in the trial balance for these accounts.
-function receivablesAging(asOf, building_id) {
+function receivablesAging(asOf, building_id, accounts) {
   const ref = asOf || new Date().toISOString().slice(0, 10);
-  const RECV = ['11000', '11100'];
+  const RECV = accounts && accounts.length ? accounts : ['11000', '11100'];
   const list = RECV.map(() => '?').join(',');
   const bF = building_id ? ' AND l.building_id=' + Number(building_id) : '';
   // charges = debit entries (dated), credits = collections (netted oldest-first)
@@ -644,9 +704,9 @@ function receivablesAging(asOf, building_id) {
 // make up a tenant's outstanding balance, aged the same way receivablesAging
 // buckets them — so clicking any number in that report shows exactly where
 // it came from instead of just a total.
-function receivablesAgingDrill(tenant_id, asOf, building_id) {
+function receivablesAgingDrill(tenant_id, asOf, building_id, accounts) {
   const ref = asOf || new Date().toISOString().slice(0, 10);
-  const RECV = ['11000', '11100'];
+  const RECV = accounts && accounts.length ? accounts : ['11000', '11100'];
   const list = RECV.map(() => '?').join(',');
   const bF = building_id ? ' AND l.building_id=' + Number(building_id) : '';
   const tf = tenant_id ? 'l.tenant_id=?' : 'l.tenant_id IS NULL';
@@ -1397,7 +1457,7 @@ function buildingComparison(from, to) {
 
 module.exports = {
   trialBalance, incomeStatement, incomeStatementConsolidated, accountLedger, generalLedgerFull, groupedJournals, legacyJournals, legacyDrill,
-  liquidityReport, moneyPosition, financialRatios, balanceSheet, financialStatements, receivablesAging, receivablesAgingDrill, payablesAging,
+  liquidityReport, moneyPosition, financialRatios, balanceSheet, financialStatements, receivablesAging, receivablesAgingDrill, taxDuesReport, taxDuesDrill, payablesAging,
   flatStatement, vendorStatement, advancesReport, receivablesBalancePersistence, occupancy, propertyPL, roi, cashFlowForecast, vatReport, vatReturn, vatStatement, vatUncollectedByCustomer, vatInputUnpaidByVendor,
   bankReport, chequesReport, chequesDashboard, dashboard, contractExpiry, buildingComparison,
   depreciationReport, customersSummary, invoiceContractAudit, auditCenter,

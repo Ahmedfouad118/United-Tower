@@ -78,6 +78,8 @@
       { path: 'vat', label: 'm_vat', page: 'vat', mod: 'tax' },
       { path: 'vat_statement', label: 'm_vat_statement', page: 'vatStatement', mod: 'tax' },
       { path: 'vatreturn', label: 'm_vatreturn', page: 'vatReturn', mod: 'tax' },
+      { path: 'tax_dues', label: 'm_tax_dues', page: 'taxDues', mod: 'tax' },
+      { path: 'tax_aging', label: 'm_tax_aging', page: 'taxAging', mod: 'tax' },
     ] },
     { id: 'budget', icon: '📐', label: 'm_budget_mod', items: [
       { path: 'budget_entry', label: 'm_budget_entry', page: 'budgetEntry', mod: 'finance' },

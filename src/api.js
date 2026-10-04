@@ -356,6 +356,35 @@ router.post('/assets/depreciation/run', writers, (req, res) => {
   if (!/^\d{4}-\d{2}$/.test(period)) return res.status(400).json({ error: 'period YYYY-MM' });
   res.json(svc.runDepreciation(period, req.user.id));
 });
+// ---- Municipality tax: split from rent receivable, collections, dues ----
+router.post('/tax/split', writers, (req, res) => {
+  try { res.json(svc.splitTaxFromRent(req.body, req.user.id)); } catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.post('/tax/split-invoices', writers, (req, res) => {
+  try { res.json(svc.splitInvoiceTax(req.body || {}, req.user.id)); } catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.post('/tax/auto-settle', writers, (req, res) => {
+  try { res.json(svc.taxAutoSettle(req.body || {}, req.user.id)); } catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.post('/tax/payments', writers, (req, res) => {
+  try { res.json(svc.recordTaxPayment(req.body, req.user.id)); } catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.delete('/tax/payments/:jid', writers, (req, res) => {
+  try { res.json(svc.deleteTaxPayment(Number(req.params.jid))); } catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.delete('/tax/splits/:jid', writers, (req, res) => {
+  try { res.json(svc.deleteTaxSplit(Number(req.params.jid))); } catch (e) { res.status(400).json({ error: e.message }); }
+});
+// every tax due with what's been collected so far (operations screen)
+router.get('/tax/dues', (req, res) => res.json(db.prepare(
+  `SELECT d.*, f.code flat, t.name tenant,
+          COALESCE((SELECT SUM(p.amount) FROM tax_due_payments p WHERE p.due_id=d.id),0) paid
+   FROM tax_dues d LEFT JOIN flats f ON f.id=d.flat_id LEFT JOIN tenants t ON t.id=d.tenant_id
+   WHERE 1=1 ${bScope(req, 'd.building_id')} ORDER BY d.period, f.code`).all()));
+router.get('/tax/payments', (req, res) => res.json(db.prepare(
+  `SELECT p.journal_id, p.pay_date, SUM(p.amount) amount, t.name tenant, j.jtype FROM tax_due_payments p
+   JOIN tax_dues d ON d.id=p.due_id LEFT JOIN tenants t ON t.id=d.tenant_id LEFT JOIN journals j ON j.id=p.journal_id
+   GROUP BY p.journal_id ORDER BY p.pay_date DESC`).all()));
 
 // ---- Contracts ------------------------------------------------------------
 router.get('/contracts', (req, res) => res.json(db.prepare(
@@ -813,6 +842,8 @@ router.get('/presentation/feedback', (req, res) => {
 router.get('/reports/financial-ratios', (req, res) => res.json(R.financialRatios(req.query.from, req.query.to, effBuilding(req) && effBuilding(req) > 0 ? effBuilding(req) : null)));
 router.get('/reports/aging', (req, res) => res.json(R.receivablesAging(req.query.asOf, effBuilding(req))));
 router.get('/reports/aging-drill', (req, res) => res.json(R.receivablesAgingDrill(req.query.tenant_id ? Number(req.query.tenant_id) : null, req.query.asOf, effBuilding(req))));
+router.get('/reports/tax-aging', (req, res) => res.json(R.taxDuesReport(req.query.month, effBuilding(req) && effBuilding(req) > 0 ? effBuilding(req) : null)));
+router.get('/reports/tax-aging-drill', (req, res) => res.json(R.taxDuesDrill(Number(req.query.tenant_id), req.query.month)));
 router.get('/reports/contract-expiry', (req, res) => res.json(R.contractExpiry(Number(req.query.days) || 60, effBuilding(req))));
 router.get('/reports/building-comparison', (req, res) => res.json(scopeRows(req, R.buildingComparison(req.query.from, req.query.to).map((r) => r))));
 router.get('/reports/payables-aging', (req, res) => res.json(R.payablesAging(req.query.asOf)));

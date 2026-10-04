@@ -369,6 +369,31 @@ CREATE TABLE IF NOT EXISTS depreciation_runs (
   UNIQUE(asset_id, period)
 );
 
+-- ---------- Municipality tax (tax share split out of the rent receivable) ----
+-- Each row = the tax part of one unit's receivable for one tax month, moved out of
+-- 11100 into 11000 by a reclass journal. Collections are applied oldest-first.
+CREATE TABLE IF NOT EXISTS tax_dues (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  flat_id    INTEGER REFERENCES flats(id),
+  tenant_id  INTEGER REFERENCES tenants(id),
+  building_id INTEGER REFERENCES buildings(id),
+  period     TEXT NOT NULL,                 -- tax month YYYY-MM
+  amount     REAL NOT NULL,
+  is_opening INTEGER NOT NULL DEFAULT 0,    -- 1 = older tax not present in the generated invoices
+  invoice_id INTEGER REFERENCES invoices(id), -- invoice whose tax this is (null for older/opening tax)
+  base_paid  REAL NOT NULL DEFAULT 0,        -- tax of that invoice already paid when it was split
+  journal_id INTEGER REFERENCES journals(id), -- the Dr 11000 / Cr 11100 split journal
+  notes      TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS tax_due_payments (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  due_id     INTEGER NOT NULL REFERENCES tax_dues(id),
+  pay_date   TEXT NOT NULL,
+  amount     REAL NOT NULL,
+  journal_id INTEGER REFERENCES journals(id)
+);
+
 -- ---------- Bank reconciliation -------------------------------------------
 CREATE TABLE IF NOT EXISTS bank_statement_lines (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
