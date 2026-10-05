@@ -41,6 +41,8 @@ Account balance = SUM(debit)-SUM(credit) over journal_lines for that account_cod
 // that a low-privilege user could otherwise exfiltrate just by asking the
 // chat to "run this SQL".
 const FORBIDDEN_TABLES = ['users', 'settings', 'password_resets', 'activity_log', 'user_permissions', 'user_buildings'];
+// The admin may ask for anything the ledger holds (incl. audit log / permissions); only credential stores stay off-limits.
+const FORBIDDEN_ADMIN = ['users', 'settings', 'password_resets'];
 let _ro = null;
 function roDb() {
   if (!_ro) { const { DatabaseSync } = require('node:sqlite'); _ro = new DatabaseSync(require('./db').DB_PATH, { readOnly: true }); }
@@ -52,12 +54,12 @@ function runTool(name, input, user) {
     const sql = String(input.sql || '').trim();
     if (sql.length > 4000 || !/^select/i.test(sql) || /[;]\s*\S/.test(sql) || /\b(insert|update|delete|drop|alter|create|attach|detach|pragma|replace|vacuum|recursive|randomblob|zeroblob|load_extension)\b|pragma_|sqlite_/i.test(sql))
       return { error: 'only a single read-only SELECT is allowed' };
-    if (FORBIDDEN_TABLES.some((t) => new RegExp(`\\b${t}\\b`, 'i').test(sql)))
+    if ((user.role === 'admin' ? FORBIDDEN_ADMIN : FORBIDDEN_TABLES).some((t) => new RegExp(`\\b${t}\\b`, 'i').test(sql)))
       return { error: 'access to this table is not allowed' };
     try {
       // read-only connection + hard row cap, so a query can neither write nor materialise millions of rows
       const ro = roDb();
-      return { rows: ro.prepare('SELECT * FROM (' + sql.replace(/;\s*$/, '') + ') LIMIT 200').all() };
+      return { rows: ro.prepare('SELECT * FROM (' + sql.replace(/;\s*$/, '') + ') LIMIT ' + (user.role === 'admin' ? 2000 : 200)).all() };
     } catch (e) { return { error: 'query failed' }; }
   }
   if (!['admin', 'accountant'].includes(user.role)) return { error: 'no permission to modify data' };
@@ -73,7 +75,9 @@ function runTool(name, input, user) {
 }
 
 const { limit: rlimit } = require('./ratelimit');
-router.post('/ai/chat', rlimit('ai', 40, 60 * 60 * 1000), async (req, res) => {
+// non-admin accounts are rate limited; the admin is not
+const aiLimit = rlimit('ai', 40, 60 * 60 * 1000);
+router.post('/ai/chat', (req, res, next) => (req.user && req.user.role === 'admin' ? next() : aiLimit(req, res, next)), async (req, res) => {
   if (!['admin', 'accountant'].includes(req.user.role)) return res.status(403).json({ error: 'forbidden' });
   const key = getKey();
   if (!key) return res.status(400).json({ error: 'لم يتم ضبط مفتاح الذكاء الاصطناعي. أدخله في الإعدادات ← بيانات البناية.' });
@@ -83,10 +87,11 @@ router.post('/ai/chat', rlimit('ai', 40, 60 * 60 * 1000), async (req, res) => {
   const system = `أنت مساعد محاسبي داخل نظام "برج المتحدة" لإدارة العقارات. تجاوب بالعربية باختصار ووضوح. لديك أدوات للاستعلام عن قاعدة البيانات وتنفيذ العمليات (قيود/فواتير/سندات قبض). استعلم من قاعدة البيانات قبل أي إجابة رقمية. قبل تنفيذ أي عملية كتابية (قيد/فاتورة) نفّذها فقط لو طلب المستخدم صراحةً. ${schemaHint()}`;
   try {
     let msgs = messages.map((m) => ({ role: m.role, content: m.content }));
-    for (let step = 0; step < 6; step++) {
+    const maxSteps = req.user.role === 'admin' ? 15 : 6;
+    for (let step = 0; step < maxSteps; step++) {
       const r = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST', headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({ model: MODEL, max_tokens: 1500, system, tools: TOOLS, messages: msgs }),
+        body: JSON.stringify({ model: MODEL, max_tokens: req.user.role === 'admin' ? 4000 : 1500, system, tools: TOOLS, messages: msgs }),
       });
       const data = await r.json();
       if (data.type === 'error' || data.error) return res.status(400).json({ error: (data.error && data.error.message) || 'AI error' });
