@@ -119,10 +119,10 @@
     document.getElementById('app').innerHTML = `
       <div class="login-wrap"><form class="login-card" id="lf">
         <div class="logo">UT</div><h2>${esc(t('app_name'))}</h2><p>${esc(t('app_sub'))}</p>
-        <div class="field"><label>${t('username')}</label><input id="u" value="admin"></div>
-        <div class="field"><label>${t('password')}</label><input id="p" type="password"></div>
+        <div class="field"><label>${t('username')}</label><input id="u" autocomplete="username" autocapitalize="none" spellcheck="false"></div>
+        <div class="field"><label>${t('password')}</label><input id="p" type="password" autocomplete="current-password"></div>
         <button class="btn primary" style="width:100%;justify-content:center;margin-top:8px">${t('login')}</button>
-        <p class="muted" style="margin-top:14px;font-size:11.5px">admin / admin123</p>
+        <p class="muted" style="margin-top:14px;font-size:12.5px;text-align:center"><a href="#" id="forgot">${t('forgot_link')}</a></p>
         <div style="text-align:center;margin-top:10px">${langSwitch()}</div>
       </form></div>`;
     document.getElementById('lf').onsubmit = async (e) => {
@@ -133,7 +133,46 @@
         await loadConfig(); location.hash = '#/dashboard'; layout(); route();
       } catch (err) { toast(err.message, 'err'); }
     };
+    document.getElementById('forgot').onclick = (e) => { e.preventDefault(); forgotView(); };
     wireLang();
+  }
+
+  // Forgot password: (1) username or email -> a 6-digit code is emailed, (2) code + new password.
+  // The server answers step 1 identically whether or not the account exists.
+  function forgotView() {
+    const card = (inner) => { document.getElementById('app').innerHTML = `<div class="login-wrap"><form class="login-card" id="ff">${inner}</form></div>`; };
+    const head = `<div class="logo">UT</div><h2>${esc(t('forgot_title'))}</h2>`;
+    const back = `<p class="muted" style="margin-top:14px;font-size:12.5px;text-align:center"><a href="#" id="fback">${t('twofa_back')}</a></p>`;
+    const stepOne = () => {
+      card(`${head}<p>${t('forgot_hint')}</p>
+        <div class="field"><label>${t('forgot_identifier')}</label><input id="fid" autocomplete="username" autocapitalize="none" spellcheck="false"></div>
+        <button class="btn primary" style="width:100%;justify-content:center;margin-top:8px">${t('forgot_send')}</button>${back}`);
+      document.getElementById('fback').onclick = (e) => { e.preventDefault(); loginView(); };
+      document.getElementById('ff').onsubmit = async (e) => {
+        e.preventDefault();
+        const identifier = document.getElementById('fid').value.trim();
+        if (!identifier) return;
+        try { await API.post('/auth/forgot', { identifier }); toast(t('forgot_sent')); stepTwo(identifier); }
+        catch (err) { toast(err.message, 'err'); }
+      };
+    };
+    const stepTwo = (identifier) => {
+      card(`${head}<p>${t('forgot_sent')}</p>
+        <div class="field"><label>${t('forgot_code')}</label><input id="fotp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" style="letter-spacing:4px;font-size:20px;text-align:center"></div>
+        <div class="field"><label>${t('forgot_new_pw')}</label><input id="fpw" type="password" autocomplete="new-password"></div>
+        <div class="field"><label>${t('forgot_confirm_pw')}</label><input id="fpw2" type="password" autocomplete="new-password"></div>
+        <p class="muted" style="font-size:11.5px">${t('forgot_pw_rule')}</p>
+        <button class="btn primary" style="width:100%;justify-content:center;margin-top:8px">${t('forgot_reset_btn')}</button>${back}`);
+      document.getElementById('fback').onclick = (e) => { e.preventDefault(); loginView(); };
+      document.getElementById('ff').onsubmit = async (e) => {
+        e.preventDefault();
+        const pw = document.getElementById('fpw').value;
+        if (pw !== document.getElementById('fpw2').value) return toast(t('forgot_mismatch'), 'err');
+        try { await API.post('/auth/reset', { identifier, otp: document.getElementById('fotp').value.trim(), new_password: pw }); toast(t('forgot_done')); loginView(); }
+        catch (err) { toast(err.message, 'err'); }
+      };
+    };
+    stepOne();
   }
 
   // Second step: the account has an authenticator app (TOTP) enabled — the

@@ -12,7 +12,7 @@ Object.assign(Pages, (() => {
     columns: [{ key: 'code', label: t('code') }, { key: 'name', label: t('name') }, { key: 'phone', label: t('phone') },
       { key: 'email', label: t('email') }, { key: 'opening_balance', label: t('opening_balance'), num: true, render: (r) => money(r.opening_balance) }],
     fields: [{ key: 'name', label: t('name'), required: true }, { key: 'phone', label: t('phone') }, { key: 'email', label: t('email') },
-      { key: 'civil_id', label: t('civil_id') }, { key: 'opening_balance', label: t('opening_balance'), type: 'number', step: '0.001', value: 0 }, { key: 'notes', label: 'ملاحظات', full: true }],
+      { key: 'civil_id', label: t('civil_id') }, { key: 'tax_no', label: t('tax_no') }, { key: 'opening_balance', label: t('opening_balance'), type: 'number', step: '0.001', value: 0 }, { key: 'notes', label: 'ملاحظات', full: true }],
     rowActions: ['view', 'edit', 'delete'],
     onView: (r) => { location.hash = '#/statement?tenant=' + r.id; },
     newLabel: t('new_customer'),
@@ -88,6 +88,7 @@ Object.assign(Pages, (() => {
         // convert to a Blob and navigate to THAT url instead, same as every other
         // file preview in this app already does. The window opens synchronously
         // (before the async blob conversion) so popup blockers don't catch it.
+        if (!/^data:(image\/(png|jpe?g|gif|webp)|application\/pdf)[;,]/.test(String(r.attachment || ''))) return toast('نوع المرفق غير مسموح', 'err');
         const w = window.open();
         try {
           const res = await fetch(r.attachment);
@@ -840,7 +841,7 @@ Object.assign(Pages, (() => {
     const now = new Date(), y = now.getFullYear(), qm = Math.floor(now.getMonth() / 3) * 3;
     const from = c._from || `${y}-${String(qm + 1).padStart(2, '0')}-01`;
     const to = c._to || new Date(y, qm + 3, 0).toISOString().slice(0, 10);
-    reportShell(c, 'm_vatreturn', `<div class="field" style="margin:0"><label>من</label><input type="date" id="rf" value="${from}"></div><div class="field" style="margin:0"><label>إلى</label><input type="date" id="rt" value="${to}"></div><button class="btn" id="rxls">📊 Excel</button>`, null);
+    reportShell(c, 'm_vatreturn', `<div class="field" style="margin:0"><label>من</label><input type="date" id="rf" value="${from}"></div><div class="field" style="margin:0"><label>إلى</label><input type="date" id="rt" value="${to}"></div><button class="btn teal" id="rsheets">📑 ${t('vat_gen_sheets')}</button><button class="btn" id="rxls">📊 Excel</button>`, null);
     const r = await API.get(`/reports/vat-return?from=${from}&to=${to}`);
     const m = (v) => money(v);
     const bx = (box, label, base, vat) => `<tr><td>${box}</td><td>${label}</td><td class="num">${base != null ? m(base) : ''}</td><td class="num">${vat != null ? m(vat) : ''}</td></tr>`;
@@ -878,6 +879,7 @@ Object.assign(Pages, (() => {
     c.querySelector('#rf').onchange = (e) => { c._from = e.target.value; vatReturn(c); };
     c.querySelector('#rt').onchange = (e) => { c._to = e.target.value; vatReturn(c); };
     c.querySelector('#rxls').onclick = () => UI.exportTableToExcel('VAT-Return-' + r.from + '_' + r.to, html);
+    c.querySelector('#rsheets').onclick = () => API.download(`/vat-return/tax-sheets?from=${from}&to=${to}`, `Taxpayer-Checklist-${to.slice(0, 7)}.xlsx`).catch((e) => toast(e.message, 'err'));
     bindPrint(c, t('m_vatreturn'));
   }
 
@@ -2293,7 +2295,8 @@ Object.assign(Pages, (() => {
     formModal({ title: row ? t('edit') : 'مستخدم جديد', fields: [
       { key: 'username', label: t('username'), required: !row, readonly: !!row, value: row ? row.username : '' },
       { key: 'full_name', label: t('name'), value: row ? row.full_name : '' },
-      { key: 'password', label: t('password') + (row ? ' (اتركه فارغاً)' : ''), type: 'text' },
+      { key: 'email', label: t('email') + ' (' + t('forgot_title') + ')', type: 'email', value: row ? (row.email || '') : '' },
+      { key: 'password', label: t('password') + (row ? ' (اتركه فارغاً)' : ''), type: 'password' },
       { key: 'role', label: t('role'), type: 'select', options: [{ value: 'accountant', label: t('accountant') }, { value: 'admin', label: t('admin') }, { value: 'viewer', label: t('viewer') }], value: row ? row.role : 'accountant' },
     ], onSave: async (d, close) => { if (row) await API.put('/users/' + row.id, d); else await API.post('/users', d); toast(t('saved')); close(); done(); } });
   }
@@ -2375,7 +2378,10 @@ Object.assign(Pages, (() => {
       </div></div>`;
       c.querySelector('#secOff').onclick = async () => {
         if (!confirm(t('twofa_disable_confirm'))) return;
-        try { await API.post('/2fa/disable', {}); toast(t('saved')); security(c); } catch (e) { toast(e.message, 'err'); }
+        formModal({ title: t('twofa_disable_btn'), fields: [
+          { key: 'password', label: t('password'), type: 'password', required: true },
+          { key: 'code', label: t('twofa_code'), required: true },
+        ], onSave: async (d, close) => { await API.post('/2fa/disable', { password: d.password, code: d.code }); toast(t('saved')); close(); security(c); } });
       };
     };
     const renderDisabled = () => {
@@ -2383,9 +2389,11 @@ Object.assign(Pages, (() => {
         <p class="muted" style="margin-top:0">${t('twofa_disabled_msg')}</p>
         <button class="btn primary" id="secOn">🔒 ${t('twofa_setup_btn')}</button>
       </div></div>`;
-      c.querySelector('#secOn').onclick = async () => {
+      c.querySelector('#secOn').onclick = () => formModal({ title: t('twofa_setup_btn'), fields: [{ key: 'password', label: t('password'), type: 'password', required: true }],
+        onSave: async (d, close) => { close(); await startSetup(d.password); } });
+      const startSetup = async (password) => {
         try {
-          const s = await API.post('/2fa/setup', {});
+          const s = await API.post('/2fa/setup', { password });
           c.querySelector('.bd').innerHTML = `
             <p>${t('twofa_step1')}</p>
             <p style="font-family:monospace;font-size:16px;letter-spacing:2px;background:var(--bg-2);padding:10px 14px;border-radius:8px;text-align:center;user-select:all">${esc(s.secret)}</p>

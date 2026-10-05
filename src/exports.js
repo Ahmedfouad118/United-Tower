@@ -2,11 +2,22 @@
 const express = require('express');
 const XLSX = require('xlsx');
 const { db } = require('./db');
-const { authMiddleware } = require('./auth');
+const { authMiddleware, requireRole } = require('./auth');
 const R = require('./reports');
 
 const router = express.Router();
-router.use(authMiddleware);
+router.use(authMiddleware, requireRole('admin', 'accountant'));   // full-table downloads (IBANs, salaries, civil IDs…) are not for viewers
+
+// Oman Tax Authority "Taxpayer Checklist" workbook (output sales + input purchases) for a period
+router.get('/vat-return/tax-sheets', async (req, res) => {
+  try {
+    const { buildVatChecklist } = require('./vat_sheets');
+    const { buffer } = await buildVatChecklist(String(req.query.from || ''), String(req.query.to || ''));
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="Taxpayer-Checklist-${String(req.query.to).slice(0, 7)}.xlsx"`);
+    res.send(buffer);
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
 
 // registry: type -> { rows(), columns:[{key,label}], template:[headers] }
 const REG = {

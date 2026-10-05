@@ -40,16 +40,25 @@ Account balance = SUM(debit)-SUM(credit) over journal_lines for that account_cod
 // and secrets (API keys) that other users/roles have no business seeing, and
 // that a low-privilege user could otherwise exfiltrate just by asking the
 // chat to "run this SQL".
-const FORBIDDEN_TABLES = ['users', 'settings'];
+const FORBIDDEN_TABLES = ['users', 'settings', 'password_resets', 'activity_log', 'user_permissions', 'user_buildings'];
+let _ro = null;
+function roDb() {
+  if (!_ro) { const { DatabaseSync } = require('node:sqlite'); _ro = new DatabaseSync(require('./db').DB_PATH, { readOnly: true }); }
+  return _ro;
+}
 function runTool(name, input, user) {
   if (name === 'query_db') {
     if (!['admin', 'accountant'].includes(user.role)) return { error: 'no permission to query the database' };
     const sql = String(input.sql || '').trim();
-    if (!/^select/i.test(sql) || /[;]\s*\S/.test(sql) || /\b(insert|update|delete|drop|alter|create|attach|pragma)\b/i.test(sql))
+    if (sql.length > 4000 || !/^select/i.test(sql) || /[;]\s*\S/.test(sql) || /\b(insert|update|delete|drop|alter|create|attach|detach|pragma|replace|vacuum|recursive|randomblob|zeroblob|load_extension)\b|pragma_|sqlite_/i.test(sql))
       return { error: 'only a single read-only SELECT is allowed' };
     if (FORBIDDEN_TABLES.some((t) => new RegExp(`\\b${t}\\b`, 'i').test(sql)))
       return { error: 'access to this table is not allowed' };
-    try { return { rows: db.prepare(sql).all().slice(0, 200) }; } catch (e) { return { error: e.message }; }
+    try {
+      // read-only connection + hard row cap, so a query can neither write nor materialise millions of rows
+      const ro = roDb();
+      return { rows: ro.prepare('SELECT * FROM (' + sql.replace(/;\s*$/, '') + ') LIMIT 200').all() };
+    } catch (e) { return { error: 'query failed' }; }
   }
   if (!['admin', 'accountant'].includes(user.role)) return { error: 'no permission to modify data' };
   try {
@@ -63,10 +72,14 @@ function runTool(name, input, user) {
   return { error: 'unknown tool' };
 }
 
-router.post('/ai/chat', async (req, res) => {
+const { limit: rlimit } = require('./ratelimit');
+router.post('/ai/chat', rlimit('ai', 40, 60 * 60 * 1000), async (req, res) => {
+  if (!['admin', 'accountant'].includes(req.user.role)) return res.status(403).json({ error: 'forbidden' });
   const key = getKey();
   if (!key) return res.status(400).json({ error: 'لم يتم ضبط مفتاح الذكاء الاصطناعي. أدخله في الإعدادات ← بيانات البناية.' });
-  const messages = Array.isArray(req.body.messages) ? req.body.messages.slice(-20) : [{ role: 'user', content: String(req.body.message || '') }];
+  let messages = Array.isArray(req.body.messages) ? req.body.messages.slice(-20) : [{ role: 'user', content: String(req.body.message || '').slice(0, 4000) }];
+  messages = messages.filter((m) => m && ['user', 'assistant'].includes(m.role) && JSON.stringify(m.content || '').length <= 30000);
+  if (!messages.length) return res.status(400).json({ error: 'empty message' });
   const system = `أنت مساعد محاسبي داخل نظام "برج المتحدة" لإدارة العقارات. تجاوب بالعربية باختصار ووضوح. لديك أدوات للاستعلام عن قاعدة البيانات وتنفيذ العمليات (قيود/فواتير/سندات قبض). استعلم من قاعدة البيانات قبل أي إجابة رقمية. قبل تنفيذ أي عملية كتابية (قيد/فاتورة) نفّذها فقط لو طلب المستخدم صراحةً. ${schemaHint()}`;
   try {
     let msgs = messages.map((m) => ({ role: m.role, content: m.content }));
@@ -87,7 +100,7 @@ router.post('/ai/chat', async (req, res) => {
       msgs.push({ role: 'user', content: results });
     }
     res.json({ reply: 'تم تجاوز عدد الخطوات المسموح.', messages: msgs });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error('[UT] ai error:', e.message); res.status(500).json({ error: 'AI request failed' }); }
 });
 
 module.exports = router;

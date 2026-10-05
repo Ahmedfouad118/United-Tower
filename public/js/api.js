@@ -10,7 +10,7 @@ const API = (() => {
     if (body && !isForm) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
     if (isForm) opts.body = body;
     const res = await fetch('/api' + path, opts);
-    if (res.status === 401) { logout(); location.hash = '#/login'; throw new Error('انتهت الجلسة، الرجاء تسجيل الدخول'); }
+    if (res.status === 401 && !path.startsWith('/login') && !path.startsWith('/auth/')) { logout(); location.hash = '#/login'; throw new Error('انتهت الجلسة، الرجاء تسجيل الدخول'); }
     const txt = await res.text();
     let data; try { data = txt ? JSON.parse(txt) : {}; } catch { data = { raw: txt }; }
     if (!res.ok) throw new Error(data.error || ('خطأ ' + res.status));

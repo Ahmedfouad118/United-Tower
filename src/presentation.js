@@ -142,18 +142,26 @@ function getOrCreateShare(from, to, building_id, version, created_by) {
   const existing = bid == null
     ? db.prepare('SELECT * FROM presentation_shares WHERE building_id IS NULL AND from_date=? AND to_date=? AND version=?').get(from, to, ver)
     : db.prepare('SELECT * FROM presentation_shares WHERE building_id=? AND from_date=? AND to_date=? AND version=?').get(bid, from, to, ver);
-  if (existing) return existing;
+  if (existing && !existing.revoked) {
+    db.prepare("UPDATE presentation_shares SET expires_at=datetime('now','+90 days') WHERE token=?").run(existing.token);
+    return db.prepare('SELECT * FROM presentation_shares WHERE token=?').get(existing.token);
+  }
   const token = require('crypto').randomBytes(16).toString('hex');
-  db.prepare('INSERT INTO presentation_shares (token,building_id,from_date,to_date,version,created_by) VALUES (?,?,?,?,?,?)')
+  db.prepare("INSERT INTO presentation_shares (token,building_id,from_date,to_date,version,created_by,expires_at) VALUES (?,?,?,?,?,?,datetime('now','+90 days'))")
     .run(token, bid, from, to, ver, created_by || null);
   return db.prepare('SELECT * FROM presentation_shares WHERE token=?').get(token);
 }
 function getShare(token) {
-  return db.prepare('SELECT * FROM presentation_shares WHERE token=?').get(token);
+  // revoked or expired links stop working immediately
+  return db.prepare("SELECT * FROM presentation_shares WHERE token=? AND revoked=0 AND (expires_at IS NULL OR expires_at > datetime('now'))").get(String(token || '').slice(0, 64)) || null;
+}
+function revokeShares(building_id, from, to) {
+  return db.prepare('UPDATE presentation_shares SET revoked=1 WHERE from_date=? AND to_date=?' + (building_id ? ' AND building_id=?' : '')).run(...(building_id ? [from, to, Number(building_id)] : [from, to])).changes;
 }
 function saveFeedback(token, data) {
   const share = getShare(token);
   if (!share) throw new Error('رابط غير صالح');
+  if (db.prepare('SELECT COUNT(*) n FROM presentation_feedback WHERE share_token=?').get(token).n >= 200) throw new Error('تم الوصول للحد الأقصى من التقييمات');
   const clamp = (v) => { v = Number(v); return v >= 1 && v <= 5 ? v : null; };
   db.prepare(
     `INSERT INTO presentation_feedback (share_token,rating_overall,rating_clarity,rating_design,notes,name)
@@ -176,7 +184,7 @@ function listFeedback(from, to, building_id, version) {
   return { rows, count: rows.length, avg_overall: avg('rating_overall'), avg_clarity: avg('rating_clarity'), avg_design: avg('rating_design') };
 }
 
-module.exports = {
+module.exports = { revokeShares,
   getPresentationData, getNotes, saveNotes,
   getOrCreateShare, getShare, saveFeedback, listFeedback,
 };

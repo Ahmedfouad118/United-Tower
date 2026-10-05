@@ -22,8 +22,14 @@ function init() {
     'ALTER TABLE vendor_bills ADD COLUMN attachment TEXT',
     'ALTER TABLE users ADD COLUMN totp_secret TEXT',
     'ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE users ADD COLUMN email TEXT',
+    'ALTER TABLE users ADD COLUMN pwd_changed_at INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE tenants ADD COLUMN tax_no TEXT',
+    'ALTER TABLE presentation_shares ADD COLUMN expires_at TEXT',
+    'ALTER TABLE presentation_shares ADD COLUMN revoked INTEGER NOT NULL DEFAULT 0',
   ];
   for (const m of migrations) { try { db.exec(m); } catch (e) { /* column exists */ } }
+  try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS users_email_uq ON users(lower(email)) WHERE email IS NOT NULL AND email<>''"); } catch (e) { /* duplicates — keep non-unique */ }
   migrateBudgetVersions();
   backfillBuildingIds();
 }

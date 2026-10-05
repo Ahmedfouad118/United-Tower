@@ -1,6 +1,7 @@
 const express = require('express');
 const { db, DB_PATH } = require('./db');
-const { login, completeTwoFactorLogin, authMiddleware, requireRole, hash, startTwoFactorSetup, enableTwoFactor, disableTwoFactor } = require('./auth');
+const { login, completeTwoFactorLogin, authMiddleware, requireRole, hash, startTwoFactorSetup, enableTwoFactor, disableTwoFactor, checkPassword, requestPasswordReset, confirmPasswordReset } = require('./auth');
+const { limit } = require('./ratelimit');
 const svc = require('./services');
 const R = require('./reports');
 const BUD = require('./budget');
@@ -15,15 +16,19 @@ try { db.exec(`CREATE TABLE IF NOT EXISTS activity_log (id INTEGER PRIMARY KEY A
 // company documents (licences, CR, contracts, certificates...) with attachments
 try { db.exec(`CREATE TABLE IF NOT EXISTS company_documents (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, doc_type TEXT, doc_no TEXT, issue_date TEXT, expiry_date TEXT, attachment TEXT, notes TEXT, created_by INTEGER, created_at TEXT DEFAULT (datetime('now')))`); } catch (e) {}
 
+function logEvent(req, user, method, path, status, summary) {
+  try {
+    db.prepare('INSERT INTO activity_log (ts,user_id,username,role,method,path,status,summary) VALUES (?,?,?,?,?,?,?,?)')
+      .run(new Date().toISOString(), (user && user.id) || null, (user && (user.full_name || user.username)) || '', (user && user.role) || '', method, path, status, `${summary || ''}${req && req.ip ? ' ip=' + req.ip : ''}`.trim());
+  } catch (e) {}
+}
+
 // Download a full backup of the live database (admin only). Auth header only
 // — the frontend always fetches this as a blob and never as a plain link, so
 // there's no reason to also accept the token via ?token=, which would risk it
 // being captured in server/proxy access logs or browser history.
-router.get('/backup', (req, res) => {
-  const jwt = require('jsonwebtoken'); const { SECRET } = require('./auth');
-  const tok = (req.headers.authorization || '').replace('Bearer ', '');
-  let user; try { user = jwt.verify(tok, SECRET); } catch { return res.status(401).json({ error: 'unauthorized' }); }
-  if (user.role !== 'admin') return res.status(403).json({ error: 'forbidden' });
+router.get('/backup', authMiddleware, requireRole('admin'), limit('backup', 6, 60 * 60 * 1000), (req, res) => {
+  logEvent(req, req.user, 'GET', '/backup', 200, 'database backup downloaded');
   try {
     const fs = require('fs');
     // checkpoint WAL into the main file so the copy is complete
@@ -31,10 +36,17 @@ router.get('/backup', (req, res) => {
     const stamp = new Date().toISOString().slice(0, 10);
     res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader('Content-Disposition', `attachment; filename="united-tower-backup-${stamp}.db"`);
-    fs.createReadStream(DB_PATH).pipe(res);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    fs.createReadStream(DB_PATH).on('error', () => { try { res.destroy(); } catch (e2) {} }).pipe(res);
+  } catch (e) { res.status(500).json({ error: 'backup failed' }); }
 });
 
+// Attachments are stored as data: URIs and later opened in the browser — only inert types are accepted
+function checkAttachment(att) {
+  if (att == null || att === '') return;
+  const s = String(att);
+  if (!/^data:(image\/(png|jpeg|gif|webp)|application\/pdf);base64,[A-Za-z0-9+/=]+$/.test(s)) throw new Error('نوع المرفق غير مسموح (صور أو PDF فقط)');
+  if (s.length > 5 * 1024 * 1024) throw new Error('المرفق كبير جدًا (الحد 3.5 ميجا)');
+}
 const lang = (req) => req.headers['x-lang'] || req.query.lang || (req.user && req.user.lang) || 'en';
 
 // ---- Building-level access control ---------------------------------------
@@ -60,6 +72,12 @@ function effBuilding(req) {
   if (asked && !ids.includes(asked)) return -1;  // asked for a forbidden building
   return asked || (ids.length === 1 ? ids[0] : null);
 }
+// 403 when a building-scoped user touches a building they were not granted
+function assertBuilding(req, id) {
+  const ids = allowedBuildingIds(req);
+  if (ids === null || id == null) return;
+  if (!ids.includes(Number(id))) { const e = new Error('forbidden building'); e.status = 403; throw e; }
+}
 function scopeRows(req, rows) {
   const ids = allowedBuildingIds(req);
   if (ids === null) return rows;
@@ -67,14 +85,27 @@ function scopeRows(req, rows) {
 }
 
 // ---- Auth -----------------------------------------------------------------
-router.post('/login', (req, res) => {
-  const { username, password } = req.body || {};
-  const r = login(username, password);
-  if (!r) return res.status(401).json({ error: 'اسم المستخدم أو كلمة المرور غير صحيحة' });
-  if (r.locked) return res.status(429).json({ error: 'محاولات كتير غلط — الحساب مقفول مؤقتًا، حاول بعد شوية' });
+// forgot password: step 1 emails a 6-digit code, step 2 trades the code for a new password
+router.post('/auth/forgot', limit('forgot', 5, 60 * 60 * 1000), async (req, res) => {
+  const r = await requestPasswordReset((req.body || {}).identifier, req.ip);
   res.json(r);
 });
-router.post('/login/2fa', (req, res) => {
+router.post('/auth/reset', limit('reset', 10, 60 * 60 * 1000), (req, res) => {
+  const { identifier, otp, new_password } = req.body || {};
+  const r = confirmPasswordReset(identifier, otp, new_password);
+  logEvent(req, { username: String(identifier || '').slice(0, 60) }, 'RESET', '/auth/reset', r.error ? 400 : 200, r.error ? 'password reset failed' : 'password reset ok');
+  if (r.error) return res.status(400).json(r);
+  res.json(r);
+});
+router.post('/login', limit('login', 30, 10 * 60 * 1000), (req, res) => {
+  const { username, password } = req.body || {};
+  const r = login(username, password, req.ip);
+  if (!r) { logEvent(req, { username: String(username || '').slice(0, 60) }, 'LOGIN', '/login', 401, 'failed login'); return res.status(401).json({ error: 'اسم المستخدم أو كلمة المرور غير صحيحة' }); }
+  if (r.locked) { logEvent(req, { username: String(username || '').slice(0, 60) }, 'LOGIN', '/login', 429, 'locked out'); return res.status(429).json({ error: 'محاولات كتير غلط — الحساب مقفول مؤقتًا، حاول بعد شوية' }); }
+  logEvent(req, r.user || { username: String(username || '').slice(0, 60) }, 'LOGIN', '/login', 200, r.needs_2fa ? 'password ok, 2FA pending' : 'login ok');
+  res.json(r);
+});
+router.post('/login/2fa', limit('login2fa', 30, 10 * 60 * 1000), (req, res) => {
   const { pending_token, code } = req.body || {};
   const r = completeTwoFactorLogin(pending_token, code);
   if (!r) return res.status(401).json({ error: 'الكود غير صحيح أو الجلسة انتهت' });
@@ -83,13 +114,13 @@ router.post('/login/2fa', (req, res) => {
 
 // ---- Public presentation share link (no auth) — a viewer with the link can
 // see this ONE presentation snapshot and leave a rating, nothing else.
-router.get('/public/presentation/:token', (req, res) => {
+router.get('/public/presentation/:token', limit('pubget', 60, 10 * 60 * 1000), (req, res) => {
   const share = PRES.getShare(req.params.token);
   if (!share) return res.status(404).json({ error: 'الرابط غير صحيح أو منتهي' });
   try { res.json(PRES.getPresentationData(share.from_date, share.to_date, share.building_id, share.version)); }
   catch (e) { res.status(400).json({ error: e.message }); }
 });
-router.post('/public/presentation/:token/feedback', (req, res) => {
+router.post('/public/presentation/:token/feedback', limit('pubfb', 10, 10 * 60 * 1000), (req, res) => {
   try { res.json(PRES.saveFeedback(req.params.token, req.body || {})); }
   catch (e) { res.status(400).json({ error: e.message }); }
 });
@@ -127,7 +158,7 @@ router.get('/me', (req, res) => {
 
 // ---- Two-factor auth self-service (any logged-in user, for their OWN account)
 router.post('/2fa/setup', (req, res) => {
-  try { res.json(startTwoFactorSetup(req.user.id, ((db.prepare("SELECT value FROM settings WHERE key='company_name'").get() || {}).value) || 'United Tower')); }
+  try { res.json(startTwoFactorSetup(req.user.id, ((db.prepare("SELECT value FROM settings WHERE key='company_name'").get() || {}).value) || 'United Tower', (req.body || {}).password)); logEvent(req, req.user, 'POST', '/2fa/setup', 200, '2FA setup started'); }
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.post('/2fa/enable', (req, res) => {
@@ -135,7 +166,7 @@ router.post('/2fa/enable', (req, res) => {
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.post('/2fa/disable', (req, res) => {
-  try { res.json(disableTwoFactor(req.user.id)); }
+  try { res.json(disableTwoFactor(req.user.id, (req.body || {}).password, (req.body || {}).code)); logEvent(req, req.user, 'POST', '/2fa/disable', 200, '2FA disabled'); }
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 // Secret-bearing settings keys — every logged-in user (any role) can read
@@ -150,6 +181,8 @@ router.get('/settings', (req, res) => {
   res.json(all);
 });
 router.put('/settings', requireRole('admin'), (req, res) => {
+  const logo = (req.body || {}).company_logo;
+  if (logo != null && logo !== '' && (!/^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(String(logo)) || String(logo).length > 1.5 * 1024 * 1024)) return res.status(400).json({ error: 'الشعار لازم يكون صورة PNG/JPG/WEBP أقل من 1 ميجا' });
   const set = db.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)');
   for (const [k, v] of Object.entries(req.body || {})) set.run(k, v == null ? '' : String(v));
   res.json({ ok: true });
@@ -168,20 +201,27 @@ router.post('/admin/vat-provision-migrate', requireRole('admin'), (req, res) => 
 
 // ---- Users & permissions --------------------------------------------------
 router.get('/users', requireRole('admin'), (req, res) =>
-  res.json(db.prepare('SELECT id,username,full_name,role,lang,active,totp_enabled,created_at FROM users ORDER BY id').all()));
+  res.json(db.prepare('SELECT id,username,full_name,email,role,lang,active,totp_enabled,created_at FROM users ORDER BY id').all()));
 router.post('/users', requireRole('admin'), (req, res) => {
-  const { username, full_name, password, role } = req.body;
+  const { username, full_name, password, role, email } = req.body;
   try {
-    const r = db.prepare('INSERT INTO users (username,full_name,password_hash,role) VALUES (?,?,?,?)')
-      .run(username, full_name, hash(password || 'changeme'), role || 'viewer');
+    if (!username || !full_name) throw new Error('username and full name are required');
+    if (!['admin', 'accountant', 'viewer'].includes(role || 'viewer')) throw new Error('invalid role');
+    const weak = checkPassword(password, username); if (weak) throw new Error(weak);
+    const r = db.prepare('INSERT INTO users (username,full_name,password_hash,role,email) VALUES (?,?,?,?,?)')
+      .run(String(username).trim(), full_name, hash(password), role || 'viewer', email ? String(email).trim() : null);
     res.json({ id: Number(r.lastInsertRowid) });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.put('/users/:id', requireRole('admin'), (req, res) => {
-  const { full_name, role, active, password } = req.body;
-  db.prepare('UPDATE users SET full_name=COALESCE(?,full_name),role=COALESCE(?,role),active=COALESCE(?,active) WHERE id=?')
-    .run(full_name ?? null, role ?? null, active ?? null, req.params.id);
-  if (password) db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hash(password), req.params.id);
+  const { full_name, role, active, password, email } = req.body;
+  if (role != null && !['admin', 'accountant', 'viewer'].includes(role)) return res.status(400).json({ error: 'invalid role' });
+  const target = db.prepare('SELECT username FROM users WHERE id=?').get(req.params.id);
+  if (!target) return res.status(404).json({ error: 'not found' });
+  if (password) { const weak = checkPassword(password, target.username); if (weak) return res.status(400).json({ error: weak }); }
+  db.prepare('UPDATE users SET full_name=COALESCE(?,full_name),role=COALESCE(?,role),active=COALESCE(?,active),email=COALESCE(?,email) WHERE id=?')
+    .run(full_name ?? null, role ?? null, active ?? null, email === undefined ? null : (String(email).trim() || null), req.params.id);
+  if (password) db.prepare('UPDATE users SET password_hash=?, pwd_changed_at=? WHERE id=?').run(hash(password), Date.now(), req.params.id);
   res.json({ ok: true });
 });
 router.get('/users/:id/permissions', requireRole('admin'), (req, res) =>
@@ -245,14 +285,16 @@ router.delete('/accounts/:code', requireRole('admin'), (req, res) => {
 
 // ---- Generic master CRUD helper ------------------------------------------
 function crud(path, table, fields, opts = {}) {
-  router.get('/' + path, (req, res) => res.json(db.prepare(`SELECT * FROM ${table} ${opts.order || 'ORDER BY id DESC'}`).all()));
-  router.post('/' + path, writers, (req, res) => {
+  const readMw = opts.readRoles ? [requireRole(...opts.readRoles)] : [];
+  const check = (req, res, next) => { try { if (opts.validate) opts.validate(req.body || {}); next(); } catch (e) { res.status(400).json({ error: e.message }); } };
+  router.get('/' + path, ...readMw, (req, res) => res.json(db.prepare(`SELECT * FROM ${table} ${opts.order || 'ORDER BY id DESC'}`).all()));
+  router.post('/' + path, writers, check, (req, res) => {
     const cols = fields.filter((f) => req.body[f] !== undefined);
     const sql = `INSERT INTO ${table} (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`;
     try { res.json({ id: Number(db.prepare(sql).run(...cols.map((c) => req.body[c])).lastInsertRowid) }); }
     catch (e) { res.status(400).json({ error: e.message }); }
   });
-  router.put('/' + path + '/:id', writers, (req, res) => {
+  router.put('/' + path + '/:id', writers, check, (req, res) => {
     const cols = fields.filter((f) => req.body[f] !== undefined);
     if (!cols.length) return res.json({ ok: true });
     db.prepare(`UPDATE ${table} SET ${cols.map((c) => c + '=?').join(',')} WHERE id=?`).run(...cols.map((c) => req.body[c]), req.params.id);
@@ -308,7 +350,7 @@ router.put('/flats/:id', writers, (req, res) => {
 crud('flats', 'flats', ['code', 'building_id', 'unit_type', 'floor', 'bedrooms', 'base_rent', 'category_id', 'notes'], { order: 'ORDER BY code' });
 // tenant create/update also posts a tenant-tagged opening-balance journal
 router.post('/tenants', writers, (req, res) => {
-  const f = ['code', 'name', 'name_ar', 'phone', 'email', 'civil_id', 'category_id', 'opening_balance', 'notes'].filter((k) => req.body[k] !== undefined);
+  const f = ['code', 'name', 'name_ar', 'phone', 'email', 'civil_id', 'tax_no', 'category_id', 'opening_balance', 'notes'].filter((k) => req.body[k] !== undefined);
   try {
     const r = db.prepare(`INSERT INTO tenants (${f.join(',')}) VALUES (${f.map(() => '?').join(',')})`).run(...f.map((k) => req.body[k]));
     const id = Number(r.lastInsertRowid);
@@ -317,7 +359,7 @@ router.post('/tenants', writers, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.put('/tenants/:id', writers, (req, res) => {
-  const f = ['code', 'name', 'name_ar', 'phone', 'email', 'civil_id', 'category_id', 'opening_balance', 'notes'].filter((k) => req.body[k] !== undefined);
+  const f = ['code', 'name', 'name_ar', 'phone', 'email', 'civil_id', 'tax_no', 'category_id', 'opening_balance', 'notes'].filter((k) => req.body[k] !== undefined);
   try {
     if (f.length) db.prepare(`UPDATE tenants SET ${f.map((c) => c + '=?').join(',')} WHERE id=?`).run(...f.map((k) => req.body[k]), req.params.id);
     if (req.body.opening_balance !== undefined) svc.setTenantOpening(Number(req.params.id), req.body.opening_balance, req.user.id);
@@ -346,10 +388,10 @@ router.put('/vendors/:id', writers, (req, res) => {
 });
 crud('vendors', 'vendors', ['code', 'name', 'name_ar', 'phone', 'email', 'tax_no', 'category_id', 'opening_balance', 'notes'], { order: 'ORDER BY name' });
 crud('categories', 'categories', ['entity', 'name', 'name_ar', 'name_ur', 'notes'], { order: 'ORDER BY entity,name' });
-crud('company-documents', 'company_documents', ['title', 'doc_type', 'doc_no', 'issue_date', 'expiry_date', 'attachment', 'notes'], { order: 'ORDER BY expiry_date IS NULL, expiry_date' });
+crud('company-documents', 'company_documents', ['title', 'doc_type', 'doc_no', 'issue_date', 'expiry_date', 'attachment', 'notes'], { order: 'ORDER BY expiry_date IS NULL, expiry_date', readRoles: ['admin', 'accountant'], validate: (b) => checkAttachment(b.attachment) });
 crud('payment-methods', 'payment_methods', ['name', 'name_ar', 'name_ur', 'kind', 'gl_account', 'active'], { order: 'ORDER BY id' });
-crud('banks', 'banks', ['name', 'name_ar', 'name_ur', 'branch', 'account_no', 'iban', 'swift', 'currency', 'gl_account', 'opening_balance', 'notes', 'active'], { order: 'ORDER BY name' });
-crud('employees', 'employees', ['name', 'name_ar', 'job_title', 'salary', 'active', 'notes'], { order: 'ORDER BY name' });
+crud('banks', 'banks', ['name', 'name_ar', 'name_ur', 'branch', 'account_no', 'iban', 'swift', 'currency', 'gl_account', 'opening_balance', 'notes', 'active'], { order: 'ORDER BY name', readRoles: ['admin', 'accountant'] });
+crud('employees', 'employees', ['name', 'name_ar', 'job_title', 'salary', 'active', 'notes'], { order: 'ORDER BY name', readRoles: ['admin', 'accountant'] });
 crud('assets', 'assets', ['code', 'name', 'name_ar', 'building_id', 'category', 'cost', 'salvage_value', 'life_years', 'purchase_date', 'asset_account', 'expense_account', 'accum_account', 'status', 'notes'], { order: 'ORDER BY name' });
 router.post('/assets/depreciation/run', writers, (req, res) => {
   const period = req.body.period || svc.currentMonth();
@@ -397,6 +439,8 @@ router.post('/contracts', writers, (req, res) => {
   try {
     let bid = building_id;
     if (!bid) bid = db.prepare('SELECT building_id FROM flats WHERE id=?').get(flat_id)?.building_id;
+    assertBuilding(req, bid);
+    checkAttachment(attachment);
     const r = db.prepare(
       `INSERT INTO contracts (contract_no,building_id,flat_id,tenant_id,start_date,end_date,monthly_rent,vat_percent,deposit,remarks,contract_type,attachment)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
@@ -412,6 +456,8 @@ router.put('/contracts/:id', writers, (req, res) => {
   const { contract_no, flat_id, tenant_id, start_date, end_date, monthly_rent, vat_percent, deposit, remarks, contract_type, attachment } = req.body;
   try {
     let bid = flat_id ? db.prepare('SELECT building_id FROM flats WHERE id=?').get(flat_id)?.building_id : null;
+    assertBuilding(req, bid || (db.prepare('SELECT building_id FROM contracts WHERE id=?').get(req.params.id) || {}).building_id);
+    checkAttachment(attachment);
     db.prepare(`UPDATE contracts SET contract_no=?,flat_id=?,tenant_id=?,building_id=COALESCE(?,building_id),start_date=?,end_date=?,monthly_rent=?,vat_percent=?,deposit=?,remarks=?,contract_type=COALESCE(?,contract_type),attachment=COALESCE(?,attachment) WHERE id=?`)
       .run(contract_no || null, flat_id, tenant_id, bid || null, start_date, end_date, monthly_rent, vat_percent ?? 5, deposit || 0, remarks || null, contract_type || null, attachment || null, req.params.id);
     res.json({ ok: true });
@@ -534,7 +580,7 @@ router.get('/payments', (req, res) => res.json(db.prepare(
    WHERE 1=1${bScope(req, 'p.building_id')}
    ORDER BY p.pdate DESC, p.id DESC LIMIT 500`).all()));
 router.post('/payments', writers, (req, res) => {
-  try { res.json(svc.recordPayment(req.body, req.user.id)); } catch (e) { res.status(400).json({ error: e.message }); }
+  try { assertBuilding(req, (req.body || {}).building_id); res.json(svc.recordPayment(req.body, req.user.id)); } catch (e) { res.status(e.status || 400).json({ error: e.message }); }
 });
 router.put('/payments/:id', writers, (req, res) => {
   const p = db.prepare('SELECT voucher_no FROM payments WHERE id=?').get(req.params.id);
@@ -562,10 +608,10 @@ router.get('/vendor-bills', (req, res) => res.json(db.prepare(
    WHERE 1=1${bScope(req, 'b.building_id')}
    ORDER BY b.bdate DESC, b.id DESC LIMIT 500`).all()));
 router.post('/vendor-bills', writers, (req, res) => {
-  try { res.json(svc.recordVendorBill(req.body, req.user.id)); } catch (e) { res.status(400).json({ error: e.message }); }
+  try { checkAttachment((req.body || {}).attachment); res.json(svc.recordVendorBill(req.body, req.user.id)); } catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.put('/vendor-bills/:id', writers, (req, res) => {
-  try { res.json(svc.updateVendorBill(Number(req.params.id), req.body, req.user.id)); } catch (e) { res.status(400).json({ error: e.message }); }
+  try { checkAttachment((req.body || {}).attachment); res.json(svc.updateVendorBill(Number(req.params.id), req.body, req.user.id)); } catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.delete('/vendor-bills/:id', writers, (req, res) => {
   try { svc.deleteVendorBill(Number(req.params.id)); res.json({ ok: true }); } catch (e) { res.status(400).json({ error: e.message }); }
@@ -737,18 +783,37 @@ function detachJournalFromSource(j) {
 router.delete('/journals/:id', writers, (req, res) => {
   const j = db.prepare('SELECT * FROM journals WHERE id=?').get(req.params.id);
   if (!j) return res.status(404).json({ error: 'not found' });
+  if (j.jtype !== 'manual' && req.user.role !== 'admin') return res.status(403).json({ error: 'system journals can only be changed by an admin' });
+  logEvent(req, req.user, 'DELETE', '/journals/' + j.id, 200, `journal ${j.reference || j.id} deleted`);
   detachJournalFromSource(j);
   deleteJournal(j.id); res.json({ ok: true });
 });
 router.put('/journals/:id', writers, (req, res) => {
   const j = db.prepare('SELECT * FROM journals WHERE id=?').get(req.params.id);
   if (!j) return res.status(404).json({ error: 'not found' });
-  const { jdate, memo, reference, lines } = req.body;
+  if (j.jtype !== 'manual' && req.user.role !== 'admin') return res.status(403).json({ error: 'system journals can only be changed by an admin' });
+  const { jdate, memo, reference, lines } = req.body || {};
   try {
-    detachJournalFromSource(j);
-    deleteJournal(j.id);
-    // reuse the same id so editing keeps the journal number stable
-    res.json({ id: postJournal({ id: j.id, jdate, jtype: j.jtype || 'manual', memo, reference: reference || j.reference, created_by: req.user.id }, lines) });
+    // validate BEFORE touching the stored journal, then swap it inside one transaction
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(jdate || '')) throw new Error('invalid date');
+    if (!Array.isArray(lines) || lines.length < 2) throw new Error('journal needs at least 2 lines');
+    const known = new Set(db.prepare('SELECT code FROM accounts').all().map((r) => r.code));
+    let dr = 0, cr = 0;
+    for (const l of lines) {
+      if (!known.has(String(l.account_code))) throw new Error('unknown account ' + l.account_code);
+      if (Number(l.debit || 0) < 0 || Number(l.credit || 0) < 0) throw new Error('negative amounts are not allowed');
+      dr += Number(l.debit || 0); cr += Number(l.credit || 0);
+    }
+    if (Math.abs(dr - cr) > 0.005) throw new Error('journal is not balanced');
+    db.exec('BEGIN');
+    try {
+      detachJournalFromSource(j);
+      deleteJournal(j.id);
+      // reuse the same id so editing keeps the journal number stable
+      const id = postJournal({ id: j.id, jdate, jtype: j.jtype || 'manual', memo, reference: reference || j.reference, created_by: req.user.id }, lines);
+      db.exec('COMMIT');
+      res.json({ id });
+    } catch (e2) { try { db.exec('ROLLBACK'); } catch (e3) {} throw e2; }
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
@@ -789,7 +854,7 @@ router.post('/opening/reconcile', requireRole('admin'), (req, res) => {
 // ---- Reports --------------------------------------------------------------
 router.get('/reports/trial-balance', (req, res) => res.json(R.trialBalance(req.query.upto, lang(req))));
 router.get('/reports/income-statement', (req, res) => res.json(R.incomeStatement(req.query.from, req.query.to, lang(req), req.query.building_id ? Number(req.query.building_id) : null)));
-router.get('/reports/income-statement-consolidated', (req, res) => res.json(R.incomeStatementConsolidated(req.query.year, lang(req), effBuilding(req) && effBuilding(req) > 0 ? effBuilding(req) : (req.query.building_id ? Number(req.query.building_id) : null))));
+router.get('/reports/income-statement-consolidated', (req, res) => res.json(R.incomeStatementConsolidated(req.query.year, lang(req), effBuilding(req))));
 // Account movements (General Ledger report + click-through drill from any total)
 router.get('/reports/account-ledger', (req, res) => {
   const accounts = req.query.accounts ? String(req.query.accounts).split(',').map((s) => s.trim()).filter(Boolean) : null;
@@ -824,7 +889,7 @@ router.get('/budget/suggest-revenue', (req, res) => res.json(BUD.suggestRevenue(
 router.get('/budget/suggest-expenses', (req, res) => res.json(BUD.suggestExpenses(Number(req.query.year), Number(req.query.building_id) || null, Number(req.query.months) || 12)));
 router.get('/reports/budget-vs-actual', (req, res) => res.json(BUD.budgetVsActual(Number(req.query.year), Number(req.query.building_id) || 0, lang(req), Number(req.query.version) || 1)));
 router.get('/reports/budget-vs-actual-flat', (req, res) => res.json(BUD.budgetVsActualFlat(Number(req.query.year), Number(req.query.building_id) || 0, Number(req.query.version) || 1, req.query.month ? Number(req.query.month) : null, lang(req))));
-router.get('/presentation', (req, res) => res.json(PRES.getPresentationData(req.query.from, req.query.to, req.query.building_id, Number(req.query.version) || 1)));
+router.get('/presentation', (req, res) => { const b = effBuilding(req); res.json(PRES.getPresentationData(req.query.from, req.query.to, b, Number(req.query.version) || 1)); });
 router.put('/presentation/notes', writers, (req, res) => {
   try { res.json(PRES.saveNotes(Number(req.body.year), Number(req.body.building_id) || 0, req.body, req.user.id)); }
   catch (e) { res.status(400).json({ error: e.message }); }
@@ -839,10 +904,10 @@ router.get('/presentation/feedback', (req, res) => {
   try { res.json(PRES.listFeedback(req.query.from, req.query.to, req.query.building_id, Number(req.query.version) || 1)); }
   catch (e) { res.status(400).json({ error: e.message }); }
 });
-router.get('/reports/financial-ratios', (req, res) => res.json(R.financialRatios(req.query.from, req.query.to, effBuilding(req) && effBuilding(req) > 0 ? effBuilding(req) : null)));
+router.get('/reports/financial-ratios', (req, res) => res.json(R.financialRatios(req.query.from, req.query.to, effBuilding(req))));
 router.get('/reports/aging', (req, res) => res.json(R.receivablesAging(req.query.asOf, effBuilding(req))));
 router.get('/reports/aging-drill', (req, res) => res.json(R.receivablesAgingDrill(req.query.tenant_id ? Number(req.query.tenant_id) : null, req.query.asOf, effBuilding(req))));
-router.get('/reports/tax-aging', (req, res) => res.json(R.taxDuesReport(req.query.month, effBuilding(req) && effBuilding(req) > 0 ? effBuilding(req) : null)));
+router.get('/reports/tax-aging', (req, res) => res.json(R.taxDuesReport(req.query.month, effBuilding(req))));
 router.get('/reports/tax-aging-drill', (req, res) => res.json(R.taxDuesDrill(Number(req.query.tenant_id), req.query.month)));
 router.get('/reports/contract-expiry', (req, res) => res.json(R.contractExpiry(Number(req.query.days) || 60, effBuilding(req))));
 router.get('/reports/building-comparison', (req, res) => res.json(scopeRows(req, R.buildingComparison(req.query.from, req.query.to).map((r) => r))));

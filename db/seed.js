@@ -26,16 +26,21 @@ for (const a of DATA.accounts) insAcc.run(a.code, a.name, AR[a.code] || null, a.
 insAcc.run('39999', 'Opening Balance Equity', 'حقوق ملكية افتتاحية', 'equity', 'C');
 
 // ---- Settings -------------------------------------------------------------
-const setS = db.prepare('INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)');
+const setS = db.prepare('INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)');   // never overwrite what the admin edited
 [['company_name', 'United Tower'], ['company_name_ar', 'برج المتحدة'],
  ['currency', 'OMR'], ['decimals', '3'], ['vat_percent', '5'], ['default_lang', 'ar'],
  ['bank_account', '10400'], ['tenant_recv', '11100'], ['rent_income', '40000'],
 ].forEach(([k, v]) => setS.run(k, v));
 
 // ---- Admin user -----------------------------------------------------------
-if (!db.prepare("SELECT 1 FROM users WHERE username='admin'").get())
+if (!db.prepare("SELECT 1 FROM users WHERE username='admin'").get()) {
+  // No well-known default password: take it from UT_ADMIN_PASSWORD, else generate a random one (shown once).
+  const generated = !process.env.UT_ADMIN_PASSWORD;
+  const pw = process.env.UT_ADMIN_PASSWORD || require('crypto').randomBytes(12).toString('base64url');
   db.prepare('INSERT INTO users (username,full_name,password_hash,role,lang) VALUES (?,?,?,?,?)')
-    .run('admin', 'System Administrator', hash('admin123'), 'admin', 'ar');
+    .run('admin', 'System Administrator', hash(pw), 'admin', 'ar');
+  if (generated) console.log('[seed] admin account created with a RANDOM password (shown once): ' + pw);
+}
 
 // ---- Building (property) --------------------------------------------------
 let buildingId = db.prepare("SELECT id FROM buildings WHERE code='UT'").get()?.id;
@@ -94,4 +99,4 @@ console.log('Seed v3 complete:', {
   flats: db.prepare('SELECT COUNT(*) c FROM flats').get().c,
   ledger_debit: Math.round(tb.d * 100) / 100, ledger_credit: Math.round(tb.c * 100) / 100,
 });
-console.log('Login -> admin / admin123');
+console.log('Seed done.');

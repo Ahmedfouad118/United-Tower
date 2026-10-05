@@ -3,19 +3,22 @@
 // Outlook with a ready-to-review draft. Bulk = one draft per customer.
 const express = require('express');
 const { db } = require('./db');
-const { authMiddleware } = require('./auth');
+const { authMiddleware, requireRole } = require('./auth');
 
 const router = express.Router();
-router.use(authMiddleware);
+router.use(authMiddleware, requireRole('admin', 'accountant'));
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const safeHeader = (s) => String(s || '').replace(/[\r\n]+/g, ' ').trim();
+const safeImg = (s) => (/^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(String(s || '')) ? s : '');
 
 const setting = (k, def) => (db.prepare('SELECT value FROM settings WHERE key=?').get(k) || {}).value || def;
 const b64 = (s) => Buffer.from(s, 'utf8').toString('base64');
 const enc = (s) => `=?UTF-8?B?${b64(String(s || ''))}?=`; // RFC2047 header encoding
 
 function invoiceHTML(inv) {
-  const company = setting('company_name', 'United Tower');
-  const logo = setting('company_logo', '');
-  const cr = setting('cr_number', ''); const vatNo = setting('vat_number', '');
+  const company = esc(setting('company_name', 'United Tower'));
+  const logo = safeImg(setting('company_logo', ''));
+  const cr = esc(setting('cr_number', '')); const vatNo = esc(setting('vat_number', ''));
   const money = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
   return `<!doctype html><html dir="rtl"><head><meta charset="utf-8"><style>
     body{font-family:'Segoe UI',Tahoma,sans-serif;color:#1f2a44;padding:24px}
@@ -26,11 +29,11 @@ function invoiceHTML(inv) {
     .num{text-align:left;font-variant-numeric:tabular-nums}</style></head><body>
     <div class="hd"><div>${logo ? `<img src="${logo}" style="height:48px">` : ''}<div class="co">${company}</div>
       <div class="muted">${cr ? 'س.ت: ' + cr : ''} ${vatNo ? '· الرقم الضريبي: ' + vatNo : ''}</div></div>
-      <div style="text-align:left"><h2 style="margin:0">فاتورة ضريبية</h2><div class="muted">${inv.invoice_no}</div>
-      <div class="muted">${String(inv.due_date).slice(0, 10)}</div></div></div>
-    <p><b>العميل:</b> ${inv.tenant} &nbsp; <b>الوحدة:</b> ${inv.flat} &nbsp; <b>الشهر:</b> ${inv.period}</p>
+      <div style="text-align:left"><h2 style="margin:0">فاتورة ضريبية</h2><div class="muted">${esc(inv.invoice_no)}</div>
+      <div class="muted">${esc(String(inv.due_date).slice(0, 10))}</div></div></div>
+    <p><b>العميل:</b> ${esc(inv.tenant)} &nbsp; <b>الوحدة:</b> ${esc(inv.flat)} &nbsp; <b>الشهر:</b> ${esc(inv.period)}</p>
     <table><thead><tr><th>البيان</th><th class="num">المبلغ</th></tr></thead><tbody>
-    <tr><td>إيجار ${inv.period}</td><td class="num">${money(inv.rent_amount)}</td></tr>
+    <tr><td>إيجار ${esc(inv.period)}</td><td class="num">${money(inv.rent_amount)}</td></tr>
     <tr><td>ض.ق.م 5%</td><td class="num">${money(inv.vat_amount)}</td></tr></tbody>
     <tfoot><tr class="tot"><td>الإجمالي</td><td class="num">${money(inv.total)}</td></tr></tfoot></table>
     </body></html>`;
@@ -60,16 +63,16 @@ router.get('/invoices/eml', (req, res) => {
      JOIN tenants t ON t.id=i.tenant_id JOIN flats f ON f.id=i.flat_id
      WHERE i.id IN (${ids.map(() => '?').join(',')})`).all(...ids);
   if (!rows.length) return res.status(404).json({ error: 'not found' });
-  const to = rows[0].tenant_email || '';
-  const from = setting('send_email', '');
+  const to = /^[^\s@<>,;]+@[^\s@<>,;]+$/.test(safeHeader(rows[0].tenant_email)) ? safeHeader(rows[0].tenant_email) : '';
+  const from = safeHeader(setting('send_email', ''));
   const months = [...new Set(rows.map((r) => r.period))].join('، ');
-  const subject = `فاتورة إيجار شهر ${months} — ${setting('company_name', 'United Tower')}`;
+  const subject = safeHeader(`فاتورة إيجار شهر ${months} — ${setting('company_name', 'United Tower')}`);
   const body = `<div dir="rtl" style="font-family:Tahoma">تحية طيبة،<br><br>إليكم فاتورة/فواتير الإيجار لشهر ${months}.<br>
-    ${rows.map((r) => `الوحدة ${r.flat}: ${Number(r.total).toFixed(3)} ر.ع`).join('<br>')}<br><br>مع خالص التقدير،<br>${setting('company_name', 'United Tower')}</div>`;
+    ${rows.map((r) => `الوحدة ${esc(r.flat)}: ${Number(r.total).toFixed(3)} ر.ع`).join('<br>')}<br><br>مع خالص التقدير،<br>${esc(setting('company_name', 'United Tower'))}</div>`;
   const eml = buildEml({ from, to, subject, bodyHtml: body,
     attachments: rows.map((r) => ({ name: `${r.invoice_no}.html`, html: invoiceHTML(r) })) });
   res.setHeader('Content-Type', 'message/rfc822');
-  res.setHeader('Content-Disposition', `attachment; filename="draft-${rows[0].tenant.replace(/[^a-zA-Z0-9]/g, '_')}.eml"`);
+  res.setHeader('Content-Disposition', `attachment; filename="draft-${String(rows[0].tenant).replace(/[^a-zA-Z0-9]/g, '_')}.eml"`);
   res.send(eml);
 });
 

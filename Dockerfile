@@ -5,13 +5,14 @@ FROM node:24-alpine
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install --omit=dev
+RUN npm ci --omit=dev
 
 COPY . .
 
 # database lives on the mounted volume (/data) so data survives redeploys
 ENV UT_DB=/data/ut-v3.db
 ENV PORT=4000
+ENV NODE_ENV=production
 
 EXPOSE 4000
 
