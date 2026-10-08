@@ -887,6 +887,75 @@ function receivablesBalancePersistence(asOf, building_id) {
   return { asOf: ref, rows };
 }
 
+
+// ---- Customer balance MOVEMENT (حركة الذمم في العملاء) ----------------------
+// Per customer: opening balance (everything before the first month), then for each
+// month the gross ADDITIONS (invoices, opening/adjustment debits) and the gross
+// REDUCTIONS (receipts, advance applied, other credits) side by side — not netted —
+// and the closing balance. kind='receivable' (11000/11100, debit side grows the
+// debt) or 'advance' (21500/23100, credit side grows what we hold for the customer).
+// Internal reclasses that net to zero inside one journal (e.g. municipality-tax
+// split 11100<->11000) are left out; lines with no customer are shown as one row so
+// the totals still tie to the trial balance.
+function customerMovement(kind, fromM, toM, building_id) {
+  const ym = (d) => d.slice(0, 7);
+  const nowM = new Date().toISOString().slice(0, 7);
+  toM = /^[0-9]{4}-[0-9]{2}$/.test(toM || '') ? toM : nowM;
+  fromM = /^[0-9]{4}-[0-9]{2}$/.test(fromM || '') ? fromM : toM.slice(0, 4) + '-01';
+  if (fromM > toM) fromM = toM;
+  const months = []; { let [y, m] = fromM.split('-').map(Number); const [ty, tm] = toM.split('-').map(Number);
+    while ((y < ty || (y === ty && m <= tm)) && months.length < 24) { months.push(y + '-' + String(m).padStart(2, '0')); m++; if (m > 12) { m = 1; y++; } } }
+  const isAdv = kind === 'advance';
+  const accts = isAdv ? ['21500', '23100'] : ['11000', '11100'];
+  const list = accts.map(() => '?').join(',');
+  const bF = building_id ? ' AND l.building_id=' + Number(building_id) : '';
+  const toEnd = months[months.length - 1] + '-31';
+  const lines = db.prepare(
+    `SELECT l.journal_id, l.tenant_id, COALESCE(t.name,'(بدون عميل)') tenant, j.jdate, j.reference, j.jtype, l.debit, l.credit
+       FROM journal_lines l JOIN journals j ON j.id=l.journal_id LEFT JOIN tenants t ON t.id=l.tenant_id
+      WHERE l.account_code IN (${list}) AND j.jdate<=? ${bF} ORDER BY j.jdate, j.id, l.id`).all(...accts, toEnd);
+  // drop zero-net internal reclasses (same journal + same customer)
+  const jnet = {}; for (const l of lines) { const k = l.journal_id + '|' + (l.tenant_id || 0); jnet[k] = r2((jnet[k] || 0) + l.debit - l.credit); }
+  const sign = isAdv ? -1 : 1;                                    // + = balance grows in the report's own direction
+  const startDate = fromM + '-01';
+  const byT = {};
+  const row = (id, name) => (byT[id || 0] = byT[id || 0] || { tenant_id: id || null, tenant: name, opening: 0, months: {},
+    add: { invoices: 0, other: 0 }, red: { receipts: 0, advance: 0, other: 0 }, closing: 0 });
+  for (const l of lines) {
+    const k = l.journal_id + '|' + (l.tenant_id || 0);
+    if (Math.abs(jnet[k]) < 0.005 && l.reference && /^TAX-/.test(l.reference)) continue;
+    const g = row(l.tenant_id, l.tenant);
+    const net = r2(sign * (l.debit - l.credit));
+    if (l.jdate < startDate) { g.opening = r2(g.opening + net); continue; }
+    const m = ym(l.jdate); const cell = (g.months[m] = g.months[m] || { add: 0, red: 0 });
+    const ref = String(l.reference || '');
+    if (net >= 0) {
+      cell.add = r2(cell.add + net);
+      if (/^INV-/.test(ref)) g.add.invoices = r2(g.add.invoices + net); else g.add.other = r2(g.add.other + net);
+    } else {
+      const v = -net; cell.red = r2(cell.red + v);
+      if (/^RCV-/.test(ref)) g.red.receipts = r2(g.red.receipts + v); else if (/^ADV-/.test(ref)) g.red.advance = r2(g.red.advance + v); else g.red.other = r2(g.red.other + v);
+    }
+  }
+  const out = [];
+  const T = { opening: 0, add: 0, red: 0, closing: 0, invoices: 0, other_add: 0, receipts: 0, advance: 0, other_red: 0, months: {} };
+  for (const g of Object.values(byT)) {
+    const add = r2(g.add.invoices + g.add.other), red = r2(g.red.receipts + g.red.advance + g.red.other);
+    g.closing = r2(g.opening + add - red); g.add_total = add; g.red_total = red;
+    if (Math.abs(g.opening) < 0.005 && Math.abs(add) < 0.005 && Math.abs(red) < 0.005 && Math.abs(g.closing) < 0.005) continue;
+    const paid = r2(g.red.receipts + g.red.advance);
+    g.status = Math.abs(g.closing) < 0.005 ? (isAdv ? 'consumed' : 'settled')
+      : (isAdv ? (g.closing > 0 ? 'held' : 'over') : (g.closing < 0 ? 'credit' : (paid < 0.005 ? 'unpaid' : 'partial')));
+    out.push(g);
+    T.opening = r2(T.opening + g.opening); T.add = r2(T.add + add); T.red = r2(T.red + red); T.closing = r2(T.closing + g.closing);
+    T.invoices = r2(T.invoices + g.add.invoices); T.other_add = r2(T.other_add + g.add.other);
+    T.receipts = r2(T.receipts + g.red.receipts); T.advance = r2(T.advance + g.red.advance); T.other_red = r2(T.other_red + g.red.other);
+    for (const [m, c] of Object.entries(g.months)) { const x = (T.months[m] = T.months[m] || { add: 0, red: 0 }); x.add = r2(x.add + c.add); x.red = r2(x.red + c.red); }
+  }
+  out.sort((a, b) => (b.closing - a.closing) || String(a.tenant).localeCompare(String(b.tenant)));
+  return { kind, accounts: accts, from: fromM, to: toM, months, rows: out, totals: T };
+}
+
 // ---- Invoice vs Contract audit --------------------------------------------
 // Recomputes what each invoice's rent/VAT SHOULD be from its OWN contract's
 // current terms (the exact same day-based proration `issueInvoiceForContract`
@@ -1458,7 +1527,7 @@ function buildingComparison(from, to) {
 module.exports = {
   trialBalance, incomeStatement, incomeStatementConsolidated, accountLedger, generalLedgerFull, groupedJournals, legacyJournals, legacyDrill,
   liquidityReport, moneyPosition, financialRatios, balanceSheet, financialStatements, receivablesAging, receivablesAgingDrill, taxDuesReport, taxDuesDrill, payablesAging,
-  flatStatement, vendorStatement, advancesReport, receivablesBalancePersistence, occupancy, propertyPL, roi, cashFlowForecast, vatReport, vatReturn, vatStatement, vatUncollectedByCustomer, vatInputUnpaidByVendor,
+  flatStatement, vendorStatement, advancesReport, receivablesBalancePersistence, customerMovement, occupancy, propertyPL, roi, cashFlowForecast, vatReport, vatReturn, vatStatement, vatUncollectedByCustomer, vatInputUnpaidByVendor,
   bankReport, chequesReport, chequesDashboard, dashboard, contractExpiry, buildingComparison,
   depreciationReport, customersSummary, invoiceContractAudit, auditCenter,
 };

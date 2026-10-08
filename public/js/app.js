@@ -34,6 +34,8 @@
       { path: 'statement', label: 'm_statement', page: 'statement', mod: 'customers' },
       { path: 'ar_aging', label: 'm_ar_aging', page: 'arAging', mod: 'customers' },
       { path: 'advances', label: 'm_advances', page: 'advances', mod: 'customers' },
+      { path: 'recv_move', label: 'm_recv_move', page: 'receivableMovement', mod: 'customers' },
+      { path: 'adv_move', label: 'm_adv_move', page: 'advanceMovement', mod: 'customers' },
       { path: 'balance_persistence_ar', label: 'm_balance_persistence_ar', page: 'balancePersistenceAr', mod: 'customers' },
       { path: 'balance_persistence_ap', label: 'm_balance_persistence_ap', page: 'balancePersistenceAp', mod: 'customers' },
     ] },

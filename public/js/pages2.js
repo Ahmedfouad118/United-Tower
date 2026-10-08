@@ -2196,6 +2196,53 @@ Object.assign(Pages, (() => {
   async function balancePersistenceAr(c) { return balancePersistenceScreen(c, 'receivable', 'm_balance_persistence_ar'); }
   async function balancePersistenceAp(c) { return balancePersistenceScreen(c, 'advance', 'm_balance_persistence_ap'); }
 
+
+  // ---- حركة الذمم في العملاء: opening balance -> per-month additions / reductions (gross, side by side) -> closing
+  async function customerMovementScreen(c, kind, titleKey) {
+    const adv = kind === 'advance';
+    const nowM = today().slice(0, 7);
+    const toM = c._mto || nowM, fromM = c._mfrom || (toM.slice(0, 4) + '-01');
+    reportShell(c, titleKey, `<div class="field" style="margin:0"><label>${t('from')}</label><input type="month" id="mf" value="${fromM}"></div>
+      <div class="field" style="margin:0"><label>${t('to')}</label><input type="month" id="mt" value="${toM}"></div>`, null);
+    const r = await API.get('/reports/customer-movement?kind=' + kind + '&from=' + fromM + '&to=' + toM + (window.UT ? UT.bq() : ''));
+    const MN = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const mLabel = (m) => MN[Number(m.slice(5, 7))] + ' ' + m.slice(2, 4);
+    const v = (n) => (Math.abs(n) > 0.004 ? money(n) : '<span class="muted">·</span>');
+    const stick = 'position:sticky;inset-inline-start:0;background:var(--card,#fff);z-index:1;';
+    const sLabel = { settled: t('rm_s_settled'), unpaid: t('rm_s_unpaid'), partial: t('rm_s_partial'), credit: t('rm_s_credit'), held: t('rm_s_held'), consumed: t('rm_s_consumed'), over: t('rm_s_over') };
+    const sCls = { settled: 'b-green', unpaid: 'b-red', partial: 'b-amber', credit: 'b-blue', held: 'b-blue', consumed: 'b-green', over: 'b-red' };
+    const incL = t(adv ? 'rm_inc_a' : 'rm_inc'), decL = t(adv ? 'rm_dec_a' : 'rm_dec');
+    const drill = (txt, x, m) => (x.tenant_id ? `<a href="#" class="drill" data-tid="${x.tenant_id}" data-m="${m}">${txt}</a>` : txt);
+    const nTot = adv ? 3 : 5;
+    const h1 = `<tr><th rowspan="2" style="${stick}">${t('tenant')}</th><th rowspan="2" class="num">${t('rm_opening')}</th>${r.months.map((m) => `<th colspan="2" style="text-align:center">${mLabel(m)}</th>`).join('')}
+      <th colspan="${nTot}" style="text-align:center">${t('total')}</th><th rowspan="2" class="num">${t('rm_closing')}</th><th rowspan="2">${t('rm_status')}</th></tr>`;
+    const h2 = `<tr>${r.months.map(() => `<th class="num">${incL}</th><th class="num">${decL}</th>`).join('')}
+      <th class="num">${t(adv ? 'rm_tot_add_a' : 'rm_tot_add')}</th>${adv ? '' : `<th class="num">${t('rm_tot_inv')}</th>`}<th class="num">${t(adv ? 'rm_tot_used' : 'rm_tot_rcv')}</th>${adv ? '' : `<th class="num">${t('rm_tot_adv')}</th>`}${adv ? '' : `<th class="num">${t('rm_tot_oth')}</th>`}</tr>`;
+    const othRed = (x) => x.red.other + x.add.other;
+    const body = r.rows.map((x) => `<tr><td style="${stick}"><b>${esc(x.tenant)}</b></td><td class="num">${v(x.opening)}</td>${r.months.map((m) => { const q = x.months[m] || { add: 0, red: 0 };
+        return `<td class="num">${q.add ? drill(v(q.add), x, m) : v(0)}</td><td class="num">${q.red ? drill(v(q.red), x, m) : v(0)}</td>`; }).join('')}
+      <td class="num"><b>${v(x.add_total)}</b></td>${adv ? '' : `<td class="num">${v(x.add.invoices)}</td>`}<td class="num">${v(adv ? x.red_total : x.red.receipts)}</td>${adv ? '' : `<td class="num">${v(x.red.advance)}</td>`}${adv ? '' : `<td class="num">${v(othRed(x))}</td>`}
+      <td class="num"><b>${money(x.closing)}</b></td><td><span class="badge ${sCls[x.status] || 'b-gray'}">${esc(sLabel[x.status] || x.status)}</span></td></tr>`).join('');
+    const T = r.totals;
+    const foot = `<tr><td style="${stick}"><b>${t('total')}</b></td><td class="num"><b>${money(T.opening)}</b></td>${r.months.map((m) => { const q = T.months[m] || { add: 0, red: 0 }; return `<td class="num"><b>${v(q.add)}</b></td><td class="num"><b>${v(q.red)}</b></td>`; }).join('')}
+      <td class="num"><b>${money(T.add)}</b></td>${adv ? '' : `<td class="num"><b>${money(T.invoices)}</b></td>`}<td class="num"><b>${money(adv ? T.red : T.receipts)}</b></td>${adv ? '' : `<td class="num"><b>${money(T.advance)}</b></td>`}${adv ? '' : `<td class="num"><b>${money(T.other_red + T.other_add)}</b></td>`}
+      <td class="num"><b>${money(T.closing)}</b></td><td></td></tr>`;
+    c.querySelector('#rbody').innerHTML = r.rows.length
+      ? `<div class="table-wrap" style="overflow-x:auto"><table><thead>${h1}${h2}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table></div>
+         <p class="muted" style="font-size:11px;margin-top:8px">${t(adv ? 'rm_note_a' : 'rm_note')}</p>`
+      : `<div class="empty">${t('no_data')}</div>`;
+    c.querySelector('#rbody').addEventListener('click', (e) => {
+      const a = e.target.closest('.drill[data-tid]'); if (!a) return; e.preventDefault();
+      const x = r.rows.find((z) => String(z.tenant_id) === a.dataset.tid), m = a.dataset.m;
+      accountDrill({ title: t(titleKey) + ' — ' + (x ? x.tenant : '') + ' — ' + mLabel(m), accounts: r.accounts, tenant_id: a.dataset.tid, from: m + '-01', to: m + '-31', building_id: (window.UT && UT.building) || null });
+    });
+    c.querySelector('#mf').onchange = (e) => { c._mfrom = e.target.value; customerMovementScreen(c, kind, titleKey); };
+    c.querySelector('#mt').onchange = (e) => { c._mto = e.target.value; customerMovementScreen(c, kind, titleKey); };
+    bindPrint(c, t(titleKey));
+  }
+  async function receivableMovement(c) { return customerMovementScreen(c, 'receivable', 'm_recv_move'); }
+  async function advanceMovement(c) { return customerMovementScreen(c, 'advance', 'm_adv_move'); }
+
   // ---- Audit Center: one page an external auditor's prep starts from -------
   // Automated pass/warn/fail checks (trial balance, journal balance, invoice-vs-
   // contract drift, aging-vs-GL tie-out, VAT, bank recon, cheques, contract
@@ -2262,7 +2309,7 @@ Object.assign(Pages, (() => {
   const PGROUPS = [
     ['الرئيسية', [['dashboard', 'لوحة التحكم'], ['audit', 'مركز التدقيق']]],
     ['الأملاك', [['buildings', 'البنايات'], ['units', 'الوحدات'], ['calendar', 'كالندر الإشغال']]],
-    ['العملاء (ذمم مدينة)', [['customers', 'العملاء'], ['contracts', 'العقود'], ['invoices', 'الفواتير الشهرية'], ['receipts', 'سندات القبض'], ['cust_summary', 'ملخص حسابات العملاء'], ['statement', 'كشف حساب'], ['ar_aging', 'أعمار الذمم المدينة'], ['advances', 'الذمم الدائنة (مقدم)'], ['balance_persistence_ar', 'تاريخ الذمم المدينة'], ['balance_persistence_ap', 'تاريخ الذمم الدائنة']]],
+    ['العملاء (ذمم مدينة)', [['customers', 'العملاء'], ['contracts', 'العقود'], ['invoices', 'الفواتير الشهرية'], ['receipts', 'سندات القبض'], ['cust_summary', 'ملخص حسابات العملاء'], ['statement', 'كشف حساب'], ['ar_aging', 'أعمار الذمم المدينة'], ['advances', 'الذمم الدائنة (مقدم)'], ['recv_move', 'حركة الذمم في العملاء'], ['adv_move', 'حركة الدفعات المقدمة'], ['balance_persistence_ar', 'تاريخ الذمم المدينة'], ['balance_persistence_ap', 'تاريخ الذمم الدائنة']]],
     ['الموردون (ذمم دائنة)', [['vendors', 'الموردون'], ['bills', 'فواتير الموردين'], ['vpayments', 'سندات الصرف'], ['ap_aging', 'أعمار الذمم الدائنة'], ['vstatement', 'كشف حساب مورد']]],
     ['المالية', [['coa', 'شجرة الحسابات'], ['journals', 'القيود اليومية'], ['gjournals', 'القيود المجمعة'], ['legacy', 'قيود النظام القديم'], ['tb', 'ميزان المراجعة'], ['is', 'قائمة الدخل'], ['is_consolidated', 'قائمة الدخل المجمعة'], ['gl', 'دفتر الأستاذ'], ['bs', 'المركز المالي'], ['liquidity', 'تقرير السيولة'], ['cashflow', 'التدفق النقدي'], ['ppl', 'أرباح العقارات'], ['roi', 'العائد ROI'], ['comparison', 'مقارنة أداء البنايات']]],
     ['الخزينة والبنوك', [['banks', 'الحسابات البنكية'], ['cheques', 'الشيكات'], ['cheques_dash', 'متابعة الشيكات'], ['reconciliation', 'التسوية البنكية']]],
@@ -2415,7 +2462,7 @@ Object.assign(Pages, (() => {
   const LBL_GROUPS = [
     ['الرئيسية', ['m_dashboard']],
     [t('m_properties'), ['m_properties', 'm_buildings', 'm_units', 'm_calendar']],
-    [t('m_receivable'), ['m_receivable', 'm_customers', 'm_contracts', 'm_invoices', 'm_receipts', 'm_cust_summary', 'm_statement', 'm_ar_aging', 'm_advances']],
+    [t('m_receivable'), ['m_receivable', 'm_customers', 'm_contracts', 'm_invoices', 'm_receipts', 'm_cust_summary', 'm_statement', 'm_ar_aging', 'm_advances', 'm_recv_move', 'm_adv_move']],
     [t('m_payable'), ['m_payable', 'm_vendors', 'm_bills', 'm_vpayments', 'm_ap_aging', 'm_vstatement']],
     [t('m_finance'), ['m_finance', 'm_coa', 'm_journals', 'm_gjournals', 'm_legacy', 'm_tb', 'm_is', 'm_is_consolidated', 'm_gl', 'm_bs', 'm_liquidity', 'm_cashflow', 'm_ppl', 'm_roi', 'm_comparison']],
     [t('m_treasury'), ['m_treasury', 'm_banks', 'm_cheques', 'm_cheques_dash', 'm_recon']],
@@ -2459,5 +2506,5 @@ Object.assign(Pages, (() => {
 
   return { customers, vendors, buildings, units, categories, paymethods, banks, employees, coa,
     vendorBills, vendorPayments, trialBalance, incomeStatement, incomeStatementConsolidated, generalLedger, balanceSheet, arAging, apAging,
-    statement, vendorStatement, advances, balancePersistenceAr, balancePersistenceAp, auditCenter, propertyPL, roi, cashflow, comparison, vat, vatStatement, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, security, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, moneyPosition, vatReturn, activityLog, companyDocuments, budgetEntry, budgetReport, financialRatiosPage, presentation, taxAging, taxDues };
+    statement, vendorStatement, advances, balancePersistenceAr, balancePersistenceAp, receivableMovement, advanceMovement, auditCenter, propertyPL, roi, cashflow, comparison, vat, vatStatement, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, security, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, moneyPosition, vatReturn, activityLog, companyDocuments, budgetEntry, budgetReport, financialRatiosPage, presentation, taxAging, taxDues };
 })());
