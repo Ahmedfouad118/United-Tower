@@ -670,6 +670,8 @@ function tenantUnits() {
   }
   const out = {};
   for (const [tid, g] of Object.entries(by)) out[tid] = (g.active.length ? g.active : g.recent).sort().join(' · ');
+  // customers with no contract on file (old balances): the unit typed on the customer card
+  for (const x of db.prepare("SELECT id, unit_note FROM tenants WHERE unit_note IS NOT NULL AND TRIM(unit_note)<>''").all()) if (!out[x.id]) out[x.id] = String(x.unit_note).trim();
   return out;
 }
 

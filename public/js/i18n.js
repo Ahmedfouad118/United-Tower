@@ -2,6 +2,7 @@
 const I18N = (() => {
   const DICT = {
     ar: {
+      unit_note: 'الوحدة (لو مفيش عقد)',
       m_recv_move: 'حركة الذمم في العملاء',
       m_adv_move: 'حركة الدفعات المقدمة للعملاء',
       rm_opening: 'الرصيد الافتتاحي',
@@ -201,6 +202,7 @@ const I18N = (() => {
       twofa_confirm_btn: 'تأكيد التفعيل', twofa_enabled_ok: 'تم تفعيل التحقق بخطوتين', twofa_disable_confirm: 'متأكد إنك عايز تعطّل التحقق بخطوتين؟',
     },
     en: {
+      unit_note: 'Unit (if no contract)',
       m_recv_move: 'Customer Receivables Movement',
       m_adv_move: 'Customer Advances Movement',
       rm_opening: 'Opening balance',
@@ -395,6 +397,7 @@ const I18N = (() => {
       twofa_confirm_btn: 'Confirm setup', twofa_enabled_ok: 'Two-factor authentication enabled', twofa_disable_confirm: 'Are you sure you want to disable two-factor authentication?',
     },
     hi: {
+      unit_note: 'इकाई (यदि अनुबंध नहीं)',
       m_recv_move: 'ग्राहक प्राप्य गतिविधि',
       m_adv_move: 'ग्राहक अग्रिम गतिविधि',
       rm_opening: 'प्रारंभिक शेष',

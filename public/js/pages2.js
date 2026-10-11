@@ -12,7 +12,7 @@ Object.assign(Pages, (() => {
     columns: [{ key: 'code', label: t('code') }, { key: 'name', label: t('name') }, { key: 'phone', label: t('phone') },
       { key: 'email', label: t('email') }, { key: 'opening_balance', label: t('opening_balance'), num: true, render: (r) => money(r.opening_balance) }],
     fields: [{ key: 'name', label: t('name'), required: true }, { key: 'phone', label: t('phone') }, { key: 'email', label: t('email') },
-      { key: 'civil_id', label: t('civil_id') }, { key: 'tax_no', label: t('tax_no') }, { key: 'opening_balance', label: t('opening_balance'), type: 'number', step: '0.001', value: 0 }, { key: 'notes', label: 'ملاحظات', full: true }],
+      { key: 'civil_id', label: t('civil_id') }, { key: 'tax_no', label: t('tax_no') }, { key: 'unit_note', label: t('unit_note') }, { key: 'opening_balance', label: t('opening_balance'), type: 'number', step: '0.001', value: 0 }, { key: 'notes', label: 'ملاحظات', full: true }],
     rowActions: ['view', 'edit', 'delete'],
     onView: (r) => { location.hash = '#/statement?tenant=' + r.id; },
     newLabel: t('new_customer'),
