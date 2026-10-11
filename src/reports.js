@@ -652,6 +652,27 @@ function taxDuesDrill(tenant_id, month) {
   };
 }
 
+// Unit number(s) per customer for the receivable/advance reports: the units of the customer's
+// ACTIVE contracts, or (customers who have left) the units of their most recent contract.
+function tenantUnits() {
+  const rows = db.prepare(
+    `SELECT c.tenant_id, f.code, c.status, c.start_date FROM contracts c JOIN flats f ON f.id=c.flat_id
+      ORDER BY c.start_date DESC, c.id DESC`).all();
+  const by = {};
+  for (const x of rows) {
+    const code = String(x.code || '').replace(/[ 	 ]+/g, ' ').trim();
+    const g = (by[x.tenant_id] = by[x.tenant_id] || { active: [], recent: [], recentStart: null });
+    if (x.status === 'active') { if (!g.active.includes(code)) g.active.push(code); }
+    else {
+      if (g.recentStart === null) g.recentStart = x.start_date;
+      if (x.start_date === g.recentStart && !g.recent.includes(code)) g.recent.push(code);
+    }
+  }
+  const out = {};
+  for (const [tid, g] of Object.entries(by)) out[tid] = (g.active.length ? g.active : g.recent).sort().join(' · ');
+  return out;
+}
+
 // ---- Receivables aging (GL-based: ties to the trial balance) ---------------
 // Built from the customer receivable accounts (11000/11100) so it INCLUDES the
 // opening balances (posted as journals, not invoices). Each debit "charge"
@@ -697,6 +718,7 @@ function receivablesAging(asOf, building_id, accounts) {
     if (row.total > 0.005) byT[k] = row;
   }
   const listRows = Object.values(byT).sort((a, b) => b.total - a.total);
+  { const U = tenantUnits(); for (const x of listRows) x.units = (x.tenant_id && U[x.tenant_id]) || ''; }
   return { asOf: ref, rows: listRows, totals, grand_total: r2(listRows.reduce((s, x) => s + x.total, 0)) };
 }
 
@@ -831,7 +853,8 @@ function advancesReport(asOf) {
      JOIN journals j ON j.id=l.journal_id
      WHERE j.jdate<=?
      GROUP BY t.id HAVING advance > 0.005 ORDER BY advance DESC`).all(ref);
-  return { asOf: ref, rows: rows.map((r) => ({ ...r, deferred: r2(r.deferred), legacy: r2(r.legacy), advance: r2(r.advance) })),
+  const U = tenantUnits();
+  return { asOf: ref, rows: rows.map((r) => ({ ...r, units: U[r.id] || '', deferred: r2(r.deferred), legacy: r2(r.legacy), advance: r2(r.advance) })),
     grand_total: r2(rows.reduce((s, r) => s + r.advance, 0)) };
 }
 
@@ -884,6 +907,7 @@ function receivablesBalancePersistence(asOf, building_id) {
     });
   }
   rows.sort((a, b) => b.days_persisted - a.days_persisted);
+  { const U = tenantUnits(); for (const x of rows) x.units = U[x.tenant_id] || ''; }
   return { asOf: ref, rows };
 }
 
@@ -952,6 +976,7 @@ function customerMovement(kind, fromM, toM, building_id) {
     T.receipts = r2(T.receipts + g.red.receipts); T.advance = r2(T.advance + g.red.advance); T.other_red = r2(T.other_red + g.red.other);
     for (const [m, c] of Object.entries(g.months)) { const x = (T.months[m] = T.months[m] || { add: 0, red: 0 }); x.add = r2(x.add + c.add); x.red = r2(x.red + c.red); }
   }
+  { const U = tenantUnits(); for (const g of out) g.units = (g.tenant_id && U[g.tenant_id]) || ''; }
   out.sort((a, b) => (b.closing - a.closing) || String(a.tenant).localeCompare(String(b.tenant)));
   return { kind, accounts: accts, from: fromM, to: toM, months, rows: out, totals: T };
 }

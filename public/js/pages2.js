@@ -651,11 +651,12 @@ Object.assign(Pages, (() => {
       return drillA(money(v), `data-tid="${tidKey(x)}" data-bucket="${bucketKey}"`);
     };
     c.querySelector('#rbody').innerHTML = table([{ key: 'w', label: who, render: (x) => esc(x.tenant || x.vendor) },
+      ...(isAr ? [{ key: 'units', label: t('unit'), render: (x) => esc(x.units || '') }] : []),
       { key: 'current', label: t('current'), num: true, render: cell('current') }, { key: 'd30', label: '1-30', num: true, render: cell('d30') },
       { key: 'd60', label: '31-60', num: true, render: cell('d60') }, { key: 'd90', label: '61-90', num: true, render: cell('d90') },
       { key: 'd180', label: '91-180', num: true, render: cell('d180') }, { key: 'd180p', label: '+180', num: true, render: cell('d180p') },
       { key: 'total', label: t('total'), num: true, render: (x) => `<b>${isAr && x.total ? drillA(money(x.total), `data-tid="${tidKey(x)}" data-bucket="total"`) : money(x.total)}</b>` }], r.rows,
-      { foot: [{ v: t('total') }, ...(r.totals ? ['current', 'd30', 'd60', 'd90', 'd180', 'd180p'].map((k) => ({ v: money(r.totals[k]), num: true })) : [{}, {}, {}, {}, {}, {}]), { v: money(r.grand_total), num: true }] });
+      { foot: [{ v: t('total') }, ...(isAr ? [{}] : []), ...(r.totals ? ['current', 'd30', 'd60', 'd90', 'd180', 'd180p'].map((k) => ({ v: money(r.totals[k]), num: true })) : [{}, {}, {}, {}, {}, {}]), { v: money(r.grand_total), num: true }] });
     if (isAr) {
       c.querySelector('#rbody').addEventListener('click', (e) => {
         const a = e.target.closest('.drill[data-tid]'); if (!a) return; e.preventDefault();
@@ -2153,11 +2154,12 @@ Object.assign(Pages, (() => {
     const r = await API.get('/reports/advances?asOf=' + asOf);
     c.querySelector('#rbody').innerHTML = table([
       { key: 'tenant', label: t('tenant'), render: (x) => `<a href="#/statement?tenant=${x.id}">${esc(x.tenant)}</a>` },
+      { key: 'units', label: t('unit'), render: (x) => esc(x.units || '') },
       { key: 'phone', label: t('phone') },
       { key: 'deferred', label: 'دفعات مقدمة (23100)', num: true, render: (x) => x.deferred ? drillA(money(x.deferred), `data-tid="${x.id}" data-accs="23100"`) : '' },
       { key: 'legacy', label: 'دفعات قديمة (21500)', num: true, render: (x) => x.legacy ? drillA(money(x.legacy), `data-tid="${x.id}" data-accs="21500"`) : '' },
       { key: 'advance', label: 'إجمالي المقدم (دائن)', num: true, render: (x) => `<b>${x.advance ? drillA(money(x.advance), `data-tid="${x.id}" data-accs="21500,23100"`) : money(x.advance)}</b>` }],
-      r.rows, { foot: [{ v: t('total') }, { v: '' }, { v: '' }, { v: '' }, { v: money(r.grand_total), num: true }] });
+      r.rows, { foot: [{ v: t('total') }, { v: '' }, { v: '' }, { v: '' }, { v: '' }, { v: money(r.grand_total), num: true }] });
     c.querySelector('#rbody').onclick = (e) => {
       const a = e.target.closest('.drill[data-tid]'); if (!a) return; e.preventDefault();
       const row = r.rows.find((x) => String(x.id) === a.dataset.tid);
@@ -2185,6 +2187,7 @@ Object.assign(Pages, (() => {
     const rows = r.rows.filter((x) => x.kind === kind);
     c.querySelector('#rbody').innerHTML = table([
       { key: 'tenant', label: t('tenant'), render: (x) => `<a href="#/statement?tenant=${x.tenant_id}">${esc(x.tenant)}</a>` },
+      { key: 'units', label: t('unit'), render: (x) => esc(x.units || '') },
       { key: 'balance', label: 'الرصيد الحالي', num: true, render: (x) => `<b>${money(Math.abs(x.balance))}</b>` },
       { key: 'since', label: 'ثابت منذ', render: (x) => dateStr(x.since) },
       { key: 'days_persisted', label: 'عدد الأيام', num: true, render: (x) => x.days_persisted + ' يوم' },
@@ -2213,18 +2216,18 @@ Object.assign(Pages, (() => {
     const sCls = { settled: 'b-green', unpaid: 'b-red', partial: 'b-amber', credit: 'b-blue', held: 'b-blue', consumed: 'b-green', over: 'b-red' };
     const incL = t(adv ? 'rm_inc_a' : 'rm_inc'), decL = t(adv ? 'rm_dec_a' : 'rm_dec');
     const drill = (txt, x, m) => (x.tenant_id ? `<a href="#" class="drill" data-tid="${x.tenant_id}" data-m="${m}">${txt}</a>` : txt);
-    const nTot = adv ? 3 : 5;
-    const h1 = `<tr><th rowspan="2" style="${stick}">${t('tenant')}</th><th rowspan="2" class="num">${t('rm_opening')}</th>${r.months.map((m) => `<th colspan="2" style="text-align:center">${mLabel(m)}</th>`).join('')}
+    const nTot = adv ? 2 : 5;
+    const h1 = `<tr><th rowspan="2" style="${stick}">${t('tenant')}</th><th rowspan="2">${t('unit')}</th><th rowspan="2" class="num">${t('rm_opening')}</th>${r.months.map((m) => `<th colspan="2" style="text-align:center">${mLabel(m)}</th>`).join('')}
       <th colspan="${nTot}" style="text-align:center">${t('total')}</th><th rowspan="2" class="num">${t('rm_closing')}</th><th rowspan="2">${t('rm_status')}</th></tr>`;
     const h2 = `<tr>${r.months.map(() => `<th class="num">${incL}</th><th class="num">${decL}</th>`).join('')}
       <th class="num">${t(adv ? 'rm_tot_add_a' : 'rm_tot_add')}</th>${adv ? '' : `<th class="num">${t('rm_tot_inv')}</th>`}<th class="num">${t(adv ? 'rm_tot_used' : 'rm_tot_rcv')}</th>${adv ? '' : `<th class="num">${t('rm_tot_adv')}</th>`}${adv ? '' : `<th class="num">${t('rm_tot_oth')}</th>`}</tr>`;
     const othRed = (x) => x.red.other + x.add.other;
-    const body = r.rows.map((x) => `<tr><td style="${stick}"><b>${esc(x.tenant)}</b></td><td class="num">${v(x.opening)}</td>${r.months.map((m) => { const q = x.months[m] || { add: 0, red: 0 };
+    const body = r.rows.map((x) => `<tr><td style="${stick}"><b>${esc(x.tenant)}</b></td><td>${esc(x.units || '')}</td><td class="num">${v(x.opening)}</td>${r.months.map((m) => { const q = x.months[m] || { add: 0, red: 0 };
         return `<td class="num">${q.add ? drill(v(q.add), x, m) : v(0)}</td><td class="num">${q.red ? drill(v(q.red), x, m) : v(0)}</td>`; }).join('')}
       <td class="num"><b>${v(x.add_total)}</b></td>${adv ? '' : `<td class="num">${v(x.add.invoices)}</td>`}<td class="num">${v(adv ? x.red_total : x.red.receipts)}</td>${adv ? '' : `<td class="num">${v(x.red.advance)}</td>`}${adv ? '' : `<td class="num">${v(othRed(x))}</td>`}
       <td class="num"><b>${money(x.closing)}</b></td><td><span class="badge ${sCls[x.status] || 'b-gray'}">${esc(sLabel[x.status] || x.status)}</span></td></tr>`).join('');
     const T = r.totals;
-    const foot = `<tr><td style="${stick}"><b>${t('total')}</b></td><td class="num"><b>${money(T.opening)}</b></td>${r.months.map((m) => { const q = T.months[m] || { add: 0, red: 0 }; return `<td class="num"><b>${v(q.add)}</b></td><td class="num"><b>${v(q.red)}</b></td>`; }).join('')}
+    const foot = `<tr><td style="${stick}"><b>${t('total')}</b></td><td></td><td class="num"><b>${money(T.opening)}</b></td>${r.months.map((m) => { const q = T.months[m] || { add: 0, red: 0 }; return `<td class="num"><b>${v(q.add)}</b></td><td class="num"><b>${v(q.red)}</b></td>`; }).join('')}
       <td class="num"><b>${money(T.add)}</b></td>${adv ? '' : `<td class="num"><b>${money(T.invoices)}</b></td>`}<td class="num"><b>${money(adv ? T.red : T.receipts)}</b></td>${adv ? '' : `<td class="num"><b>${money(T.advance)}</b></td>`}${adv ? '' : `<td class="num"><b>${money(T.other_red + T.other_add)}</b></td>`}
       <td class="num"><b>${money(T.closing)}</b></td><td></td></tr>`;
     c.querySelector('#rbody').innerHTML = r.rows.length
