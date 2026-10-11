@@ -1,0 +1,117 @@
+[
+ {
+  "ar": "نسبة إشغال مرتفعة ({0}%)",
+  "en": "High occupancy rate ({0}%)",
+  "hi": "उच्च अधिभोग दर ({0}%)"
+ },
+ {
+  "ar": "نسبة إشغال منخفضة ({0}%) — فرصة لحملة تسويقية للوحدات الشاغرة",
+  "en": "Low occupancy rate ({0}%) — an opportunity for a marketing campaign for the vacant units",
+  "hi": "कम अधिभोग दर ({0}%) — खाली इकाइयों के लिए विपणन अभियान का अवसर"
+ },
+ {
+  "ar": "هامش ربح صافي قوي ({0}%)",
+  "en": "Strong net profit margin ({0}%)",
+  "hi": "मजबूत शुद्ध लाभ मार्जिन ({0}%)"
+ },
+ {
+  "ar": "هامش الربح الصافي ضعيف ({0}%)",
+  "en": "Weak net profit margin ({0}%)",
+  "hi": "कमजोर शुद्ध लाभ मार्जिन ({0}%)"
+ },
+ {
+  "ar": "سيولة قصيرة الأجل مريحة (نسبة تداول جيدة)",
+  "en": "Comfortable short-term liquidity (good current ratio)",
+  "hi": "आरामदायक अल्पकालिक तरलता (अच्छा चालू अनुपात)"
+ },
+ {
+  "ar": "نسبة التداول أقل من 1 — ضغط محتمل على السيولة قصيرة الأجل",
+  "en": "Current ratio below 1 — possible pressure on short-term liquidity",
+  "hi": "चालू अनुपात 1 से कम — अल्पकालिक तरलता पर संभावित दबाव"
+ },
+ {
+  "ar": "ذمم متأخرة على العملاء بقيمة {0} — يحتاج متابعة تحصيل",
+  "en": "Overdue customer receivables of {0} — needs collection follow-up",
+  "hi": "ग्राहकों पर {0} की बकाया प्राप्तियाँ — वसूली पर ध्यान आवश्यक"
+ },
+ {
+  "ar": "رفع الإيجارات تدريجيًا عند تجديد العقود القريبة من نهايتها لمواكبة السوق",
+  "en": "Raise rents gradually when renewing contracts nearing their end, to keep up with the market",
+  "hi": "बाजार के अनुरूप रहने के लिए समाप्त होने वाले अनुबंधों के नवीनीकरण पर किराया धीरे-धीरे बढ़ाएँ"
+ },
+ {
+  "ar": "دراسة تحويل الوحدات الشاغرة طويلًا لاستخدام تجاري بعائد أعلى",
+  "en": "Study converting long-vacant units to commercial use for a higher return",
+  "hi": "लंबे समय से खाली इकाइयों को अधिक आय के लिए व्यावसायिक उपयोग में बदलने का अध्ययन करें"
+ },
+ {
+  "ar": "تقلب تكاليف الصيانة والمرافق مع التضخم",
+  "en": "Maintenance and utility costs fluctuating with inflation",
+  "hi": "मुद्रास्फीति के साथ रखरखाव और उपयोगिता लागत में उतार-चढ़ाव"
+ },
+ {
+  "ar": "نسبة الإشغال {0}% — إشغال شبه كامل، فرصة محدودة لزيادة الإيراد إلا برفع الإيجارات أو وحدات جديدة.",
+  "en": "Occupancy {0}% — nearly full; limited room to grow revenue except through higher rents or new units.",
+  "hi": "अधिभोग {0}% — लगभग पूर्ण; आय बढ़ाने की गुंजाइश केवल किराया बढ़ाने या नई इकाइयों से।"
+ },
+ {
+  "ar": "نسبة الإشغال {0}% — مستوى جيد، مع وجود وحدات شاغرة تستحق حملة تسويقية مركّزة.",
+  "en": "Occupancy {0}% — a good level, with vacant units that deserve a focused marketing campaign.",
+  "hi": "अधिभोग {0}% — अच्छा स्तर, खाली इकाइयों के लिए केंद्रित विपणन अभियान उचित है।"
+ },
+ {
+  "ar": "نسبة الإشغال {0}% — أقل من المتوسط المعتاد للقطاع العقاري (80%+)، وده بيأثر مباشرة على الإيراد المحتمل.",
+  "en": "Occupancy {0}% — below the usual real-estate average (80%+), which directly affects potential revenue.",
+  "hi": "अधिभोग {0}% — रियल एस्टेट के सामान्य औसत (80%+) से कम, जो संभावित आय को सीधे प्रभावित करता है।"
+ },
+ {
+  "ar": "هامش الربح الصافي {0}% — أعلى من متوسط قطاع العقارات التجارية (عادة 20-30%)، أداء مالي قوي.",
+  "en": "Net profit margin {0}% — above the commercial real-estate average (usually 20-30%); strong financial performance.",
+  "hi": "शुद्ध लाभ मार्जिन {0}% — वाणिज्यिक रियल एस्टेट औसत (आमतौर पर 20-30%) से अधिक; मजबूत वित्तीय प्रदर्शन।"
+ },
+ {
+  "ar": "هامش الربح الصافي {0}% — ضمن النطاق المعتاد للقطاع، لكن فيه مساحة لتحسين ضبط المصروفات.",
+  "en": "Net profit margin {0}% — within the sector norm, but there is room to tighten expense control.",
+  "hi": "शुद्ध लाभ मार्जिन {0}% — क्षेत्र की सामान्य सीमा में, पर खर्च नियंत्रण में सुधार की गुंजाइश है।"
+ },
+ {
+  "ar": "هامش الربح الصافي {0}% — أقل من المعتاد للقطاع، يستحق مراجعة بنود المصروفات الأكبر.",
+  "en": "Net profit margin {0}% — below the sector norm; worth reviewing the largest expense items.",
+  "hi": "शुद्ध लाभ मार्जिन {0}% — क्षेत्र की सामान्य सीमा से कम; सबसे बड़े खर्चों की समीक्षा करें।"
+ },
+ {
+  "ar": "نسبة التداول {0} — سيولة قصيرة الأجل مريحة جدًا، تغطي الالتزامات المتداولة براحة.",
+  "en": "Current ratio {0} — very comfortable short-term liquidity, covering current liabilities easily.",
+  "hi": "चालू अनुपात {0} — बहुत आरामदायक अल्पकालिक तरलता, चालू देयताओं को आसानी से कवर करती है।"
+ },
+ {
+  "ar": "نسبة التداول {0} — سيولة كافية لتغطية الالتزامات المتداولة، بدون فائض كبير.",
+  "en": "Current ratio {0} — enough liquidity to cover current liabilities, without a large surplus.",
+  "hi": "चालू अनुपात {0} — चालू देयताओं को कवर करने के लिए पर्याप्त तरलता, बड़े अधिशेष के बिना।"
+ },
+ {
+  "ar": "نسبة التداول {0} — أقل من 1، ما يعني ضغط محتمل على السيولة قصيرة الأجل يستحق المتابعة.",
+  "en": "Current ratio {0} — below 1, meaning possible pressure on short-term liquidity worth monitoring.",
+  "hi": "चालू अनुपात {0} — 1 से कम, यानी अल्पकालिक तरलता पर संभावित दबाव जिस पर नज़र रखें।"
+ },
+ {
+  "ar": "الذمم المتأخرة على العملاء {0} — ما يعادل {1}% من إيراد الفترة، يستحق خطة تحصيل واضحة.",
+  "en": "Overdue customer receivables {0} — equal to {1}% of the period revenue; deserves a clear collection plan.",
+  "hi": "ग्राहकों की बकाया प्राप्तियाँ {0} — अवधि की आय का {1}%; स्पष्ट वसूली योजना आवश्यक।"
+ },
+ {
+  "ar": "لا توجد ذمم متأخرة على العملاء في نهاية الفترة — تحصيل جيد.",
+  "en": "No overdue customer receivables at period end — good collection.",
+  "hi": "अवधि के अंत में कोई बकाया ग्राहक प्राप्तियाँ नहीं — अच्छी वसूली।"
+ },
+ {
+  "ar": "الإيراد الفعلي تجاوز الموازنة بنسبة {0}%.",
+  "en": "Actual revenue exceeded the budget by {0}%.",
+  "hi": "वास्तविक आय बजट से {0}% अधिक रही।"
+ },
+ {
+  "ar": "الإيراد الفعلي أقل من الموازنة بنسبة {0}%.",
+  "en": "Actual revenue was {0}% below the budget.",
+  "hi": "वास्तविक आय बजट से {0}% कम रही।"
+ }
+]

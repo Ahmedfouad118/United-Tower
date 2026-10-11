@@ -9,7 +9,7 @@
 (function () {
   const AR = /[؀-ۿ]/;
   const ATTRS = ['placeholder', 'title', 'aria-label', 'alt'];
-  const state = { lang: null, re: null, map: null, exact: null };
+  const state = { lang: null, re: null, map: null, exact: null, pats: [] };
   let phrases = [];
 
   const unesc = (s) => String(s || '').replace(/\\n/g, '\n');
@@ -24,7 +24,19 @@
       const tr = ar.trim();
       if (tr && !exact.has(tr)) exact.set(tr, out.trim());
     };
-    for (const p of phrases) add(p.ar, p[lang]);
+    // phrases with {0}/{1} placeholders (server-generated sentences carrying numbers) become regex patterns
+    const pats = [];
+    for (const p of phrases) {
+      if (/\{\d\}/.test(p.ar || '')) {
+        if (!p[lang]) continue;
+        const src = esc(unesc(p.ar)).replace(/\\\{(\d)\\\}/g, '(-?[0-9][0-9.,]*)');
+        const out = unesc(p[lang]);
+        pats.push([new RegExp(src, 'g'), (...m) => out.replace(/\{(\d)\}/g, (_, i) => m[Number(i) + 1] ?? '')]);
+        continue;
+      }
+      add(p.ar, p[lang]);
+    }
+    state.pats = pats;
     // every dictionary value already written in Arabic (nav labels, headings…)
     const D = I18N.getDict();
     for (const k of Object.keys(D.ar)) if (D[lang] && D[lang][k]) add(D.ar[k], D[lang][k]);
@@ -38,6 +50,8 @@
     const lang = I18N.getLang();
     if (lang === 'ar' || !str || !AR.test(str) || !phrases.length) return str;
     if (state.lang !== lang) build(lang);
+    if (state.pats.length) for (const [re, fn] of state.pats) str = str.replace(re, fn);
+    if (!AR.test(str)) return str;
     const trimmed = str.trim();
     if (state.exact.has(trimmed)) { const o = state.exact.get(trimmed); return str.replace(trimmed, () => o); }
     let out = state.re ? str.replace(state.re, (m) => state.map.get(m) ?? m) : str;
@@ -52,8 +66,9 @@
     if (root.nodeType !== 1 && root.nodeType !== 11) return;
     if (root.nodeType === 1) {
       const tag = root.tagName;
-      if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'TEXTAREA') return;
+      if (tag === 'SCRIPT' || tag === 'STYLE') return;
       for (const a of ATTRS) if (root.hasAttribute && root.hasAttribute(a)) { const v = root.getAttribute(a); const n = tr(v); if (n !== v) root.setAttribute(a, n); }
+      if (tag === 'TEXTAREA') return;   // its value is the user's own text, but its placeholder is UI
     }
     for (let c = root.firstChild; c; c = c.nextSibling) walk(c);
   }
@@ -85,6 +100,6 @@
   I18N.tr = tr;
   I18N.trHTML = trHTML;
   const load = (u) => fetch(u).then((r) => (r.ok ? r.json() : [])).catch(() => []);
-  Promise.all([load('/js/i18n_phrases.json'), load('/js/i18n_phrases2.json'), load('/js/i18n_phrases3.json')]).then(([a, b, c]) => { phrases = a.concat(b, c).filter((p) => p && p.ar); state.lang = null; start(); })
+  Promise.all([load('/js/i18n_phrases.json'), load('/js/i18n_phrases2.json'), load('/js/i18n_phrases3.json'), load('/js/i18n_phrases4.json')]).then(([a, b, c, d]) => { phrases = a.concat(b, c, d).filter((p) => p && p.ar); state.lang = null; start(); })
     .catch(() => { /* untranslated fallback: Arabic stays as is */ });
 })();

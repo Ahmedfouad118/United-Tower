@@ -1223,12 +1223,16 @@ function vatReport(from, to) {
 // ---- Oman VAT Return (الإقرار الضريبي) — the box figures for filing ---------
 // Accrual basis (VAT due on invoice/bill date). Standard-rated supplies = rent;
 // input VAT = vendor bills. Boxes follow the OTA VAT return layout.
+// A journal made ONLY of the VAT account(s) and cash/bank lines is a payment to (or refund from) the tax
+// authority, not VAT activity — it must not be counted as input/output VAT in period reports.
+const vatPayExcl = (OUT, IN) => `AND EXISTS (SELECT 1 FROM journal_lines x WHERE x.journal_id=j.id AND x.account_code NOT IN ('${OUT}','${IN}','10000','10400','10500'))`;
 function vatReturn(from, to) {
   const setg = (k) => (db.prepare('SELECT value FROM settings WHERE key=?').get(k) || {}).value || '';
-  const inv = db.prepare(
-    `SELECT COALESCE(SUM(rent_amount),0) base, COALESCE(SUM(vat_amount),0) vat
-       FROM invoices WHERE status!='cancelled' ${from ? 'AND due_date>=?' : ''} ${to ? 'AND due_date<=?' : ''}`)
-    .get(...[...(from ? [from] : []), ...(to ? [to] : [])]);
+  const invArgs = [...(from ? [from] : []), ...(to ? [to] : [])];
+  const invWhere = `status!='cancelled' ${from ? 'AND due_date>=?' : ''} ${to ? 'AND due_date<=?' : ''}`;
+  // Box 1(a): only invoices that actually carry VAT. Invoices with no VAT (residential rent) are exempt supplies, Box 1(c).
+  const inv = db.prepare(`SELECT COALESCE(SUM(rent_amount),0) base, COALESCE(SUM(vat_amount),0) vat FROM invoices WHERE ${invWhere} AND vat_amount>0.005`).get(...invArgs);
+  const exempt = db.prepare(`SELECT COALESCE(SUM(rent_amount),0) base FROM invoices WHERE ${invWhere} AND vat_amount<=0.005`).get(...invArgs);
   // input VAT split: fixed-asset purchases (Box 6c) vs normal purchases (Box 6a)
   const bill = db.prepare(
     `SELECT a.type acctype, COALESCE(SUM(b.amount),0) base, COALESCE(SUM(b.vat_amount),0) vat
@@ -1248,17 +1252,18 @@ function vatReturn(from, to) {
   const balVat = (code) => db.prepare(
     `SELECT COALESCE(SUM(l.credit),0) c, COALESCE(SUM(l.debit),0) d
        FROM journal_lines l JOIN journals j ON j.id=l.journal_id
-      WHERE l.account_code=? AND j.jtype!='vat_settlement' ${from ? 'AND j.jdate>=?' : ''} ${to ? 'AND j.jdate<=?' : ''}`)
+      WHERE l.account_code=? AND j.jtype!='vat_settlement' ${vatPayExcl(OUT, IN)} ${from ? 'AND j.jdate>=?' : ''} ${to ? 'AND j.jdate<=?' : ''}`)
     .get(...[code, ...(from ? [from] : []), ...(to ? [to] : [])]);
   let box5_output, box6_input;
   if (OUT === IN) { const b = balVat(OUT); box5_output = r2(b.c); box6_input = r2(b.d); }
   else { const o = balVat(OUT), i = balVat(IN); box5_output = r2(o.c - o.d); box6_input = r2(i.d - i.c); }
+  const box6_reconciliation_gap = r2(box6_input - (b6a.vat + b6c.vat));   // ledger input VAT not backed by a vendor bill
+  box6_input = r2(b6a.vat + b6c.vat);                                       // Box 6 = 6(a) + 6(c)
   const box7_net = r2(box5_output - box6_input);
-  const box6_reconciliation_gap = r2(box6_input - (b6a.vat + b6c.vat));
   return {
     from, to, vatin: setg('vat_number') || 'OM1100201030',
     legal_name: setg('company_name') || 'United Tower', sector: 'Real Estate', currency: 'OMR',
-    box1a, box1b: { base: 0, vat: 0 }, box1c: { base: 0 },
+    box1a, box1b: { base: 0, vat: 0 }, box1c: { base: r2(exempt.base) },
     box2: { base: 0, vat: 0 }, box3: { base: 0 },
     box5_output,
     box6a: { base: r2(b6a.base), vat: r2(b6a.vat) }, box6c: { base: r2(b6c.base), vat: r2(b6c.vat) },
@@ -1293,7 +1298,7 @@ function vatStatement(year) {
   const glMovement = (code) => db.prepare(
     `SELECT CAST(substr(j.jdate,6,2) AS INTEGER) mo, COALESCE(SUM(l.credit),0) c, COALESCE(SUM(l.debit),0) d
        FROM journal_lines l JOIN journals j ON j.id=l.journal_id
-      WHERE l.account_code=? AND j.jtype!='vat_settlement' AND j.jdate>=? AND j.jdate<=? GROUP BY mo`).all(code, from, to);
+      WHERE l.account_code=? AND j.jtype!='vat_settlement' ${vatPayExcl(OUT, IN)} AND j.jdate>=? AND j.jdate<=? GROUP BY mo`).all(code, from, to);
   const glOut = zeros(), glIn = zeros();
   if (OUT === IN) {
     for (const r of glMovement(OUT)) { if (r.mo >= 1 && r.mo <= 12) { glOut[r.mo - 1] = r2(glOut[r.mo - 1] + r.c); glIn[r.mo - 1] = r2(glIn[r.mo - 1] + r.d); } }
