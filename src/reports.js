@@ -1022,13 +1022,16 @@ function customerMovement(kind, fromM, toM, building_id, taxMode) {
   for (const x of all.rows) {
     if (!x.tenant_id || !flagged.has(x.tenant_id)) continue;
     const vatBy = {}; for (const inv of invs) if (inv.tenant_id === x.tenant_id && inv.due_date >= startDate) { const k = inv.due_date.slice(0, 7); vatBy[k] = r2((vatBy[k] || 0) + inv.vat_amount); }
-    let run = x.opening, prev = Math.max(0, x.opening); const v = { opening: prev, months: {}, add: 0, red: 0 };
+    // payments settle rent first (all invoices), tax last: tax paid = whatever the cumulative payments exceed the cumulative rent due
+    const tax0 = Math.max(0, x.opening);
+    let P = 0, Tx = tax0, R = x.opening - tax0, taxPaidPrev = 0; const v = { opening: tax0, months: {}, add: 0, red: 0 };
     for (const m of months) {
-      const c = x.months[m] || { add: 0, red: 0 }; run = r2(run + c.add - c.red);
-      const add = vatBy[m] || 0;
-      const close = r2(Math.min(Math.max(run, 0), prev + add)), red = r2(prev + add - close);
-      if (add || red) v.months[m] = { add, red };
-      v.add = r2(v.add + add); v.red = r2(v.red + red); prev = close;
+      const c = x.months[m] || { add: 0, red: 0 }, vat = vatBy[m] || 0;
+      P = r2(P + c.red); Tx = r2(Tx + vat); R = r2(R + c.add - vat);
+      const rentPaid = Math.min(P, Math.max(R, 0)), taxPaid = Math.min(Math.max(P - rentPaid, 0), Tx);
+      const red = r2(taxPaid - taxPaidPrev); taxPaidPrev = taxPaid;
+      if (vat || red) v.months[m] = { add: vat, red };
+      v.add = r2(v.add + vat); v.red = r2(v.red + red);
     }
     V[x.tenant_id] = v;
   }
