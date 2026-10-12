@@ -1016,6 +1016,22 @@ function customerMovement(kind, fromM, toM, building_id, taxMode) {
       const c = (g.months[m] = g.months[m] || { add: 0, red: 0 }); c.red = r2(c.red + d); g.red = r2(g.red + d);
     }
   }
+  // Customers flagged "remaining balance = tax" (they pay the rent in full and only the tax is left open): their
+  // whole opening balance and whatever stays open after each month is tax; it can only grow by the VAT invoiced.
+  const flagged = new Set(db.prepare('SELECT id FROM tenants WHERE bal_is_tax=1').all().map((x) => x.id));
+  for (const x of all.rows) {
+    if (!x.tenant_id || !flagged.has(x.tenant_id)) continue;
+    const vatBy = {}; for (const inv of invs) if (inv.tenant_id === x.tenant_id && inv.due_date >= startDate) { const k = inv.due_date.slice(0, 7); vatBy[k] = r2((vatBy[k] || 0) + inv.vat_amount); }
+    let run = x.opening, prev = Math.max(0, x.opening); const v = { opening: prev, months: {}, add: 0, red: 0 };
+    for (const m of months) {
+      const c = x.months[m] || { add: 0, red: 0 }; run = r2(run + c.add - c.red);
+      const add = vatBy[m] || 0;
+      const close = r2(Math.min(Math.max(run, 0), prev + add)), red = r2(prev + add - close);
+      if (add || red) v.months[m] = { add, red };
+      v.add = r2(v.add + add); v.red = r2(v.red + red); prev = close;
+    }
+    V[x.tenant_id] = v;
+  }
   const names = {}; for (const t of db.prepare('SELECT id, name FROM tenants').all()) names[t.id] = t.name;
   const U = tenantUnits();
   const mk = (tid, name) => ({ tenant_id: tid || null, tenant: name, units: (tid && U[tid]) || '', opening: 0, months: {}, add: { invoices: 0, other: 0 }, red: { receipts: 0, advance: 0, other: 0 } });

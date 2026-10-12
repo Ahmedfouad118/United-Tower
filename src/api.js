@@ -350,7 +350,7 @@ router.put('/flats/:id', writers, (req, res) => {
 crud('flats', 'flats', ['code', 'building_id', 'unit_type', 'floor', 'bedrooms', 'base_rent', 'category_id', 'notes'], { order: 'ORDER BY code' });
 // tenant create/update also posts a tenant-tagged opening-balance journal
 router.post('/tenants', writers, (req, res) => {
-  const f = ['code', 'name', 'name_ar', 'phone', 'email', 'civil_id', 'tax_no', 'unit_note', 'category_id', 'opening_balance', 'notes'].filter((k) => req.body[k] !== undefined);
+  const f = ['code', 'name', 'name_ar', 'phone', 'email', 'civil_id', 'tax_no', 'unit_note', 'bal_is_tax', 'category_id', 'opening_balance', 'notes'].filter((k) => req.body[k] !== undefined);
   try {
     const r = db.prepare(`INSERT INTO tenants (${f.join(',')}) VALUES (${f.map(() => '?').join(',')})`).run(...f.map((k) => req.body[k]));
     const id = Number(r.lastInsertRowid);
@@ -359,7 +359,7 @@ router.post('/tenants', writers, (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.put('/tenants/:id', writers, (req, res) => {
-  const f = ['code', 'name', 'name_ar', 'phone', 'email', 'civil_id', 'tax_no', 'unit_note', 'category_id', 'opening_balance', 'notes'].filter((k) => req.body[k] !== undefined);
+  const f = ['code', 'name', 'name_ar', 'phone', 'email', 'civil_id', 'tax_no', 'unit_note', 'bal_is_tax', 'category_id', 'opening_balance', 'notes'].filter((k) => req.body[k] !== undefined);
   try {
     if (f.length) db.prepare(`UPDATE tenants SET ${f.map((c) => c + '=?').join(',')} WHERE id=?`).run(...f.map((k) => req.body[k]), req.params.id);
     if (req.body.opening_balance !== undefined) svc.setTenantOpening(Number(req.params.id), req.body.opening_balance, req.user.id);

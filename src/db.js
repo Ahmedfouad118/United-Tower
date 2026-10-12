@@ -26,6 +26,7 @@ function init() {
     'ALTER TABLE users ADD COLUMN pwd_changed_at INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE tenants ADD COLUMN tax_no TEXT',
     'ALTER TABLE tenants ADD COLUMN unit_note TEXT',
+    'ALTER TABLE tenants ADD COLUMN bal_is_tax INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE presentation_shares ADD COLUMN expires_at TEXT',
     'ALTER TABLE presentation_shares ADD COLUMN revoked INTEGER NOT NULL DEFAULT 0',
   ];

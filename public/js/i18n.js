@@ -2,6 +2,8 @@
 const I18N = (() => {
   const DICT = {
     ar: {
+      bal_no: 'لا — عادي', bal_yes: 'نعم — الباقي ضريبة',
+      bal_is_tax: 'الرصيد المتبقي عليه = ضريبة فقط',
       ui_basis_vat: 'الضريبة فقط',
       rm_tax: 'الضريبة',
       rm_tax_all: 'الكل (شامل الضريبة)',
@@ -216,6 +218,8 @@ const I18N = (() => {
       twofa_confirm_btn: 'تأكيد التفعيل', twofa_enabled_ok: 'تم تفعيل التحقق بخطوتين', twofa_disable_confirm: 'متأكد إنك عايز تعطّل التحقق بخطوتين؟',
     },
     en: {
+      bal_no: 'No — normal', bal_yes: 'Yes — remainder is tax',
+      bal_is_tax: 'Remaining balance is tax only',
       ui_basis_vat: 'VAT only',
       rm_tax: 'Tax',
       rm_tax_all: 'All (including tax)',
@@ -425,6 +429,8 @@ const I18N = (() => {
       twofa_confirm_btn: 'Confirm setup', twofa_enabled_ok: 'Two-factor authentication enabled', twofa_disable_confirm: 'Are you sure you want to disable two-factor authentication?',
     },
     hi: {
+      bal_no: 'नहीं — सामान्य', bal_yes: 'हाँ — शेष कर है',
+      bal_is_tax: 'शेष राशि केवल कर है',
       ui_basis_vat: 'केवल वैट',
       rm_tax: 'कर',
       rm_tax_all: 'सभी (कर सहित)',
