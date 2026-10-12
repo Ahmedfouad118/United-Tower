@@ -920,7 +920,7 @@ router.get('/reports/flat-statement', (req, res) => res.json(R.flatStatement({
 router.get('/reports/vendor-statement', (req, res) => res.json(R.vendorStatement({ vendor_id: req.query.vendor_id ? Number(req.query.vendor_id) : null, from: req.query.from, to: req.query.to }, lang(req))));
 router.get('/reports/advances', (req, res) => res.json(R.advancesReport(req.query.asOf)));
 router.get('/reports/balance-persistence', (req, res) => res.json(R.receivablesBalancePersistence(req.query.asOf, effBuilding(req))));
-router.get('/reports/customer-movement', (req, res) => res.json(R.customerMovement(req.query.kind === 'advance' ? 'advance' : 'receivable', req.query.from, req.query.to, effBuilding(req))));
+router.get('/reports/customer-movement', (req, res) => res.json(R.customerMovement(req.query.kind === 'advance' ? 'advance' : 'receivable', req.query.from, req.query.to, effBuilding(req), req.query.tax)));
 router.get('/reports/unit-invoices', (req, res) => res.json(R.unitInvoices(req.query.year, req.query.basis, effBuilding(req))));
 router.get('/reports/unit-invoices-drill', (req, res) => res.json(R.unitInvoicesDrill(req.query.year, req.query.month ? Number(req.query.month) : null, req.query.flat_id, effBuilding(req))));
 router.get('/reports/invoice-audit', (req, res) => res.json(R.invoiceContractAudit(effBuilding(req))));

@@ -2205,9 +2205,11 @@ Object.assign(Pages, (() => {
     const adv = kind === 'advance';
     const nowM = today().slice(0, 7);
     const toM = c._mto || nowM, fromM = c._mfrom || (toM.slice(0, 4) + '-01');
+    const taxM = adv ? 'all' : (c._tax || 'all');
     reportShell(c, titleKey, `<div class="field" style="margin:0"><label>${t('from')}</label><input type="month" id="mf" value="${fromM}"></div>
-      <div class="field" style="margin:0"><label>${t('to')}</label><input type="month" id="mt" value="${toM}"></div>`, null);
-    const r = await API.get('/reports/customer-movement?kind=' + kind + '&from=' + fromM + '&to=' + toM + (window.UT ? UT.bq() : ''));
+      <div class="field" style="margin:0"><label>${t('to')}</label><input type="month" id="mt" value="${toM}"></div>${adv ? '' : `<div class="field" style="margin:0"><label>${t('rm_tax')}</label><select id="mx"><option value="all" ${taxM === 'all' ? 'selected' : ''}>${t('rm_tax_all')}</option><option value="rent" ${taxM === 'rent' ? 'selected' : ''}>${t('rm_tax_rent')}</option><option value="tax" ${taxM === 'tax' ? 'selected' : ''}>${t('rm_tax_only')}</option></select></div>`}`, null);
+    const r = await API.get('/reports/customer-movement?kind=' + kind + '&from=' + fromM + '&to=' + toM + '&tax=' + taxM + (window.UT ? UT.bq() : ''));
+    const compact = !adv && r.tax_mode !== 'all';
     const MN = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const mLabel = (m) => MN[Number(m.slice(5, 7))] + ' ' + m.slice(2, 4);
     const v = (n) => (Math.abs(n) > 0.004 ? money(n) : '<span class="muted">·</span>');
@@ -2215,24 +2217,24 @@ Object.assign(Pages, (() => {
     const sLabel = { settled: t('rm_s_settled'), unpaid: t('rm_s_unpaid'), partial: t('rm_s_partial'), credit: t('rm_s_credit'), held: t('rm_s_held'), consumed: t('rm_s_consumed'), over: t('rm_s_over') };
     const sCls = { settled: 'b-green', unpaid: 'b-red', partial: 'b-amber', credit: 'b-blue', held: 'b-blue', consumed: 'b-green', over: 'b-red' };
     const incL = t(adv ? 'rm_inc_a' : 'rm_inc'), decL = t(adv ? 'rm_dec_a' : 'rm_dec');
-    const drill = (txt, x, m) => (x.tenant_id ? `<a href="#" class="drill" data-tid="${x.tenant_id}" data-m="${m}">${txt}</a>` : txt);
-    const nTot = adv ? 2 : 5;
+    const drill = (txt, x, m) => (x.tenant_id && r.drill !== false ? `<a href="#" class="drill" data-tid="${x.tenant_id}" data-m="${m}">${txt}</a>` : txt);
+    const nTot = adv ? 2 : (compact ? 3 : 5);
     const h1 = `<tr><th rowspan="2" style="${stick}">${t('tenant')}</th><th rowspan="2">${t('unit')}</th><th rowspan="2" class="num">${t('rm_opening')}</th>${r.months.map((m) => `<th colspan="2" style="text-align:center">${mLabel(m)}</th>`).join('')}
       <th colspan="${nTot}" style="text-align:center">${t('total')}</th><th rowspan="2" class="num">${t('rm_closing')}</th><th rowspan="2">${t('rm_status')}</th></tr>`;
     const h2 = `<tr>${r.months.map(() => `<th class="num">${incL}</th><th class="num">${decL}</th>`).join('')}
-      <th class="num">${t(adv ? 'rm_tot_add_a' : 'rm_tot_add')}</th>${adv ? '' : `<th class="num">${t('rm_tot_inv')}</th>`}<th class="num">${t(adv ? 'rm_tot_used' : 'rm_tot_rcv')}</th>${adv ? '' : `<th class="num">${t('rm_tot_adv')}</th>`}${adv ? '' : `<th class="num">${t('rm_tot_oth')}</th>`}</tr>`;
+      <th class="num">${t(adv ? 'rm_tot_add_a' : 'rm_tot_add')}</th>${adv ? '' : `<th class="num">${t('rm_tot_inv')}</th>`}<th class="num">${t(adv ? 'rm_tot_used' : (compact ? 'rm_tot_paid' : 'rm_tot_rcv'))}</th>${adv || compact ? '' : `<th class="num">${t('rm_tot_adv')}</th>`}${adv || compact ? '' : `<th class="num">${t('rm_tot_oth')}</th>`}</tr>`;
     const othRed = (x) => x.red.other + x.add.other;
     const body = r.rows.map((x) => `<tr><td style="${stick}"><b>${esc(x.tenant)}</b></td><td>${esc(x.units || '')}</td><td class="num">${v(x.opening)}</td>${r.months.map((m) => { const q = x.months[m] || { add: 0, red: 0 };
         return `<td class="num">${q.add ? drill(v(q.add), x, m) : v(0)}</td><td class="num">${q.red ? drill(v(q.red), x, m) : v(0)}</td>`; }).join('')}
-      <td class="num"><b>${v(x.add_total)}</b></td>${adv ? '' : `<td class="num">${v(x.add.invoices)}</td>`}<td class="num">${v(adv ? x.red_total : x.red.receipts)}</td>${adv ? '' : `<td class="num">${v(x.red.advance)}</td>`}${adv ? '' : `<td class="num">${v(othRed(x))}</td>`}
+      <td class="num"><b>${v(x.add_total)}</b></td>${adv ? '' : `<td class="num">${v(x.add.invoices)}</td>`}<td class="num">${v(adv || compact ? x.red_total : x.red.receipts)}</td>${adv || compact ? '' : `<td class="num">${v(x.red.advance)}</td>`}${adv || compact ? '' : `<td class="num">${v(othRed(x))}</td>`}
       <td class="num"><b>${money(x.closing)}</b></td><td><span class="badge ${sCls[x.status] || 'b-gray'}">${esc(sLabel[x.status] || x.status)}</span></td></tr>`).join('');
     const T = r.totals;
     const foot = `<tr><td style="${stick}"><b>${t('total')}</b></td><td></td><td class="num"><b>${money(T.opening)}</b></td>${r.months.map((m) => { const q = T.months[m] || { add: 0, red: 0 }; return `<td class="num"><b>${v(q.add)}</b></td><td class="num"><b>${v(q.red)}</b></td>`; }).join('')}
-      <td class="num"><b>${money(T.add)}</b></td>${adv ? '' : `<td class="num"><b>${money(T.invoices)}</b></td>`}<td class="num"><b>${money(adv ? T.red : T.receipts)}</b></td>${adv ? '' : `<td class="num"><b>${money(T.advance)}</b></td>`}${adv ? '' : `<td class="num"><b>${money(T.other_red + T.other_add)}</b></td>`}
+      <td class="num"><b>${money(T.add)}</b></td>${adv ? '' : `<td class="num"><b>${money(T.invoices)}</b></td>`}<td class="num"><b>${money(adv || compact ? T.red : T.receipts)}</b></td>${adv || compact ? '' : `<td class="num"><b>${money(T.advance)}</b></td>`}${adv || compact ? '' : `<td class="num"><b>${money(T.other_red + T.other_add)}</b></td>`}
       <td class="num"><b>${money(T.closing)}</b></td><td></td></tr>`;
     c.querySelector('#rbody').innerHTML = r.rows.length
       ? `<div class="table-wrap" style="overflow-x:auto"><table><thead>${h1}${h2}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table></div>
-         <p class="muted" style="font-size:11px;margin-top:8px">${t(adv ? 'rm_note_a' : 'rm_note')}</p>`
+         <p class="muted" style="font-size:11px;margin-top:8px">${t(adv ? 'rm_note_a' : 'rm_note')}${compact && r.source === 'invoices' ? ' ' + t('rm_note_tax') : ''}</p>`
       : `<div class="empty">${t('no_data')}</div>`;
     c.querySelector('#rbody').addEventListener('click', (e) => {
       const a = e.target.closest('.drill[data-tid]'); if (!a) return; e.preventDefault();
@@ -2241,6 +2243,7 @@ Object.assign(Pages, (() => {
     });
     c.querySelector('#mf').onchange = (e) => { c._mfrom = e.target.value; customerMovementScreen(c, kind, titleKey); };
     c.querySelector('#mt').onchange = (e) => { c._mto = e.target.value; customerMovementScreen(c, kind, titleKey); };
+    const mx = c.querySelector('#mx'); if (mx) mx.onchange = (e) => { c._tax = e.target.value; customerMovementScreen(c, kind, titleKey); };
     bindPrint(c, t(titleKey));
   }
   async function receivableMovement(c) { return customerMovementScreen(c, 'receivable', 'm_recv_move'); }
@@ -2251,7 +2254,7 @@ Object.assign(Pages, (() => {
   async function unitInvoicesScreen(c) {
     const year = c._year || String(new Date().getFullYear()), basis = c._basis || 'total';
     reportShell(c, 'm_unit_invoices', `<div class="field" style="margin:0"><label>${t('year')}</label><input type="number" id="yr" value="${year}" style="width:100px"></div>
-      <div class="field" style="margin:0"><label>${t('ui_basis')}</label><select id="bs"><option value="total" ${basis === 'total' ? 'selected' : ''}>${t('ui_basis_total')}</option><option value="rent" ${basis === 'rent' ? 'selected' : ''}>${t('ui_basis_rent')}</option></select></div>`, 'unit-invoices');
+      <div class="field" style="margin:0"><label>${t('ui_basis')}</label><select id="bs"><option value="total" ${basis === 'total' ? 'selected' : ''}>${t('ui_basis_total')}</option><option value="rent" ${basis === 'rent' ? 'selected' : ''}>${t('ui_basis_rent')}</option><option value="vat" ${basis === 'vat' ? 'selected' : ''}>${t('ui_basis_vat')}</option></select></div>`, 'unit-invoices');
     c._qs = '?year=' + year + '&basis=' + basis + (window.UT ? UT.bq() : '');
     const r = await API.get('/reports/unit-invoices?year=' + year + '&basis=' + basis + (window.UT ? UT.bq() : ''));
     const MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

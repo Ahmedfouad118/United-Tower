@@ -189,7 +189,7 @@ router.get('/export-report/:name', (req, res) => {
   } else if (name === 'unit-invoices') {
     const r = R.unitInvoices(req.query.year, req.query.basis, req.query.building_id ? Number(req.query.building_id) : null);
     const MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    aoa = [[`Monthly invoices by unit — ${r.year} (${r.basis === 'rent' ? 'rent only' : 'rent + VAT'})`], ['Unit', 'Tenant', ...MO, 'Total'],
+    aoa = [[`Monthly invoices by unit — ${r.year} (${r.basis === 'rent' ? 'rent only' : (r.basis === 'vat' ? 'VAT only' : 'rent + VAT')})`], ['Unit', 'Tenant', ...MO, 'Total'],
       ...r.rows.map((x) => [x.unit, x.tenant, ...x.months, x.total]), ['Total', '', ...r.totals.months, r.totals.total]];
   } else if (name === 'vat-statement') {
     const r = R.vatStatement(req.query.year);

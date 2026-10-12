@@ -923,7 +923,7 @@ function receivablesBalancePersistence(asOf, building_id) {
 // Internal reclasses that net to zero inside one journal (e.g. municipality-tax
 // split 11100<->11000) are left out; lines with no customer are shown as one row so
 // the totals still tie to the trial balance.
-function customerMovement(kind, fromM, toM, building_id) {
+function customerMovementCore(kind, fromM, toM, building_id, acctsOverride) {
   const ym = (d) => d.slice(0, 7);
   const nowM = new Date().toISOString().slice(0, 7);
   toM = /^[0-9]{4}-[0-9]{2}$/.test(toM || '') ? toM : nowM;
@@ -932,7 +932,7 @@ function customerMovement(kind, fromM, toM, building_id) {
   const months = []; { let [y, m] = fromM.split('-').map(Number); const [ty, tm] = toM.split('-').map(Number);
     while ((y < ty || (y === ty && m <= tm)) && months.length < 24) { months.push(y + '-' + String(m).padStart(2, '0')); m++; if (m > 12) { m = 1; y++; } } }
   const isAdv = kind === 'advance';
-  const accts = isAdv ? ['21500', '23100'] : ['11000', '11100'];
+  const accts = acctsOverride || (isAdv ? ['21500', '23100'] : ['11000', '11100']);
   const list = accts.map(() => '?').join(',');
   const bF = building_id ? ' AND l.building_id=' + Number(building_id) : '';
   const toEnd = months[months.length - 1] + '-31';
@@ -984,12 +984,84 @@ function customerMovement(kind, fromM, toM, building_id) {
 }
 
 
+// Receivable movement with an optional tax filter (taxMode 'all' | 'rent' (without tax) | 'tax' (tax only)).
+// Once the tax split has been posted to the ledger (account 11000) the filter simply picks the account;
+// before that, the tax part is derived from the invoices' VAT, with payments settling rent first and tax last.
+function customerMovement(kind, fromM, toM, building_id, taxMode) {
+  taxMode = kind === 'receivable' && (taxMode === 'rent' || taxMode === 'tax') ? taxMode : 'all';
+  if (taxMode === 'all') return { ...customerMovementCore(kind, fromM, toM, building_id), tax_mode: 'all', drill: true };
+  if (db.prepare("SELECT 1 x FROM journal_lines WHERE account_code='11000' LIMIT 1").get())
+    return { ...customerMovementCore(kind, fromM, toM, building_id, [taxMode === 'tax' ? '11000' : '11100']), tax_mode: taxMode, drill: true, source: 'ledger' };
+
+  const all = customerMovementCore(kind, fromM, toM, building_id);
+  const months = all.months;
+  const { invVatPaidAsOf } = require('./services');
+  const pad = (n) => String(n).padStart(2, '0');
+  const prevEnd = (m) => { let [y, mo] = m.split('-').map(Number); mo--; if (mo < 1) { mo = 12; y--; } return y + '-' + pad(mo) + '-31'; };
+  const bF = building_id ? ' AND i.building_id=' + Number(building_id) : '';
+  const invs = db.prepare(
+    `SELECT i.id, i.tenant_id, i.due_date, i.vat_amount, i.total FROM invoices i
+      WHERE i.status!='cancelled' AND i.vat_amount>0.005 AND i.due_date<=? ${bF}`).all(months[months.length - 1] + '-31');
+  const paidAt = (inv, d) => (inv.due_date <= d ? invVatPaidAsOf(inv, d) : 0);
+  const startDate = months[0] + '-01';
+  const V = {};   // tenant -> VAT movement
+  const vrow = (tid) => (V[tid || 0] = V[tid || 0] || { opening: 0, months: {}, add: 0, red: 0 });
+  for (const inv of invs) {
+    const g = vrow(inv.tenant_id);
+    if (inv.due_date < startDate) g.opening = r2(g.opening + inv.vat_amount - paidAt(inv, prevEnd(months[0])));
+    else { const c = (g.months[inv.due_date.slice(0, 7)] = g.months[inv.due_date.slice(0, 7)] || { add: 0, red: 0 }); c.add = r2(c.add + inv.vat_amount); g.add = r2(g.add + inv.vat_amount); }
+    for (const m of months) {
+      const d = paidAt(inv, m + '-31') - paidAt(inv, m === months[0] ? prevEnd(m) : prevEnd(m));
+      if (Math.abs(d) < 0.005) continue;
+      const c = (g.months[m] = g.months[m] || { add: 0, red: 0 }); c.red = r2(c.red + d); g.red = r2(g.red + d);
+    }
+  }
+  const names = {}; for (const t of db.prepare('SELECT id, name FROM tenants').all()) names[t.id] = t.name;
+  const U = tenantUnits();
+  const mk = (tid, name) => ({ tenant_id: tid || null, tenant: name, units: (tid && U[tid]) || '', opening: 0, months: {}, add: { invoices: 0, other: 0 }, red: { receipts: 0, advance: 0, other: 0 } });
+  const rows = [];
+  if (taxMode === 'tax') {
+    for (const [tid, v] of Object.entries(V)) {
+      const g = mk(Number(tid), names[tid] || '(بدون عميل)');
+      g.opening = v.opening; g.months = v.months; g.add.invoices = v.add; g.red.receipts = v.red;
+      rows.push(g);
+    }
+  } else {
+    for (const x of all.rows) {
+      const v = V[x.tenant_id || 0] || { opening: 0, months: {}, add: 0, red: 0 };
+      const g = mk(x.tenant_id, x.tenant);
+      g.opening = r2(x.opening - v.opening);
+      for (const m of months) {
+        const a = x.months[m] || { add: 0, red: 0 }, b = v.months[m] || { add: 0, red: 0 };
+        const c = { add: r2(a.add - b.add), red: r2(a.red - b.red) };
+        if (Math.abs(c.add) > 0.004 || Math.abs(c.red) > 0.004) g.months[m] = c;
+      }
+      g.add.invoices = r2(x.add.invoices - v.add); g.add.other = x.add.other;
+      g.red.receipts = r2(x.red_total - v.red);
+      rows.push(g);
+    }
+  }
+  const out = []; const T = { opening: 0, add: 0, red: 0, closing: 0, invoices: 0, other_add: 0, receipts: 0, advance: 0, other_red: 0, months: {} };
+  for (const g of rows) {
+    const add = r2(g.add.invoices + g.add.other), red = r2(g.red.receipts + g.red.advance + g.red.other);
+    g.add_total = add; g.red_total = red; g.closing = r2(g.opening + add - red);
+    if (Math.abs(g.opening) < 0.005 && Math.abs(add) < 0.005 && Math.abs(red) < 0.005 && Math.abs(g.closing) < 0.005) continue;
+    g.status = Math.abs(g.closing) < 0.005 ? 'settled' : (g.closing < 0 ? 'credit' : (red < 0.005 ? 'unpaid' : 'partial'));
+    out.push(g);
+    T.opening = r2(T.opening + g.opening); T.add = r2(T.add + add); T.red = r2(T.red + red); T.closing = r2(T.closing + g.closing);
+    T.invoices = r2(T.invoices + g.add.invoices); T.other_add = r2(T.other_add + g.add.other); T.receipts = r2(T.receipts + g.red.receipts);
+    for (const [m, c] of Object.entries(g.months)) { const x = (T.months[m] = T.months[m] || { add: 0, red: 0 }); x.add = r2(x.add + c.add); x.red = r2(x.red + c.red); }
+  }
+  out.sort((a, b) => (b.closing - a.closing) || String(a.tenant).localeCompare(String(b.tenant)));
+  return { kind, accounts: all.accounts, from: all.from, to: all.to, months, rows: out, totals: T, tax_mode: taxMode, drill: false, source: 'invoices' };
+}
+
 // ---- Monthly invoices per unit for one year (فواتير الوحدات شهرياً) ----------
 // Rows = every unit, columns = the 12 months (by invoice period), last column = year total.
 // basis 'total' = rent + VAT, 'rent' = rent only. Cancelled invoices are left out.
 function unitInvoices(year, basis, building_id) {
   year = String(year || new Date().getFullYear());
-  const rent = basis === 'rent';
+  const rent = basis === 'rent', vatOnly = basis === 'vat';
   const bF = building_id ? ' AND i.building_id=' + Number(building_id) : '';
   const invs = db.prepare(
     `SELECT i.flat_id, i.period, i.rent_amount, i.vat_amount, i.total, COALESCE(t.name,'') tenant
@@ -1002,12 +1074,12 @@ function unitInvoices(year, basis, building_id) {
   for (const x of invs) {
     const g = byF[x.flat_id]; if (!g) continue;
     const mo = Number(x.period.slice(5, 7)) - 1; if (mo < 0 || mo > 11) continue;
-    const v = rent ? x.rent_amount : x.total;
+    const v = vatOnly ? x.vat_amount : (rent ? x.rent_amount : x.total);
     g.months[mo] = r2(g.months[mo] + v); g.total = r2(g.total + v); g.count++; g.tenant = x.tenant || g.tenant;   // latest tenant billed in the year
     T.months[mo] = r2(T.months[mo] + v); T.total = r2(T.total + v); T.count++;
   }
   const rows = Object.values(byF).sort((a, b) => a.unit.localeCompare(b.unit, 'en', { numeric: true }));
-  return { year, basis: rent ? 'rent' : 'total', rows, totals: T };
+  return { year, basis: vatOnly ? 'vat' : (rent ? 'rent' : 'total'), rows, totals: T };
 }
 // the invoices behind one cell / row / column / grand total of the report above
 function unitInvoicesDrill(year, month, flat_id, building_id) {

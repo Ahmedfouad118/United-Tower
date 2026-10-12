@@ -835,3 +835,4 @@ module.exports = {
   CUSTOMER_ADVANCE, expectedRentForPeriod,
 };
 module.exports.migrateVatTo20000 = migrateVatTo20000;
+module.exports.invVatPaidAsOf = invVatPaidAsOf;

@@ -2,6 +2,13 @@
 const I18N = (() => {
   const DICT = {
     ar: {
+      ui_basis_vat: 'الضريبة فقط',
+      rm_tax: 'الضريبة',
+      rm_tax_all: 'الكل (شامل الضريبة)',
+      rm_tax_rent: 'بدون الضريبة',
+      rm_tax_only: 'الضريبة فقط',
+      rm_tot_paid: 'إجمالي السداد / النقص',
+      rm_note_tax: 'الضريبة هنا = ض.ق.م 5% على فواتير الإيجار التجارية، والسداد بيخصم من الإيجار أولاً والضريبة آخراً. الضريبة اللي جوه الأرصدة الافتتاحية القديمة مش ظاهرة إلا بعد تسجيل ذمم الضريبة (فصلها عن حساب الذمم).',
       m_unit_invoices: 'فواتير الوحدات شهرياً',
       ui_inv_no: 'رقم الفاتورة',
       ui_basis: 'المبلغ',
@@ -209,6 +216,13 @@ const I18N = (() => {
       twofa_confirm_btn: 'تأكيد التفعيل', twofa_enabled_ok: 'تم تفعيل التحقق بخطوتين', twofa_disable_confirm: 'متأكد إنك عايز تعطّل التحقق بخطوتين؟',
     },
     en: {
+      ui_basis_vat: 'VAT only',
+      rm_tax: 'Tax',
+      rm_tax_all: 'All (including tax)',
+      rm_tax_rent: 'Without tax',
+      rm_tax_only: 'Tax only',
+      rm_tot_paid: 'Total paid / reduced',
+      rm_note_tax: 'Tax here = 5% VAT on commercial rent invoices; payments settle rent first and tax last. Tax embedded in old opening balances only appears once the tax receivables are recorded (split out of the receivables account).',
       m_unit_invoices: 'Monthly Invoices by Unit',
       ui_inv_no: 'Invoice no.',
       ui_basis: 'Amount',
@@ -411,6 +425,13 @@ const I18N = (() => {
       twofa_confirm_btn: 'Confirm setup', twofa_enabled_ok: 'Two-factor authentication enabled', twofa_disable_confirm: 'Are you sure you want to disable two-factor authentication?',
     },
     hi: {
+      ui_basis_vat: 'केवल वैट',
+      rm_tax: 'कर',
+      rm_tax_all: 'सभी (कर सहित)',
+      rm_tax_rent: 'कर के बिना',
+      rm_tax_only: 'केवल कर',
+      rm_tot_paid: 'कुल भुगतान / कमी',
+      rm_note_tax: 'यहाँ कर = वाणिज्यिक किराया चालानों पर 5% वैट; भुगतान पहले किराये में और अंत में कर में लगता है। पुराने प्रारंभिक शेष में शामिल कर तभी दिखेगा जब कर प्राप्तियाँ दर्ज की जाएँ।',
       m_unit_invoices: 'इकाई अनुसार मासिक चालान',
       ui_inv_no: 'चालान नं.',
       ui_basis: 'राशि',
