@@ -921,6 +921,8 @@ router.get('/reports/vendor-statement', (req, res) => res.json(R.vendorStatement
 router.get('/reports/advances', (req, res) => res.json(R.advancesReport(req.query.asOf)));
 router.get('/reports/balance-persistence', (req, res) => res.json(R.receivablesBalancePersistence(req.query.asOf, effBuilding(req))));
 router.get('/reports/customer-movement', (req, res) => res.json(R.customerMovement(req.query.kind === 'advance' ? 'advance' : 'receivable', req.query.from, req.query.to, effBuilding(req))));
+router.get('/reports/unit-invoices', (req, res) => res.json(R.unitInvoices(req.query.year, req.query.basis, effBuilding(req))));
+router.get('/reports/unit-invoices-drill', (req, res) => res.json(R.unitInvoicesDrill(req.query.year, req.query.month ? Number(req.query.month) : null, req.query.flat_id, effBuilding(req))));
 router.get('/reports/invoice-audit', (req, res) => res.json(R.invoiceContractAudit(effBuilding(req))));
 router.get('/reports/audit-center', (req, res) => res.json(R.auditCenter(req.query.asOf, effBuilding(req))));
 router.get('/reports/occupancy', (req, res) => res.json(R.occupancy(req.query.onDate, effBuilding(req))));

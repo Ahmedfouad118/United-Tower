@@ -2246,6 +2246,47 @@ Object.assign(Pages, (() => {
   async function receivableMovement(c) { return customerMovementScreen(c, 'receivable', 'm_recv_move'); }
   async function advanceMovement(c) { return customerMovementScreen(c, 'advance', 'm_adv_move'); }
 
+
+  // ---- فواتير الوحدات شهرياً: every unit x 12 months for a chosen year; click any figure to see the invoices
+  async function unitInvoicesScreen(c) {
+    const year = c._year || String(new Date().getFullYear()), basis = c._basis || 'total';
+    reportShell(c, 'm_unit_invoices', `<div class="field" style="margin:0"><label>${t('year')}</label><input type="number" id="yr" value="${year}" style="width:100px"></div>
+      <div class="field" style="margin:0"><label>${t('ui_basis')}</label><select id="bs"><option value="total" ${basis === 'total' ? 'selected' : ''}>${t('ui_basis_total')}</option><option value="rent" ${basis === 'rent' ? 'selected' : ''}>${t('ui_basis_rent')}</option></select></div>`, 'unit-invoices');
+    c._qs = '?year=' + year + '&basis=' + basis + (window.UT ? UT.bq() : '');
+    const r = await API.get('/reports/unit-invoices?year=' + year + '&basis=' + basis + (window.UT ? UT.bq() : ''));
+    const MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const stick = 'position:sticky;inset-inline-start:0;background:var(--card,#fff);z-index:1;';
+    const cell = (v, fid, mo) => `<td class="num">${v ? drillA(money(v), `data-fid="${fid || ''}" data-mo="${mo == null ? '' : mo + 1}"`) : '<span class="muted">·</span>'}</td>`;
+    const head = `<tr><th style="${stick}">${t('unit')}</th><th>${t('tenant')}</th>${MN.map((m) => `<th class="num">${m}</th>`).join('')}<th class="num">${t('total')}</th></tr>`;
+    const body = r.rows.map((x) => `<tr><td style="${stick}"><b>${esc(x.unit)}</b></td><td>${esc(x.tenant)}</td>${x.months.map((v, i) => cell(v, x.flat_id, i)).join('')}<td class="num">${x.total ? drillA(`<b>${money(x.total)}</b>`, `data-fid="${x.flat_id}" data-mo=""`) : '<span class="muted">·</span>'}</td></tr>`).join('');
+    const foot = `<tr class="tot"><td style="${stick}"><b>${t('total')}</b></td><td></td>${r.totals.months.map((v, i) => `<td class="num">${v ? drillA(`<b>${money(v)}</b>`, `data-fid="" data-mo="${i + 1}"`) : ''}</td>`).join('')}<td class="num">${r.totals.total ? drillA(`<b>${money(r.totals.total)}</b>`, 'data-fid="" data-mo=""') : ''}</td></tr>`;
+    c.querySelector('#rbody').innerHTML = r.rows.length
+      ? `<div class="table-wrap" style="overflow-x:auto"><table><thead>${head}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table></div><p class="muted" style="font-size:11px;margin-top:8px">${t('ui_note')}</p>`
+      : `<div class="empty">${t('no_data')}</div>`;
+    c.querySelector('#rbody').onclick = async (e) => {
+      const a = e.target.closest('.drill[data-fid]'); if (!a) return; e.preventDefault();
+      const fid = a.dataset.fid, mo = a.dataset.mo;
+      let d; try { d = await API.get('/reports/unit-invoices-drill?year=' + year + (mo ? '&month=' + mo : '') + (fid ? '&flat_id=' + fid : '') + (window.UT ? UT.bq() : '')); } catch (err) { return toast(err.message, 'err'); }
+      if (!d.rows.length) return toast(t('no_data'), 'err');
+      const unit = fid ? ((r.rows.find((z) => String(z.flat_id) === fid) || {}).unit || '') : t('ui_all_units');
+      const title = t('m_unit_invoices') + ' — ' + unit + ' — ' + (mo ? MN[Number(mo) - 1] + ' ' : '') + year;
+      const cols = [
+        { key: 'invoice_no', label: t('ui_inv_no') }, { key: 'unit', label: t('unit') }, { key: 'tenant', label: t('tenant'), render: (x) => esc(x.tenant) }, { key: 'period', label: t('period') },
+        { key: 'due_date', label: t('due_date'), render: (x) => dateStr(x.due_date) }, { key: 'rent_amount', label: t('rent'), num: true, render: (x) => money(x.rent_amount) },
+        { key: 'vat_amount', label: t('vat'), num: true, render: (x) => money(x.vat_amount) }, { key: 'total', label: t('total'), num: true, render: (x) => `<b>${money(x.total)}</b>` },
+        { key: 'paid_amount', label: t('paid'), num: true, render: (x) => money(x.paid_amount) }, { key: 'remaining', label: t('remaining'), num: true, render: (x) => money(x.remaining) },
+        { key: 'status', label: t('status'), render: (x) => statusBadge(x.status) }];
+      const T = d.totals;
+      const html = table(cols, d.rows, { foot: [{ v: t('total') }, { v: '' }, { v: '' }, { v: '' }, { v: '' }, { v: money(T.rent), num: true }, { v: money(T.vat), num: true }, { v: money(T.total), num: true }, { v: money(T.paid), num: true }, { v: money(T.remaining), num: true }, { v: '' }] });
+      modal({ title, wide: true, bodyHTML: html, footerHTML: `<button class="btn" id="dxls">📊 Excel</button><button class="btn" id="dprint">🖨 ${t('print')}</button>`,
+        onMount: (bg) => { bg.querySelector('#dprint').onclick = () => printReport(title, html); bg.querySelector('#dxls').onclick = () => UI.exportTableToExcel(title, html); } });
+    };
+    c.querySelector('#yr').onchange = (e) => { c._year = e.target.value; unitInvoicesScreen(c); };
+    c.querySelector('#bs').onchange = (e) => { c._basis = e.target.value; unitInvoicesScreen(c); };
+    bindPrint(c, t('m_unit_invoices') + ' — ' + year);
+  }
+  async function unitInvoices(c) { return unitInvoicesScreen(c); }
+
   // ---- Audit Center: one page an external auditor's prep starts from -------
   // Automated pass/warn/fail checks (trial balance, journal balance, invoice-vs-
   // contract drift, aging-vs-GL tie-out, VAT, bank recon, cheques, contract
@@ -2312,7 +2353,7 @@ Object.assign(Pages, (() => {
   const PGROUPS = [
     ['الرئيسية', [['dashboard', 'لوحة التحكم'], ['audit', 'مركز التدقيق']]],
     ['الأملاك', [['buildings', 'البنايات'], ['units', 'الوحدات'], ['calendar', 'كالندر الإشغال']]],
-    ['العملاء (ذمم مدينة)', [['customers', 'العملاء'], ['contracts', 'العقود'], ['invoices', 'الفواتير الشهرية'], ['receipts', 'سندات القبض'], ['cust_summary', 'ملخص حسابات العملاء'], ['statement', 'كشف حساب'], ['ar_aging', 'أعمار الذمم المدينة'], ['advances', 'الذمم الدائنة (مقدم)'], ['recv_move', 'حركة الذمم في العملاء'], ['adv_move', 'حركة الدفعات المقدمة'], ['balance_persistence_ar', 'تاريخ الذمم المدينة'], ['balance_persistence_ap', 'تاريخ الذمم الدائنة']]],
+    ['العملاء (ذمم مدينة)', [['customers', 'العملاء'], ['contracts', 'العقود'], ['invoices', 'الفواتير الشهرية'], ['receipts', 'سندات القبض'], ['cust_summary', 'ملخص حسابات العملاء'], ['statement', 'كشف حساب'], ['ar_aging', 'أعمار الذمم المدينة'], ['advances', 'الذمم الدائنة (مقدم)'], ['unit_invoices', 'فواتير الوحدات شهرياً'], ['recv_move', 'حركة الذمم في العملاء'], ['adv_move', 'حركة الدفعات المقدمة'], ['balance_persistence_ar', 'تاريخ الذمم المدينة'], ['balance_persistence_ap', 'تاريخ الذمم الدائنة']]],
     ['الموردون (ذمم دائنة)', [['vendors', 'الموردون'], ['bills', 'فواتير الموردين'], ['vpayments', 'سندات الصرف'], ['ap_aging', 'أعمار الذمم الدائنة'], ['vstatement', 'كشف حساب مورد']]],
     ['المالية', [['coa', 'شجرة الحسابات'], ['journals', 'القيود اليومية'], ['gjournals', 'القيود المجمعة'], ['legacy', 'قيود النظام القديم'], ['tb', 'ميزان المراجعة'], ['is', 'قائمة الدخل'], ['is_consolidated', 'قائمة الدخل المجمعة'], ['gl', 'دفتر الأستاذ'], ['bs', 'المركز المالي'], ['liquidity', 'تقرير السيولة'], ['cashflow', 'التدفق النقدي'], ['ppl', 'أرباح العقارات'], ['roi', 'العائد ROI'], ['comparison', 'مقارنة أداء البنايات']]],
     ['الخزينة والبنوك', [['banks', 'الحسابات البنكية'], ['cheques', 'الشيكات'], ['cheques_dash', 'متابعة الشيكات'], ['reconciliation', 'التسوية البنكية']]],
@@ -2465,7 +2506,7 @@ Object.assign(Pages, (() => {
   const LBL_GROUPS = [
     ['الرئيسية', ['m_dashboard']],
     [t('m_properties'), ['m_properties', 'm_buildings', 'm_units', 'm_calendar']],
-    [t('m_receivable'), ['m_receivable', 'm_customers', 'm_contracts', 'm_invoices', 'm_receipts', 'm_cust_summary', 'm_statement', 'm_ar_aging', 'm_advances', 'm_recv_move', 'm_adv_move']],
+    [t('m_receivable'), ['m_receivable', 'm_customers', 'm_contracts', 'm_invoices', 'm_receipts', 'm_cust_summary', 'm_statement', 'm_ar_aging', 'm_advances', 'm_recv_move', 'm_adv_move', 'm_unit_invoices']],
     [t('m_payable'), ['m_payable', 'm_vendors', 'm_bills', 'm_vpayments', 'm_ap_aging', 'm_vstatement']],
     [t('m_finance'), ['m_finance', 'm_coa', 'm_journals', 'm_gjournals', 'm_legacy', 'm_tb', 'm_is', 'm_is_consolidated', 'm_gl', 'm_bs', 'm_liquidity', 'm_cashflow', 'm_ppl', 'm_roi', 'm_comparison']],
     [t('m_treasury'), ['m_treasury', 'm_banks', 'm_cheques', 'm_cheques_dash', 'm_recon']],
@@ -2509,5 +2550,5 @@ Object.assign(Pages, (() => {
 
   return { customers, vendors, buildings, units, categories, paymethods, banks, employees, coa,
     vendorBills, vendorPayments, trialBalance, incomeStatement, incomeStatementConsolidated, generalLedger, balanceSheet, arAging, apAging,
-    statement, vendorStatement, advances, balancePersistenceAr, balancePersistenceAp, receivableMovement, advanceMovement, auditCenter, propertyPL, roi, cashflow, comparison, vat, vatStatement, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, security, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, moneyPosition, vatReturn, activityLog, companyDocuments, budgetEntry, budgetReport, financialRatiosPage, presentation, taxAging, taxDues };
+    statement, vendorStatement, advances, balancePersistenceAr, balancePersistenceAp, receivableMovement, advanceMovement, unitInvoices, auditCenter, propertyPL, roi, cashflow, comparison, vat, vatStatement, cheques, chequesDashboard, journals, groupedJournals, legacyJournals, users, company, security, configuration, assets, depreciation, customersSummary, reconciliation, liquidity, financialStatements, moneyPosition, vatReturn, activityLog, companyDocuments, budgetEntry, budgetReport, financialRatiosPage, presentation, taxAging, taxDues };
 })());

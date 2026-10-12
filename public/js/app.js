@@ -30,6 +30,7 @@
       { path: 'contracts', label: 'm_contracts', page: 'contracts', mod: 'customers' },
       { path: 'invoices', label: 'm_invoices', page: 'invoices', mod: 'customers' },
       { path: 'receipts', label: 'm_receipts', page: 'receipts', mod: 'customers' },
+      { path: 'unit_invoices', label: 'm_unit_invoices', page: 'unitInvoices', mod: 'customers' },
       { path: 'cust_summary', label: 'm_cust_summary', page: 'customersSummary', mod: 'customers' },
       { path: 'statement', label: 'm_statement', page: 'statement', mod: 'customers' },
       { path: 'ar_aging', label: 'm_ar_aging', page: 'arAging', mod: 'customers' },

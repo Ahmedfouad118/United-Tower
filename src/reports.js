@@ -983,6 +983,50 @@ function customerMovement(kind, fromM, toM, building_id) {
   return { kind, accounts: accts, from: fromM, to: toM, months, rows: out, totals: T };
 }
 
+
+// ---- Monthly invoices per unit for one year (فواتير الوحدات شهرياً) ----------
+// Rows = every unit, columns = the 12 months (by invoice period), last column = year total.
+// basis 'total' = rent + VAT, 'rent' = rent only. Cancelled invoices are left out.
+function unitInvoices(year, basis, building_id) {
+  year = String(year || new Date().getFullYear());
+  const rent = basis === 'rent';
+  const bF = building_id ? ' AND i.building_id=' + Number(building_id) : '';
+  const invs = db.prepare(
+    `SELECT i.flat_id, i.period, i.rent_amount, i.vat_amount, i.total, COALESCE(t.name,'') tenant
+       FROM invoices i LEFT JOIN tenants t ON t.id=i.tenant_id
+      WHERE i.status!='cancelled' AND i.flat_id IS NOT NULL AND i.period LIKE ? ${bF} ORDER BY i.period`).all(year + '-%');
+  const flats = db.prepare(`SELECT id, code, building_id FROM flats ${building_id ? 'WHERE building_id=' + Number(building_id) : ''}`).all();
+  const byF = {};
+  for (const f of flats) byF[f.id] = { flat_id: f.id, unit: String(f.code || '').replace(/[ \t\u00a0]+/g, ' ').trim(), tenant: '', months: Array(12).fill(0), total: 0, count: 0 };
+  const T = { months: Array(12).fill(0), total: 0, count: 0 };
+  for (const x of invs) {
+    const g = byF[x.flat_id]; if (!g) continue;
+    const mo = Number(x.period.slice(5, 7)) - 1; if (mo < 0 || mo > 11) continue;
+    const v = rent ? x.rent_amount : x.total;
+    g.months[mo] = r2(g.months[mo] + v); g.total = r2(g.total + v); g.count++; g.tenant = x.tenant || g.tenant;   // latest tenant billed in the year
+    T.months[mo] = r2(T.months[mo] + v); T.total = r2(T.total + v); T.count++;
+  }
+  const rows = Object.values(byF).sort((a, b) => a.unit.localeCompare(b.unit, 'en', { numeric: true }));
+  return { year, basis: rent ? 'rent' : 'total', rows, totals: T };
+}
+// the invoices behind one cell / row / column / grand total of the report above
+function unitInvoicesDrill(year, month, flat_id, building_id) {
+  year = String(year || new Date().getFullYear());
+  const args = [month ? year + '-' + String(month).padStart(2, '0') : year + '-%'];
+  let w = "i.status!='cancelled' AND i.flat_id IS NOT NULL AND i.period LIKE ?";
+  if (flat_id) { w += ' AND i.flat_id=?'; args.push(Number(flat_id)); }
+  if (building_id) { w += ' AND i.building_id=?'; args.push(Number(building_id)); }
+  const rows = db.prepare(
+    `SELECT i.id, i.invoice_no, i.period, i.due_date, i.rent_amount, i.vat_amount, i.total, i.paid_amount, i.status,
+            f.code unit, COALESCE(t.name,'') tenant
+       FROM invoices i JOIN flats f ON f.id=i.flat_id LEFT JOIN tenants t ON t.id=i.tenant_id
+      WHERE ${w} ORDER BY i.period, f.code, i.id`).all(...args)
+    .map((x) => ({ ...x, unit: String(x.unit || '').replace(/[ \t\u00a0]+/g, ' ').trim(), remaining: r2(x.total - x.paid_amount) }));
+  rows.sort((a, b) => (a.period < b.period ? -1 : a.period > b.period ? 1 : a.unit.localeCompare(b.unit, 'en', { numeric: true })));
+  const sum = (k) => r2(rows.reduce((s, x) => s + x[k], 0));
+  return { year, month: month || null, rows, totals: { rent: sum('rent_amount'), vat: sum('vat_amount'), total: sum('total'), paid: sum('paid_amount'), remaining: sum('remaining') } };
+}
+
 // ---- Invoice vs Contract audit --------------------------------------------
 // Recomputes what each invoice's rent/VAT SHOULD be from its OWN contract's
 // current terms (the exact same day-based proration `issueInvoiceForContract`
@@ -1559,7 +1603,7 @@ function buildingComparison(from, to) {
 module.exports = {
   trialBalance, incomeStatement, incomeStatementConsolidated, accountLedger, generalLedgerFull, groupedJournals, legacyJournals, legacyDrill,
   liquidityReport, moneyPosition, financialRatios, balanceSheet, financialStatements, receivablesAging, receivablesAgingDrill, taxDuesReport, taxDuesDrill, payablesAging,
-  flatStatement, vendorStatement, advancesReport, receivablesBalancePersistence, customerMovement, occupancy, propertyPL, roi, cashFlowForecast, vatReport, vatReturn, vatStatement, vatUncollectedByCustomer, vatInputUnpaidByVendor,
+  flatStatement, vendorStatement, advancesReport, receivablesBalancePersistence, customerMovement, unitInvoices, unitInvoicesDrill, occupancy, propertyPL, roi, cashFlowForecast, vatReport, vatReturn, vatStatement, vatUncollectedByCustomer, vatInputUnpaidByVendor,
   bankReport, chequesReport, chequesDashboard, dashboard, contractExpiry, buildingComparison,
   depreciationReport, customersSummary, invoiceContractAudit, auditCenter,
 };

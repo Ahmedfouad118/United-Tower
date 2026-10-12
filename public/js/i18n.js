@@ -2,6 +2,13 @@
 const I18N = (() => {
   const DICT = {
     ar: {
+      m_unit_invoices: 'فواتير الوحدات شهرياً',
+      ui_inv_no: 'رقم الفاتورة',
+      ui_basis: 'المبلغ',
+      ui_basis_total: 'شامل الضريبة',
+      ui_basis_rent: 'الإيجار فقط',
+      ui_all_units: 'كل الوحدات',
+      ui_note: 'كل صف وحدة وكل عمود شهر الفاتورة (حسب الشهر المستحق). اضغط أي رقم (خلية أو إجمالي الصف أو الشهر أو الكل) لتشوف الفواتير المكوّنة له وإجماليها. الفواتير الملغاة غير محسوبة.',
       unit_note: 'الوحدة (لو مفيش عقد)',
       m_recv_move: 'حركة الذمم في العملاء',
       m_adv_move: 'حركة الدفعات المقدمة للعملاء',
@@ -202,6 +209,13 @@ const I18N = (() => {
       twofa_confirm_btn: 'تأكيد التفعيل', twofa_enabled_ok: 'تم تفعيل التحقق بخطوتين', twofa_disable_confirm: 'متأكد إنك عايز تعطّل التحقق بخطوتين؟',
     },
     en: {
+      m_unit_invoices: 'Monthly Invoices by Unit',
+      ui_inv_no: 'Invoice no.',
+      ui_basis: 'Amount',
+      ui_basis_total: 'Including VAT',
+      ui_basis_rent: 'Rent only',
+      ui_all_units: 'All units',
+      ui_note: 'Each row is a unit and each column the invoice month. Click any figure (a cell, a row/month total or the grand total) to see the invoices behind it with their total. Cancelled invoices are excluded.',
       unit_note: 'Unit (if no contract)',
       m_recv_move: 'Customer Receivables Movement',
       m_adv_move: 'Customer Advances Movement',
@@ -397,6 +411,13 @@ const I18N = (() => {
       twofa_confirm_btn: 'Confirm setup', twofa_enabled_ok: 'Two-factor authentication enabled', twofa_disable_confirm: 'Are you sure you want to disable two-factor authentication?',
     },
     hi: {
+      m_unit_invoices: 'इकाई अनुसार मासिक चालान',
+      ui_inv_no: 'चालान नं.',
+      ui_basis: 'राशि',
+      ui_basis_total: 'वैट सहित',
+      ui_basis_rent: 'केवल किराया',
+      ui_all_units: 'सभी इकाइयाँ',
+      ui_note: 'प्रत्येक पंक्ति एक इकाई और प्रत्येक स्तंभ चालान का माह है। किसी भी आंकड़े पर क्लिक करके उसके चालान और कुल देखें। रद्द चालान शामिल नहीं हैं।',
       unit_note: 'इकाई (यदि अनुबंध नहीं)',
       m_recv_move: 'ग्राहक प्राप्य गतिविधि',
       m_adv_move: 'ग्राहक अग्रिम गतिविधि',
