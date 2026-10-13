@@ -1546,7 +1546,7 @@ function vatInputUnpaidByVendor(from, to) {
 // invoice's live running total.
 function vatUncollectedByCustomer(from, to) {
   const rows = db.prepare(
-    `SELECT t.name tenant, MAX(f.code) flat,
+    `SELECT i.tenant_id, t.name tenant, MAX(f.code) flat,
             COALESCE(SUM(i.vat_amount),0) vat_due,
             COALESCE(SUM(MIN(i.vat_amount, MAX(0, i.total - COALESCE(pa.paid_as_of,0)))),0) vat_outstanding
        FROM invoices i JOIN tenants t ON t.id=i.tenant_id LEFT JOIN flats f ON f.id=i.flat_id
@@ -1564,6 +1564,20 @@ function vatUncollectedByCustomer(from, to) {
        ) pa ON pa.invoice_id = i.id
       WHERE i.status!='cancelled' ${from ? 'AND i.due_date>=?' : ''} ${to ? 'AND i.due_date<=?' : ''}
       GROUP BY i.tenant_id`).all(...[...(to ? [to, to] : []), ...(from ? [from] : []), ...(to ? [to] : [])]);
+  // Customers flagged "remaining balance = tax only" pay the rent in full: whatever is still open on their account
+  // (rent-first, tax-last over their whole ledger) is tax — so it is the tax outstanding, capped by the VAT invoiced in scope.
+  const flagged = new Set(db.prepare('SELECT id FROM tenants WHERE bal_is_tax=1').all().map((x) => x.id));
+  const taxOut = (tid) => {
+    const lim = to ? ' AND j.jdate<=?' : '', a = to ? [tid, to] : [tid];
+    const L = db.prepare(`SELECT COALESCE(SUM(l.debit),0) d, COALESCE(SUM(l.credit),0) c,
+        COALESCE(SUM(CASE WHEN j.jtype='opening' THEN l.debit-l.credit ELSE 0 END),0) o
+      FROM journal_lines l JOIN journals j ON j.id=l.journal_id WHERE l.account_code IN ('11000','11100') AND l.tenant_id=?${lim}`).get(...a);
+    const V = db.prepare(`SELECT COALESCE(SUM(vat_amount),0) v FROM invoices WHERE status!='cancelled' AND tenant_id=?${to ? ' AND due_date<=?' : ''}`).get(...a).v;
+    const taxDue = Math.max(0, L.o) + V, rentDue = Math.max(0, L.d - taxDue);
+    const rentPaid = Math.min(L.c, rentDue), taxPaid = Math.min(Math.max(L.c - rentPaid, 0), taxDue);
+    return r2(taxDue - taxPaid);
+  };
+  for (const row of rows) if (row.tenant_id && flagged.has(row.tenant_id)) row.vat_outstanding = Math.min(row.vat_due, taxOut(row.tenant_id));
   const out = rows.map((r) => ({ tenant: r.tenant, flat: r.flat, vat_due: r2(r.vat_due), vat_paid: r2(r.vat_due - r.vat_outstanding), vat_outstanding: r2(r.vat_outstanding) }))
     .filter((x) => x.vat_outstanding > 0.005).sort((a, b) => b.vat_outstanding - a.vat_outstanding);
   return { from, to, rows: out, grand_total: r2(out.reduce((s, x) => s + x.vat_outstanding, 0)) };
