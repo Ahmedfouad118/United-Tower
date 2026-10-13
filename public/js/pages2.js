@@ -1800,7 +1800,8 @@ Object.assign(Pages, (() => {
           { key: 'vat_due', label: 'ض.ق.م مستحقة', num: true, render: (x) => money(x.vat_due) },
           { key: 'vat_paid', label: 'ض.ق.م مدفوعة', num: true, render: (x) => money(x.vat_paid) },
           { key: 'vat_outstanding', label: 'ض.ق.م غير مدفوعة', num: true, render: (x) => money(x.vat_outstanding) }], u.rows,
-          { foot: [{ v: '' }, { v: t('total') }, { v: '' }, { v: '' }, { v: money(u.grand_total), num: true }] });
+          { foot: [{ v: '' }, { v: t('total') }, { v: '' }, { v: '' }, { v: money(u.grand_total), num: true }] })
+          + (u.old_rows && u.old_rows.length ? '<div class="section-title" style="margin-top:12px">' + t('vat_old_title') + '</div>' + table([{ key: 'flat', label: t('unit') }, { key: 'tenant', label: t('tenant') }, { key: 'old_tax', label: t('vat_old_col'), num: true, render: (x) => money(x.old_tax) }], u.old_rows, { foot: [{ v: '' }, { v: t('total') }, { v: money(u.old_total), num: true }] }) + '<p style="margin-top:8px"><b>' + t('vat_all_total') + ': ' + money(u.all_total) + '</b></p><p class="muted" style="font-size:11px">' + t('vat_old_note') + '</p>' : '');
         modal({ title: 'مين ما دفعش الضريبة (الجزء الضريبي فقط)', wide: true, bodyHTML: body, footerHTML: `<button class="btn" id="dx">📊 Excel</button><button class="btn" id="dp">🖨 ${t('print')}</button>`, onMount: (bg) => { bg.querySelector('#dp').onclick = () => printReport('ضريبة غير محصّلة', body); bg.querySelector('#dx').onclick = () => UI.exportTableToExcel('ضريبة غير محصلة', body); } });
       }
       if (a.dataset.inowes) { // vendors whose INPUT VAT we have not paid yet

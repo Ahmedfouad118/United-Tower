@@ -2,6 +2,7 @@
 const I18N = (() => {
   const DICT = {
     ar: {
+      vat_old_title: 'ضريبة قديمة على أرصدة افتتاحية (قبل فواتير الفترة)', vat_old_col: 'ضريبة قديمة', vat_all_total: 'إجمالي الضريبة المستحقة (فواتير + قديمة)', vat_old_note: 'الضريبة القديمة مش من فواتير الفترة فمش داخلة في إقرار ض.ق.م — بس هي ضريبة لسه ما اتحصّلتش من العميل.',
       bal_no: 'لا — عادي', bal_yes: 'نعم — الباقي ضريبة',
       bal_is_tax: 'الرصيد المتبقي عليه = ضريبة فقط',
       ui_basis_vat: 'الضريبة فقط',
@@ -218,6 +219,7 @@ const I18N = (() => {
       twofa_confirm_btn: 'تأكيد التفعيل', twofa_enabled_ok: 'تم تفعيل التحقق بخطوتين', twofa_disable_confirm: 'متأكد إنك عايز تعطّل التحقق بخطوتين؟',
     },
     en: {
+      vat_old_title: 'Old tax on opening balances (before the period invoices)', vat_old_col: 'Old tax', vat_all_total: 'Total tax outstanding (invoices + old)', vat_old_note: 'Old tax is not from the period invoices so it is not part of the VAT return — but it is tax still owed by the customer.',
       bal_no: 'No — normal', bal_yes: 'Yes — remainder is tax',
       bal_is_tax: 'Remaining balance is tax only',
       ui_basis_vat: 'VAT only',
@@ -429,6 +431,7 @@ const I18N = (() => {
       twofa_confirm_btn: 'Confirm setup', twofa_enabled_ok: 'Two-factor authentication enabled', twofa_disable_confirm: 'Are you sure you want to disable two-factor authentication?',
     },
     hi: {
+      vat_old_title: 'प्रारंभिक शेष पर पुराना कर (अवधि के चालानों से पहले)', vat_old_col: 'पुराना कर', vat_all_total: 'कुल बकाया कर (चालान + पुराना)', vat_old_note: 'पुराना कर अवधि के चालानों से नहीं है, इसलिए वैट रिटर्न में शामिल नहीं; पर यह ग्राहक पर बकाया कर है।',
       bal_no: 'नहीं — सामान्य', bal_yes: 'हाँ — शेष कर है',
       bal_is_tax: 'शेष राशि केवल कर है',
       ui_basis_vat: 'केवल वैट',

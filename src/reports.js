@@ -1577,10 +1577,17 @@ function vatUncollectedByCustomer(from, to) {
     const rentPaid = Math.min(L.c, rentDue), taxPaid = Math.min(Math.max(L.c - rentPaid, 0), taxDue);
     return r2(taxDue - taxPaid);
   };
-  for (const row of rows) if (row.tenant_id && flagged.has(row.tenant_id)) row.vat_outstanding = Math.min(row.vat_due, taxOut(row.tenant_id));
+  // the VAT report itself stays invoice-based; for flagged customers whatever tax is still open beyond their invoice VAT is OLD tax (opening balances) and is listed separately
+  const U = tenantUnits();
+  const old_rows = [...flagged].map((tid) => {
+    const row = rows.find((x) => x.tenant_id === tid); const inv = row ? row.vat_outstanding : 0;
+    const extra = r2(Math.max(0, taxOut(tid) - inv));
+    return extra > 0.005 ? { tenant: row ? row.tenant : (db.prepare('SELECT name FROM tenants WHERE id=?').get(tid) || {}).name, flat: U[tid] || '', old_tax: extra } : null;
+  }).filter(Boolean);
   const out = rows.map((r) => ({ tenant: r.tenant, flat: r.flat, vat_due: r2(r.vat_due), vat_paid: r2(r.vat_due - r.vat_outstanding), vat_outstanding: r2(r.vat_outstanding) }))
     .filter((x) => x.vat_outstanding > 0.005).sort((a, b) => b.vat_outstanding - a.vat_outstanding);
-  return { from, to, rows: out, grand_total: r2(out.reduce((s, x) => s + x.vat_outstanding, 0)) };
+  const old_total = r2(old_rows.reduce((s, x) => s + x.old_tax, 0)), grand = r2(out.reduce((s, x) => s + x.vat_outstanding, 0));
+  return { from, to, rows: out, grand_total: grand, old_rows, old_total, all_total: r2(grand + old_total) };
 }
 
 // ---- Depreciation schedule ------------------------------------------------
