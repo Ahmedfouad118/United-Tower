@@ -143,7 +143,7 @@ router.get('/export-report/:name', (req, res) => {
     const r = R.trialBalance(req.query.upto, 'en');
     aoa = [['Code', 'Account', 'Debit', 'Credit'], ...r.rows.map((x) => [x.code, x.name, x.debit, x.credit]), ['', 'Total', r.total_debit, r.total_credit]];
   } else if (name === 'aging') {
-    const r = R.receivablesAging(req.query.asOf);
+    const r = R.receivablesAging(req.query.asOf, null, req.query.tax === 'rent' ? ['11100'] : req.query.tax === 'tax' ? ['11000'] : null);
     aoa = [['Tenant', 'Current', '1-30', '31-60', '61-90', '91-180', '180+', 'Total'], ...r.rows.map((x) => [x.tenant, x.current, x.d30, x.d60, x.d90, x.d180, x.d180p, x.total])];
   } else if (name === 'income-statement') {
     const r = R.incomeStatement(req.query.from, req.query.to, 'en');

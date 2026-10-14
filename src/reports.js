@@ -597,7 +597,42 @@ function financialStatements(year, lang = 'en') {
 // dated later (e.g. 1 Apr for Q1) but "as of month 3" still shows Q1's unpaid tax.
 // Collections only count when their date is on/before the end of month M.
 function monthEnd(m) { const [y, mo] = m.split('-').map(Number); return `${m}-${String(new Date(y, mo, 0).getDate()).padStart(2, '0')}`; }
+// Tax receivable straight from the ledger (account 11000, tenant lines): used when the tax_dues tables are empty,
+// i.e. the tax split was posted as plain journals. Remaining = balance of 11000 per customer as of the month end.
+function taxFromLedger() {
+  return !db.prepare('SELECT 1 x FROM tax_dues LIMIT 1').get() && !!db.prepare("SELECT 1 x FROM journal_lines WHERE account_code='11000' AND tenant_id IS NOT NULL LIMIT 1").get();
+}
+function taxLedgerReport(month, building_id) {
+  const latest = db.prepare("SELECT MAX(substr(j.jdate,1,7)) p FROM journal_lines l JOIN journals j ON j.id=l.journal_id WHERE l.account_code='11000' AND l.tenant_id IS NOT NULL").get().p;
+  const m = /^\d{4}-\d{2}$/.test(month || '') ? month : (latest || new Date().toISOString().slice(0, 7));
+  const end = monthEnd(m);
+  const bc = building_id ? ' AND l.building_id=' + Number(building_id) : '';
+  const U = tenantUnits();
+  const rows = db.prepare(
+    `SELECT l.tenant_id, COALESCE(t.name,'(بدون عميل)') tenant, COALESCE(SUM(l.debit),0) d, COALESCE(SUM(l.credit),0) c
+       FROM journal_lines l JOIN journals j ON j.id=l.journal_id LEFT JOIN tenants t ON t.id=l.tenant_id
+      WHERE l.account_code='11000' AND l.tenant_id IS NOT NULL AND j.jdate<=? ${bc} GROUP BY l.tenant_id`).all(end)
+    .map((x) => ({ tenant_id: x.tenant_id, tenant: x.tenant, units: U[x.tenant_id] || '', invoiced: r2(x.d), paid: r2(x.c), remaining: r2(x.d - x.c), by_period: {} }))
+    .sort((a, b) => b.remaining - a.remaining || a.tenant.localeCompare(b.tenant));
+  const sum = (k) => r2(rows.reduce((s, r) => s + r[k], 0));
+  const available = db.prepare("SELECT DISTINCT substr(j.jdate,1,7) p FROM journal_lines l JOIN journals j ON j.id=l.journal_id WHERE l.account_code='11000' ORDER BY 1").all().map((x) => x.p);
+  return { month: m, as_of: end, periods: [], rows, totals: { invoiced: sum('invoiced'), paid: sum('paid'), remaining: sum('remaining'), by_period: {} }, available, source: 'ledger' };
+}
+function taxLedgerDrill(tenant_id, month) {
+  const m = /^\d{4}-\d{2}$/.test(month || '') ? month : new Date().toISOString().slice(0, 7);
+  const end = monthEnd(m);
+  const L = db.prepare(
+    `SELECT j.id journal_id, j.jdate, l.debit, l.credit, f.code flat FROM journal_lines l JOIN journals j ON j.id=l.journal_id LEFT JOIN flats f ON f.id=l.flat_id
+      WHERE l.account_code='11000' AND l.tenant_id=? AND j.jdate<=? ORDER BY j.jdate, j.id, l.id`).all(tenant_id, end);
+  const dues = L.filter((x) => x.debit > 0.005).map((x) => ({ id: x.journal_id, period: x.jdate.slice(0, 7), amount: r2(x.debit), is_opening: 0, journal_id: x.journal_id, flat: x.flat, paid: 0, payments: [] }));
+  for (const c of L.filter((x) => x.credit > 0.005)) {
+    let left = r2(c.credit);
+    for (const d of dues) { if (left <= 0.005) break; const room = r2(d.amount - d.paid); if (room <= 0.005) continue; const use = r2(Math.min(room, left)); d.paid = r2(d.paid + use); left = r2(left - use); d.payments.push({ pay_date: c.jdate, amount: use, journal_id: c.journal_id }); }
+  }
+  return { month: m, rows: dues.map((d) => ({ ...d, remaining: r2(d.amount - d.paid) })) };
+}
 function taxDuesReport(month, building_id) {
+  if (taxFromLedger()) return taxLedgerReport(month, building_id);
   const latest = db.prepare('SELECT MAX(period) p FROM tax_dues').get().p;
   const m = /^\d{4}-\d{2}$/.test(month || '') ? month : (latest || new Date().toISOString().slice(0, 7));
   const end = monthEnd(m);
@@ -635,6 +670,7 @@ function taxDuesReport(month, building_id) {
   return { month: m, as_of: end, periods, rows, totals: { invoiced: sum('invoiced'), paid: sum('paid'), remaining: sum('remaining'), by_period: psum }, available };
 }
 function taxDuesDrill(tenant_id, month) {
+  if (taxFromLedger()) return taxLedgerDrill(tenant_id, month);
   const m = /^\d{4}-\d{2}$/.test(month || '') ? month : new Date().toISOString().slice(0, 7);
   const end = monthEnd(m);
   const dues = db.prepare(
@@ -1241,6 +1277,7 @@ function customersSummary() {
   const rows = db.prepare(
     `SELECT t.id, t.name tenant, t.phone,
         COALESCE(SUM(CASE WHEN l.account_code IN ('11000','11100') THEN l.debit-l.credit ELSE 0 END),0) receivable,
+        COALESCE(SUM(CASE WHEN l.account_code='11000' THEN l.debit-l.credit ELSE 0 END),0) tax,
         COALESCE(SUM(CASE WHEN l.account_code IN ('21500','23100') THEN l.credit-l.debit ELSE 0 END),0) advance
      FROM tenants t LEFT JOIN journal_lines l ON l.tenant_id=t.id
      GROUP BY t.id ORDER BY receivable DESC`).all();
@@ -1250,7 +1287,7 @@ function customersSummary() {
   for (const u of db.prepare(
     `SELECT c.tenant_id, f.code FROM contracts c JOIN flats f ON f.id=c.flat_id WHERE c.status='active'`).all())
     (unitsByTenant[u.tenant_id] = unitsByTenant[u.tenant_id] || []).push(u.code);
-  return rows.map((r) => ({ ...r, receivable: r2(r.receivable), advance: r2(r.advance), net: r2(r.receivable - r.advance),
+  return rows.map((r) => ({ ...r, receivable: r2(r.receivable), tax: r2(r.tax), advance: r2(r.advance), net: r2(r.receivable - r.advance),
       units: (unitsByTenant[r.id] || []).join('، ') }))
     .filter((r) => Math.abs(r.receivable) > 0.005 || Math.abs(r.advance) > 0.005);
 }
@@ -1545,6 +1582,16 @@ function vatInputUnpaidByVendor(from, to) {
 // joins payment_allocations by the payment's own date instead of using the
 // invoice's live running total.
 function vatUncollectedByCustomer(from, to) {
+  if (taxFromLedger()) {   // the tax now sits in 11000: list its balance per customer as of 'to'
+    const U = tenantUnits();
+    const out = db.prepare(
+      `SELECT l.tenant_id, t.name tenant, COALESCE(SUM(l.debit),0) d, COALESCE(SUM(l.credit),0) c FROM journal_lines l JOIN journals j ON j.id=l.journal_id JOIN tenants t ON t.id=l.tenant_id
+        WHERE l.account_code='11000' ${to ? 'AND j.jdate<=?' : ''} GROUP BY l.tenant_id`).all(...(to ? [to] : []))
+      .map((x) => ({ tenant: x.tenant, flat: U[x.tenant_id] || '', vat_due: r2(x.d), vat_paid: r2(x.c), vat_outstanding: r2(x.d - x.c) }))
+      .filter((x) => x.vat_outstanding > 0.005).sort((a, b) => b.vat_outstanding - a.vat_outstanding);
+    const g = r2(out.reduce((s, x) => s + x.vat_outstanding, 0));
+    return { from, to, rows: out, grand_total: g, old_rows: [], old_total: 0, all_total: g, source: 'ledger' };
+  }
   const rows = db.prepare(
     `SELECT i.tenant_id, t.name tenant, MAX(f.code) flat,
             COALESCE(SUM(i.vat_amount),0) vat_due,

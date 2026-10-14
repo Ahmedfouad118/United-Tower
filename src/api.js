@@ -905,8 +905,9 @@ router.get('/presentation/feedback', (req, res) => {
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.get('/reports/financial-ratios', (req, res) => res.json(R.financialRatios(req.query.from, req.query.to, effBuilding(req))));
-router.get('/reports/aging', (req, res) => res.json(R.receivablesAging(req.query.asOf, effBuilding(req))));
-router.get('/reports/aging-drill', (req, res) => res.json(R.receivablesAgingDrill(req.query.tenant_id ? Number(req.query.tenant_id) : null, req.query.asOf, effBuilding(req))));
+const agingAccts = (q) => (q.tax === 'rent' ? ['11100'] : q.tax === 'tax' ? ['11000'] : null);   // all / without tax / tax only
+router.get('/reports/aging', (req, res) => res.json(R.receivablesAging(req.query.asOf, effBuilding(req), agingAccts(req.query))));
+router.get('/reports/aging-drill', (req, res) => res.json(R.receivablesAgingDrill(req.query.tenant_id ? Number(req.query.tenant_id) : null, req.query.asOf, effBuilding(req), agingAccts(req.query))));
 router.get('/reports/tax-aging', (req, res) => res.json(R.taxDuesReport(req.query.month, effBuilding(req))));
 router.get('/reports/tax-aging-drill', (req, res) => res.json(R.taxDuesDrill(Number(req.query.tenant_id), req.query.month)));
 router.get('/reports/contract-expiry', (req, res) => res.json(R.contractExpiry(Number(req.query.days) || 60, effBuilding(req))));

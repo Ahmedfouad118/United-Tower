@@ -607,8 +607,8 @@ Object.assign(Pages, (() => {
   }
   async function apAging(c) { await agingScreen(c, 'payables-aging', t('m_ap_aging'), t('vendor')); }
   const AGING_BUCKET_LABEL = { current: t('current'), d30: '1-30', d60: '31-60', d90: '61-90', d180: '91-180', d180p: '+180', total: t('total') };
-  async function agingCellDrill(tenantId, tenantName, bucket, asOf, buildingId, drillEndpoint) {
-    const qp = new URLSearchParams(); qp.set('asOf', asOf);
+  async function agingCellDrill(tenantId, tenantName, bucket, asOf, buildingId, drillEndpoint, taxMode) {
+    const qp = new URLSearchParams(); qp.set('asOf', asOf); if (taxMode && taxMode !== 'all') qp.set('tax', taxMode);
     if (tenantId) qp.set('tenant_id', tenantId);
     if (buildingId) qp.set('building_id', buildingId);
     let r;
@@ -638,9 +638,10 @@ Object.assign(Pages, (() => {
   }
   async function agingScreen(c, endpoint, title, who) {
     const asOf = c._asOf || today();
-    reportShell(c, title, `<div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="a" value="${asOf}"></div>`, endpoint === 'aging' ? 'aging' : null);
-    c._qs = '?asOf=' + asOf;
-    const r = await API.get('/reports/' + endpoint + '?asOf=' + asOf + ((endpoint === 'aging' || endpoint === 'tax-aging') && window.UT ? UT.bq() : ''));
+    const agTax = endpoint === 'aging' ? (c._tax || 'all') : 'all';
+    reportShell(c, title, `<div class="field" style="margin:0"><label>${t('to')}</label><input type="date" id="a" value="${asOf}"></div>` + (endpoint === 'aging' ? `<div class="field" style="margin:0"><label>${t('rm_tax')}</label><select id="agtx"><option value="all" ${agTax === 'all' ? 'selected' : ''}>${t('rm_tax_all')}</option><option value="rent" ${agTax === 'rent' ? 'selected' : ''}>${t('rm_tax_rent')}</option><option value="tax" ${agTax === 'tax' ? 'selected' : ''}>${t('rm_tax_only')}</option></select></div>` : ''), endpoint === 'aging' ? 'aging' : null);
+    c._qs = '?asOf=' + asOf + (agTax !== 'all' ? '&tax=' + agTax : '');
+    const r = await API.get('/reports/' + endpoint + '?asOf=' + asOf + (agTax !== 'all' ? '&tax=' + agTax : '') + ((endpoint === 'aging' || endpoint === 'tax-aging') && window.UT ? UT.bq() : ''));
     const isAr = endpoint === 'aging' || endpoint === 'tax-aging';
     // "0" stands in for a null tenant_id ("(بدون عميل)") so it still survives
     // as a data-attribute and round-trips back through the click handler.
@@ -662,10 +663,11 @@ Object.assign(Pages, (() => {
         const a = e.target.closest('.drill[data-tid]'); if (!a) return; e.preventDefault();
         const row = r.rows.find((x) => tidKey(x) === a.dataset.tid);
         const tid = a.dataset.tid === '0' ? null : a.dataset.tid;
-        agingCellDrill(tid, row && row.tenant, a.dataset.bucket, asOf, (window.UT && UT.building) || null, endpoint === 'tax-aging' ? 'tax-aging-drill' : 'aging-drill');
+        agingCellDrill(tid, row && row.tenant, a.dataset.bucket, asOf, (window.UT && UT.building) || null, endpoint === 'tax-aging' ? 'tax-aging-drill' : 'aging-drill', agTax);
       });
     }
     c.querySelector('#a').onchange = (e) => { c._asOf = e.target.value; agingScreen(c, endpoint, title, who); };
+    const agx = c.querySelector('#agtx'); if (agx) agx.onchange = (e) => { c._tax = e.target.value; agingScreen(c, endpoint, title, who); };
     bindPrint(c, title);
   }
   async function statement(c, params) {
@@ -778,9 +780,10 @@ Object.assign(Pages, (() => {
       { key: 'units', label: t('unit'), render: (x) => esc(x.units || '') },
       { key: 'phone', label: t('phone') },
       { key: 'receivable', label: 'مدين (مستحق)', num: true, render: (x) => x.receivable ? drillA(money(x.receivable), `data-tid="${x.id}" data-kind="recv"`) : money(x.receivable) },
+      { key: 'tax', label: t('cs_tax'), num: true, render: (x) => money(x.tax) },
       { key: 'advance', label: 'دفعات مقدمة', num: true, render: (x) => x.advance ? drillA(money(x.advance), `data-tid="${x.id}" data-kind="adv"`) : money(x.advance) },
       { key: 'net', label: 'الصافي', num: true, render: (x) => `<b class="${x.net > 0 ? 'neg' : 'pos'}">${money(x.net)}</b>` }],
-      r, { foot: [{ v: t('total') }, { v: '' }, { v: '' }, { v: money(r.reduce((s, x) => s + x.receivable, 0)), num: true }, { v: money(r.reduce((s, x) => s + x.advance, 0)), num: true }, { v: money(r.reduce((s, x) => s + x.net, 0)), num: true }] });
+      r, { foot: [{ v: t('total') }, { v: '' }, { v: '' }, { v: money(r.reduce((s, x) => s + x.receivable, 0)), num: true }, { v: money(r.reduce((s, x) => s + x.tax, 0)), num: true }, { v: money(r.reduce((s, x) => s + x.advance, 0)), num: true }, { v: money(r.reduce((s, x) => s + x.net, 0)), num: true }] });
     c.querySelector('#rbody').onclick = (e) => {
       const a = e.target.closest('.drill'); if (!a || !a.dataset.tid) return; e.preventDefault();
       const name = (r.find((x) => String(x.id) === a.dataset.tid) || {}).tenant || '';
